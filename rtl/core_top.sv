@@ -81,9 +81,9 @@ module core_top #(
   logic                                 pipe_stall;
 
   /* EXU -> IDU1 (WB) Interface */
-  logic      [                XLEN-1:0] exu_wb_data = '0;
-  logic      [                     4:0] exu_wb_rd_addr = '0;
-  logic                                 exu_wb_rd_wr_en = '0;
+  logic      [                XLEN-1:0] exu_wb_data;
+  logic      [ REG_FILE_ADDR_WIDTH-1:0] exu_wb_rd_addr;
+  logic                                 exu_wb_rd_wr_en;
   logic                                 exu_mul_busy;
   logic                                 exu_div_busy;
   logic                                 exu_lsu_busy;
@@ -115,7 +115,7 @@ module core_top #(
       .INIT_FILE(ICCM_INIT_FILE)
   ) iccm_inst (
       .clk       (clk),
-      .rstn     (rstn),
+      .rstn      (rstn),
       .raddr     (instr_mem_addr),
       .rtag_in   (instr_mem_tag_out),
       .rvalid_in (instr_mem_addr_valid),
@@ -127,7 +127,7 @@ module core_top #(
   /* Instruction Fetch Unit */
   ifu ifu_inst (
       .clk                  (clk),
-      .rstn                (rstn),
+      .rstn                 (rstn),
       .reset_vector         (reset_vector),
       .instr_mem_addr       (instr_mem_addr),
       .instr_mem_addr_valid (instr_mem_addr_valid),
@@ -146,7 +146,7 @@ module core_top #(
   /* Instruction Decode Unit - Stage 0 */
   idu0 idu0_inst (
       .clk        (clk),
-      .rstn      (rstn),
+      .rstn       (rstn),
       .instr      (instr),
       .instr_valid(instr_valid),
       .instr_tag  (instr_tag),
@@ -160,7 +160,7 @@ module core_top #(
       .STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)
   ) idu1_inst (
       .clk            (clk),
-      .rstn          (rstn),
+      .rstn           (rstn),
       .idu0_out       (idu0_out),
       .idu1_out       (idu1_out),
       .exu_wb_data    (exu_wb_data),
@@ -177,7 +177,7 @@ module core_top #(
   /* Execute Unit */
   exu exu_inst (
       .clk            (clk),
-      .rstn          (rstn),
+      .rstn           (rstn),
       .idu1_out       (idu1_out),
       /* ONLY FOR DEBUG */
       .instr_tag_out  (exu_instr_tag_out),
@@ -206,7 +206,7 @@ module core_top #(
       .INIT_FILE(DCCM_INIT_FILE)
   ) dccm_inst (
       .clk       (clk),
-      .rstn     (rstn),
+      .rstn      (rstn),
       .raddr     ({2'b00, dccm_raddr[DATA_MEM_ADDR_WIDTH-3:2]}),
       .rvalid_in (dccm_rvalid_in),
       .rdata     (dccm_rdata),

@@ -73,7 +73,10 @@ module ifu (
   assign instr_mem_tag_out = pc_out;
 
   /* Instantiate the Program Counter */
-  program_counter pc_inst (
+  program_counter #(
+      .PC_WIDTH  (XLEN),
+      .INC_AMOUNT(INSTR_LEN_BYTES)
+  ) pc_inst (
       .clk         (clk),
       .rstn        (rstn),
       .reset_vector(reset_vector),

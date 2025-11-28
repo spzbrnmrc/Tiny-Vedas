@@ -52,17 +52,17 @@ module exu (
     input idu1_out_t idu1_out,
 
     /* ONLY FOR DEBUG */
-    output logic [XLEN-1:0] instr_tag_out,
-    output logic [    31:0] instr_out,
+    output logic [     XLEN-1:0] instr_tag_out,
+    output logic [INSTR_LEN-1:0] instr_out,
 
     /* EXU -> IDU1 (WB) Interface */
-    output logic [XLEN-1:0] exu_wb_data,
-    output logic [     4:0] exu_wb_rd_addr,
-    output logic            exu_wb_rd_wr_en,
-    output logic            exu_mul_busy,
-    output logic            exu_div_busy,
-    output logic            exu_lsu_busy,
-    output logic            exu_lsu_stall,
+    output logic [               XLEN-1:0] exu_wb_data,
+    output logic [REG_FILE_ADDR_WIDTH-1:0] exu_wb_rd_addr,
+    output logic                           exu_wb_rd_wr_en,
+    output logic                           exu_mul_busy,
+    output logic                           exu_div_busy,
+    output logic                           exu_lsu_busy,
+    output logic                           exu_lsu_stall,
 
     /* DCCM Interface */
     output logic [XLEN-1:0] dccm_raddr,
@@ -78,35 +78,35 @@ module exu (
     output logic            pc_load
 );
 
-  logic [XLEN-1:0] alu_wb_data;
-  logic [     4:0] alu_wb_rd_addr;
-  logic            alu_wb_rd_wr_en;
+  logic [               XLEN-1:0] alu_wb_data;
+  logic [REG_FILE_ADDR_WIDTH-1:0] alu_wb_rd_addr;
+  logic                           alu_wb_rd_wr_en;
 
-  logic [XLEN-1:0] mul_wb_data;
-  logic [     4:0] mul_wb_rd_addr;
-  logic            mul_wb_rd_wr_en;
+  logic [               XLEN-1:0] mul_wb_data;
+  logic [REG_FILE_ADDR_WIDTH-1:0] mul_wb_rd_addr;
+  logic                           mul_wb_rd_wr_en;
 
-  logic [XLEN-1:0] div_wb_data;
-  logic [     4:0] div_wb_rd_addr;
-  logic            div_wb_rd_wr_en;
+  logic [               XLEN-1:0] div_wb_data;
+  logic [REG_FILE_ADDR_WIDTH-1:0] div_wb_rd_addr;
+  logic                           div_wb_rd_wr_en;
 
-  logic [XLEN-1:0] lsu_wb_data;
-  logic [     4:0] lsu_wb_rd_addr;
-  logic            lsu_wb_rd_wr_en;
+  logic [               XLEN-1:0] lsu_wb_data;
+  logic [REG_FILE_ADDR_WIDTH-1:0] lsu_wb_rd_addr;
+  logic                           lsu_wb_rd_wr_en;
 
   /* ONLY FOR DEBUG */
-  logic [XLEN-1:0] alu_instr_tag_out;
-  logic [    31:0] alu_instr_out;
-  logic [XLEN-1:0] mul_instr_tag_out;
-  logic [    31:0] mul_instr_out;
-  logic [XLEN-1:0] div_instr_tag_out;
-  logic [    31:0] div_instr_out;
-  logic [XLEN-1:0] lsu_instr_tag_out;
-  logic [    31:0] lsu_instr_out;
+  logic [               XLEN-1:0] alu_instr_tag_out;
+  logic [          INSTR_LEN-1:0] alu_instr_out;
+  logic [               XLEN-1:0] mul_instr_tag_out;
+  logic [          INSTR_LEN-1:0] mul_instr_out;
+  logic [               XLEN-1:0] div_instr_tag_out;
+  logic [          INSTR_LEN-1:0] div_instr_out;
+  logic [               XLEN-1:0] lsu_instr_tag_out;
+  logic [          INSTR_LEN-1:0] lsu_instr_out;
 
   alu alu_inst (
       .clk            (clk),
-      .rstn          (rstn),
+      .rstn           (rstn),
       .alu_ctrl       (idu1_out),
       .alu_wb_data    (alu_wb_data),
       .alu_wb_rd_addr (alu_wb_rd_addr),
@@ -119,7 +119,7 @@ module exu (
 
   mul mul_inst (
       .clk          (clk),
-      .rstn        (rstn),
+      .rstn         (rstn),
       .freeze       (1'b0),
       .mul_ctrl     (idu1_out),
       .out          (mul_wb_data),
@@ -132,7 +132,7 @@ module exu (
 
   div div_inst (
       .clk                     (clk),
-      .rstn                   (rstn),
+      .rstn                    (rstn),
       .dp                      (idu1_out),
       .dec_tlu_fast_div_disable(1'b0),
       .flush_lower             (1'b0),
@@ -149,7 +149,7 @@ module exu (
 
   lsu lsu_inst (
       .clk                (clk),
-      .rstn              (rstn),
+      .rstn               (rstn),
       .lsu_ctrl           (idu1_out),
       .lsu_wb_data        (lsu_wb_data),
       .lsu_wb_rd_addr     (lsu_wb_rd_addr),
@@ -172,10 +172,10 @@ module exu (
                        ({XLEN{div_wb_rd_wr_en}} & div_wb_data) |
                        ({XLEN{lsu_wb_rd_wr_en}} & lsu_wb_data);
 
-  assign exu_wb_rd_addr = ({5{alu_wb_rd_wr_en}} & alu_wb_rd_addr) | 
-                          ({5{mul_wb_rd_wr_en}} & mul_wb_rd_addr) | 
-                          ({5{div_wb_rd_wr_en}} & div_wb_rd_addr) |
-                          ({5{lsu_wb_rd_wr_en}} & lsu_wb_rd_addr);
+  assign exu_wb_rd_addr = ({REG_FILE_ADDR_WIDTH{alu_wb_rd_wr_en}} & alu_wb_rd_addr) | 
+                          ({REG_FILE_ADDR_WIDTH{mul_wb_rd_wr_en}} & mul_wb_rd_addr) | 
+                          ({REG_FILE_ADDR_WIDTH{div_wb_rd_wr_en}} & div_wb_rd_addr) |
+                          ({REG_FILE_ADDR_WIDTH{lsu_wb_rd_wr_en}} & lsu_wb_rd_addr);
 
   assign exu_wb_rd_wr_en = alu_wb_rd_wr_en | mul_wb_rd_wr_en | div_wb_rd_wr_en | lsu_wb_rd_wr_en;
 
@@ -185,9 +185,9 @@ module exu (
                          ({XLEN{div_wb_rd_wr_en}} & div_instr_tag_out) |
                          ({XLEN{lsu_wb_rd_wr_en}} & lsu_instr_tag_out);
 
-  assign instr_out = ({32{alu_wb_rd_wr_en}} & alu_instr_out) | 
-                     ({32{mul_wb_rd_wr_en}} & mul_instr_out) | 
-                     ({32{div_wb_rd_wr_en}} & div_instr_out) |
-                     ({32{lsu_wb_rd_wr_en}} & lsu_instr_out);
+  assign instr_out = ({INSTR_LEN{alu_wb_rd_wr_en}} & alu_instr_out) | 
+                     ({INSTR_LEN{mul_wb_rd_wr_en}} & mul_instr_out) | 
+                     ({INSTR_LEN{div_wb_rd_wr_en}} & div_instr_out) |
+                     ({INSTR_LEN{lsu_wb_rd_wr_en}} & lsu_instr_out);
 
 endmodule

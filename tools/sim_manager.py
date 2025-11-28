@@ -228,9 +228,9 @@ def compare_results(test: str) -> None:
             if not test_passed:
                 break
     if test_passed:
-        print(f"{test} {'.' * (50 - len(test))}. PASSED")
+        print(f"{test} {'.' * (50 - len(test))}. \033[92mPASSED\033[0m")
     else:
-        print(f"{test} {'.' * (50 - len(test))}. FAILED")
+        print(f"{test} {'.' * (50 - len(test))}. \033[91mFAILED\033[0m")
 
 def process_rtl_log(test: str):
     """Process the RTL log file."""

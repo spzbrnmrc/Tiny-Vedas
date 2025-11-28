@@ -47,25 +47,25 @@ module reg_file #(
     input logic rstn,
 
     /* Read Ports */
-    input logic [4:0] rs1_addr,
-    input logic [4:0] rs2_addr,
-    input logic rs1_rd_en,
-    input logic rs2_rd_en,
-    output logic [XLEN-1:0] rs1_data,
-    output logic [XLEN-1:0] rs2_data,
+    input  logic [REG_FILE_ADDR_WIDTH-1:0] rs1_addr,
+    input  logic [REG_FILE_ADDR_WIDTH-1:0] rs2_addr,
+    input  logic                           rs1_rd_en,
+    input  logic                           rs2_rd_en,
+    output logic [               XLEN-1:0] rs1_data,
+    output logic [               XLEN-1:0] rs2_data,
 
     /* Write Ports */
-    input logic [4:0] rd_addr,
-    input logic [XLEN-1:0] rd_data,
-    input logic rd_wr_en
+    input logic [REG_FILE_ADDR_WIDTH-1:0] rd_addr,
+    input logic [               XLEN-1:0] rd_data,
+    input logic                           rd_wr_en
 );
 
-  logic [XLEN-1:0] reg_file[32];
+  logic [XLEN-1:0] reg_file[REG_FILE_DEPTH];
 
   genvar i;
 
   generate
-    for (i = 0; i < 32; i++) begin : g_reg_file
+    for (i = 0; i < REG_FILE_DEPTH; i++) begin : g_reg_file
       if (i == 0) begin : g_zero_reg
         assign reg_file[i] = 0;
       end else begin : g_reg_file_gen
