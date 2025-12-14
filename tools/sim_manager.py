@@ -27,9 +27,9 @@ def run_gen(test: str) -> None:
     # Try and compile the test, if it fails, print the error and exit
     try:
         if extension == ".s":
-            os.system(f"riscv64-unknown-elf-gcc -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib {os.path.join('tests', test_path[0], test_path[1] + extension)} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
+            os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib {os.path.join('tests', test_path[0], test_path[1] + extension)} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
         elif extension == ".c":
-            os.system(f"riscv64-unknown-elf-gcc -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib -fno-builtin-printf -fno-common -falign-functions=4 {os.path.join('tests', test_path[0], test_path[1] + extension)} {os.path.join('tests', test_path[0], 'asm_functions', 'printf.s')} {os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
+            os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib -fno-builtin-printf -fno-common -falign-functions=4 {os.path.join('tests', test_path[0], test_path[1] + extension)} {os.path.join('tests', test_path[0], 'asm_functions', 'printf.s')} {os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
     except Exception as e:
         print(f"Error compiling test {test}: {e}")
         sys.exit(1)
@@ -48,9 +48,9 @@ def run_iss(test: str) -> None:
     # try and run the ISS
     try:
         if has_dmem:
-            os.system(f"./tools/riscv_sim {elf_path} -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}")
+            os.system(f"python3 ./tools/rv_iss.py {elf_path} 0x100000 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}")
         else:
-            os.system(f"./tools/riscv_sim {elf_path} -o {os.path.join('work', test, 'iss.log')}")
+            os.system(f"python3 ./tools/rv_iss.py {elf_path} 0x100000 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}")
     except Exception as e:
         print(f"Error running ISS for test {test}: {e}")
         sys.exit(1)
@@ -171,62 +171,66 @@ def run_xsim(test: str) -> None:
 
 def compare_results(test: str) -> None:
     # Open the ISS log file
-    with open(os.path.join("work", test, "iss.log"), "r") as f:
-        iss_log = f.read()
-    # Open the XSim log file
-    with open(os.path.join("work", test, "rtl.log"), "r") as f:
-        rtl_log = f.read()
-    iss_exe = []
-    rtl_exe = []
-    for line in iss_log.split("\n"):
-        if line != "":
-            line = line.split(";") 
-            iss_exe.append({
-            'pc': line[0],
-            'instr': line[1],
-            'mnemonic': line[2],
-            'touch': line[3:]
-        })
-    for line in rtl_log.split("\n"):
-        if line != "":
-            line = line.split(";")
-            rtl_exe.append({
-                'pc': line[1],
-                'instr': line[2],
+    try:
+        with open(os.path.join("work", test, "iss.log"), "r") as f:
+            iss_log = f.read()
+        # Open the XSim log file
+        with open(os.path.join("work", test, "rtl.log"), "r") as f:
+            rtl_log = f.read()
+        iss_exe = []
+        rtl_exe = []
+        for line in iss_log.split("\n"):
+            if line != "":
+                line = line.split(";") 
+                iss_exe.append({
+                'pc': line[0],
+                'instr': line[1],
+                'mnemonic': line[2],
                 'touch': line[3:]
             })
+        for line in rtl_log.split("\n"):
+            if line != "":
+                line = line.split(";")
+                rtl_exe.append({
+                    'pc': line[1],
+                    'instr': line[2],
+                    'touch': line[3:]
+                })
 
-    # Compare the logs
-    test_passed = True
-    sim_log_path = os.path.join('work', test, 'sim.log')
-    with open(sim_log_path, 'a') as sim_log:
-        for iss_idx in range(len(iss_exe)):
-            if str(iss_exe[iss_idx]['pc']).upper() != str(rtl_exe[iss_idx]['pc']).upper():
-                sim_log.write(f"Error: PC Mismatch at PC {iss_exe[iss_idx]['pc']}\n")
-                sim_log.write(f"ISS: {iss_exe[iss_idx]['pc']}\n")
-                sim_log.write(f"RTL: {rtl_exe[iss_idx]['pc']}\n")
-                test_passed = False
-            elif str(iss_exe[iss_idx]['instr']).upper() != str(rtl_exe[iss_idx]['instr']).upper():
-                sim_log.write(f"Error: Instruction mismatch at PC {iss_exe[iss_idx]['pc']}\n")
-                sim_log.write(f"ISS: {iss_exe[iss_idx]['instr']}\n")
-                sim_log.write(f"RTL: {rtl_exe[iss_idx]['instr']}\n")
-                test_passed = False
-            # Diffetent lenght of touch
-            elif len(iss_exe[iss_idx]['touch']) != len(rtl_exe[iss_idx]['touch']):
-                sim_log.write(f"Error: Result mismatch at PC {iss_exe[iss_idx]['pc']} for instruction --> {iss_exe[iss_idx]['mnemonic']}\n")
-                sim_log.write(f"ISS: {iss_exe[iss_idx]['touch']}\n")
-                sim_log.write(f"RTL: {rtl_exe[iss_idx]['touch']}\n")
-                test_passed = False
-            # Same length, check each element
-            else:
-                for touch_idx in range(len(iss_exe[iss_idx]['touch'])):
-                    if str(iss_exe[iss_idx]['touch'][touch_idx]).upper() != str(rtl_exe[iss_idx]['touch'][touch_idx]).upper():
-                        sim_log.write(f"Error: Result mismatch at PC {iss_exe[iss_idx]['pc']} for instruction --> {iss_exe[iss_idx]['mnemonic']}\n")
-                        sim_log.write(f"ISS: {iss_exe[iss_idx]['touch'][touch_idx]}\n")
-                        sim_log.write(f"RTL: {rtl_exe[iss_idx]['touch'][touch_idx]}\n")
-                        test_passed = False
-            if not test_passed:
-                break
+        # Compare the logs
+        test_passed = True
+        sim_log_path = os.path.join('work', test, 'sim.log')
+        with open(sim_log_path, 'a') as sim_log:
+            for iss_idx in range(len(iss_exe)):
+                if str(iss_exe[iss_idx]['pc']).upper() != str(rtl_exe[iss_idx]['pc']).upper():
+                    sim_log.write(f"Error: PC Mismatch at PC {iss_exe[iss_idx]['pc']}\n")
+                    sim_log.write(f"ISS: {iss_exe[iss_idx]['pc']}\n")
+                    sim_log.write(f"RTL: {rtl_exe[iss_idx]['pc']}\n")
+                    test_passed = False
+                elif str(iss_exe[iss_idx]['instr']).upper() != str(rtl_exe[iss_idx]['instr']).upper():
+                    sim_log.write(f"Error: Instruction mismatch at PC {iss_exe[iss_idx]['pc']}\n")
+                    sim_log.write(f"ISS: {iss_exe[iss_idx]['instr']}\n")
+                    sim_log.write(f"RTL: {rtl_exe[iss_idx]['instr']}\n")
+                    test_passed = False
+                # Diffetent lenght of touch
+                elif len(iss_exe[iss_idx]['touch']) != len(rtl_exe[iss_idx]['touch']):
+                    sim_log.write(f"Error: Result mismatch at PC {iss_exe[iss_idx]['pc']} for instruction --> {iss_exe[iss_idx]['mnemonic']}\n")
+                    sim_log.write(f"ISS: {iss_exe[iss_idx]['touch']}\n")
+                    sim_log.write(f"RTL: {rtl_exe[iss_idx]['touch']}\n")
+                    test_passed = False
+                # Same length, check each element
+                else:
+                    for touch_idx in range(len(iss_exe[iss_idx]['touch'])):
+                        if str(iss_exe[iss_idx]['touch'][touch_idx]).upper() != str(rtl_exe[iss_idx]['touch'][touch_idx]).upper():
+                            sim_log.write(f"Error: Result mismatch at PC {iss_exe[iss_idx]['pc']} for instruction --> {iss_exe[iss_idx]['mnemonic']}\n")
+                            sim_log.write(f"ISS: {iss_exe[iss_idx]['touch'][touch_idx]}\n")
+                            sim_log.write(f"RTL: {rtl_exe[iss_idx]['touch'][touch_idx]}\n")
+                            test_passed = False
+                if not test_passed:
+                    break
+    except:
+        test_passed = False
+
     if test_passed:
         print(f"{test} {'.' * (50 - len(test))}. \033[92mPASSED\033[0m")
     else:
