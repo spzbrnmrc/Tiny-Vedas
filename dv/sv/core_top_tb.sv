@@ -55,6 +55,8 @@ module core_top_tb;
 
   int              fd;
   int              fd_console;
+
+  logic            reset_last_retired = 0;
   /* DUT Instantiation */
   core_top #(
       .ICCM_INIT_FILE          (ICCM_INIT_FILE),
@@ -94,13 +96,13 @@ module core_top_tb;
   end
 
 
-  logic [31:0] cycle_count_last_retired;
+  logic [31:0] cycle_count_last_retired = 0;
   always_ff @(posedge clk) begin
     if (finish_seq_detected) begin
       $finish;
     end
-    if (cycle_count_last_retired > 1000) begin
-      $fdisplay(fd, "Nothing retired in 1000 cycles... Aborting");
+    if (cycle_count_last_retired > 10000) begin
+      $fdisplay(fd, "[%d] Nothing retired in 10000 cycles... Aborting", cycle_count);
       $finish;
     end
   end
@@ -109,36 +111,40 @@ module core_top_tb;
   always_ff @(posedge clk) begin
     if (rstn) begin
       cycle_count <= cycle_count + 1;
-      cycle_count_last_retired <= cycle_count + 1;
     end
-    if (core_top_i.exu_wb_rd_wr_en | (core_top_i.exu_inst.lsu_inst.dc2_legal & core_top_i.exu_inst.lsu_inst.dc2_store) | (core_top_i.exu_inst.lsu_inst.dc3_legal & core_top_i.exu_inst.lsu_inst.dc3_store)) begin
-      cycle_count_last_retired <= 'b0;
-    end
+    if (reset_last_retired) cycle_count_last_retired <= 32'b0;
+    else cycle_count_last_retired <= cycle_count_last_retired + 1;
+    $display("%d - reset_last_retired: %d, cycle_count_last_retired: %d", cycle_count, reset_last_retired, cycle_count_last_retired);
   end
 
   /* Use the monitor to log the log file */
   always_ff @(posedge clk) begin
+    reset_last_retired <= 'b0;
     /* Log everytime we touch the state of our core: Write to the register file, change the PC and store to memory */
     if (core_top_i.exu_wb_rd_wr_en & ~core_top_i.ifu_inst.pc_load) begin  /* Hierarchical naming */
       $fdisplay(fd, "%5d;0x%H;0x%H;x%0D=0x%H", cycle_count, core_top_i.exu_instr_tag_out,
                 core_top_i.exu_instr_out, core_top_i.exu_wb_rd_addr, core_top_i.exu_wb_data);
+      reset_last_retired <= 1'b1;
     end
     if (core_top_i.exu_wb_rd_wr_en & core_top_i.ifu_inst.pc_load) begin  /* JAL/JALR */
       $fdisplay(fd, "%5d;0x%H;0x%H;x%0D=0x%H;pc=0x%H", cycle_count, core_top_i.exu_instr_tag_out,
                 core_top_i.exu_instr_out, core_top_i.exu_wb_rd_addr, core_top_i.exu_wb_data,
                 core_top_i.ifu_inst.pc_exu);
+      reset_last_retired <= 1'b1;
     end
 
     if (~core_top_i.exu_inst.alu_wb_rd_wr_en & core_top_i.ifu_inst.pc_load) begin  /* BEQ/BNE/BGE/BLT/BLTU/BGEU taken */
       $fdisplay(fd, "%5d;0x%H;0x%H;taken=true;pc=0x%H", cycle_count,
                 core_top_i.exu_inst.alu_instr_tag_out, core_top_i.exu_inst.alu_instr_out,
                 core_top_i.ifu_inst.pc_exu);
+      reset_last_retired <= 1'b1;
     end
 
     if (core_top_i.exu_inst.alu_inst.alu_ctrl.condbr & ~core_top_i.exu_inst.alu_inst.brn_taken & core_top_i.exu_inst.alu_inst.alu_ctrl.legal) begin  /* BEQ/BNE/BGE/BLT/BLTU/BGEU not taken */
       $fdisplay(fd, "%5d;0x%H;0x%H;taken=false", cycle_count,
                 core_top_i.exu_inst.alu_inst.alu_ctrl.instr_tag,
                 core_top_i.exu_inst.alu_inst.alu_ctrl.instr);
+      reset_last_retired <= 1'b1;
     end
 
     if (core_top_i.exu_inst.lsu_inst.dc2_legal & core_top_i.exu_inst.lsu_inst.dc2_store) begin
@@ -148,6 +154,7 @@ module core_top_tb;
           core_top_i.exu_inst.lsu_inst.dc2_lsu_instr_out,
           core_top_i.exu_inst.lsu_inst.dc2_computed_addr,
           core_top_i.exu_inst.lsu_inst.dc2_store_buffer[XLEN-1:0] & core_top_i.exu_inst.lsu_inst.dc2_store_mask_base[XLEN-1:0]);
+      reset_last_retired <= 1'b1;
     end
 
     if (core_top_i.exu_inst.lsu_inst.dc3_legal & core_top_i.exu_inst.lsu_inst.dc3_store & core_top_i.exu_inst.lsu_inst.dc3_unaligned_addr) begin
@@ -157,6 +164,7 @@ module core_top_tb;
           core_top_i.exu_inst.lsu_inst.dc3_lsu_instr_out,
           core_top_i.exu_inst.lsu_inst.dc3_computed_addr,
           core_top_i.exu_inst.lsu_inst.dc3_store_buffer[XLEN-1:0] & core_top_i.exu_inst.lsu_inst.dc3_wb_data_mask[XLEN-1:0]);
+      reset_last_retired <= 1'b1;
     end
   end
 

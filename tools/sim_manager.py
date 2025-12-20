@@ -20,10 +20,10 @@ def run_gen(test: str) -> None:
     os.makedirs(f"work/{test}", exist_ok=True)
     test_path = test.split(".")
     extension = ""
-    if test_path[0] == "asm":
-        extension = ".s"
-    elif test_path[0] == "c":
+    if test_path[0] == "c":
         extension = ".c"
+    else:
+         extension = ".s"
     # Try and compile the test, if it fails, print the error and exit
     try:
         if extension == ".s":
