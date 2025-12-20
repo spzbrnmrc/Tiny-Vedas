@@ -652,7 +652,7 @@ class RISC_V_ISS:
             
             # Load other sections (data, rodata, etc.)
             for section in elf.iter_sections():
-                if section.name in ['.data', '.rodata', '.bss'] and section.data_size > 0:
+                if section.name in ['.data', '.rodata', '.bss', '.sdata'] and section.data_size > 0:
                     addr = section['sh_addr']
                     data = section.data()
                     self.mem.load_data(addr, data)

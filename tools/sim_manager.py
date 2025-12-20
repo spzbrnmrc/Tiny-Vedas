@@ -11,8 +11,8 @@ import concurrent.futures
 import multiprocessing
 import traceback
 
-IMEM_DEPTH = 1024
-DMEM_DEPTH = 1024
+IMEM_DEPTH = 2 ** 16
+DMEM_DEPTH = 2 ** 16
 
 def run_gen(test: str) -> None:
     """Run the generator for a test."""
@@ -120,6 +120,31 @@ def prepare_imem(test: str) -> None:
             with open(dmem_path, "w") as f:
                 for i in range(0, DMEM_DEPTH, 4):
                     word = rodata_new[i:i+4]
+                    hex_str = '{:08x}'.format(int.from_bytes(word, byteorder='little'))
+                    f.write(f"{hex_str}\n")
+        
+        # Generate the data memory from the .sdata section
+        sdata_section = elf.get_section_by_name('.sdata')
+        # Get the address of the .sdata section
+        if sdata_section:
+            sdata_new = []
+            sdata_address = sdata_section.header['sh_addr']
+            sdata_base_address = sdata_address - 0x100000
+            sdata_data = sdata_section.data()
+            if len(sdata_data) > DMEM_DEPTH:
+                print(f"Warning: Data memory truncated to {DMEM_DEPTH} bytes")
+                sdata_data = sdata_data[:DMEM_DEPTH]
+            if sdata_base_address > 0:
+                # Fill with zeros
+                for i in range(sdata_base_address):
+                    sdata_new.append(0)
+                for i in range(len(sdata_data)):
+                    sdata_new.append(sdata_data[i])
+                for i in range(DMEM_DEPTH - len(sdata_new)):
+                    sdata_new.append(0)
+            with open(dmem_path, "w") as f:
+                for i in range(0, DMEM_DEPTH, 4):
+                    word = sdata_new[i:i+4]
                     hex_str = '{:08x}'.format(int.from_bytes(word, byteorder='little'))
                     f.write(f"{hex_str}\n")
             

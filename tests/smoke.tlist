@@ -18,3 +18,4 @@ asm.basic_bge
 c.helloworld
 c.iaxpy
 dhrystone.snip_1
+dhrystone.snip_2

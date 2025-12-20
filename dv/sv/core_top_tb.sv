@@ -114,7 +114,6 @@ module core_top_tb;
     end
     if (reset_last_retired) cycle_count_last_retired <= 32'b0;
     else cycle_count_last_retired <= cycle_count_last_retired + 1;
-    $display("%d - reset_last_retired: %d, cycle_count_last_retired: %d", cycle_count, reset_last_retired, cycle_count_last_retired);
   end
 
   /* Use the monitor to log the log file */
