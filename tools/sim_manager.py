@@ -30,11 +30,29 @@ def run_gen(test: str) -> None:
             os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib {os.path.join('tests', test_path[0], test_path[1] + extension)} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
         elif extension == ".c":
             os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib -fno-builtin-printf -fno-common -falign-functions=4 {os.path.join('tests', test_path[0], test_path[1] + extension)} {os.path.join('tests', test_path[0], 'asm_functions', 'printf.s')} {os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
+
+    # Get the reset vector from the elf file --> beginning of the _start function
+    # Get the reset vector (address of _start) from the ELF file
+        elf_path = os.path.join("work", test, "test.elf")
+        with open(elf_path, "rb") as f:
+            elf = ELFFile(f)
+            symtab = elf.get_section_by_name('.symtab')
+            if symtab is None:
+                raise RuntimeError("No symbol table found in ELF file")
+            reset_vector = None
+            for symbol in symtab.iter_symbols():
+                if symbol.name == "_start":
+                    reset_vector = symbol['st_value']
+                    return reset_vector
+            if reset_vector is None:
+                raise RuntimeError("Could not find _start symbol in ELF file")
+            # You can now use reset_vector as needed (for debugging, logging, etc.)
+            # print(f"Reset vector for {test}: 0x{reset_vector:X}")
     except Exception as e:
         print(f"Error compiling test {test}: {e}")
         sys.exit(1)
 
-def run_iss(test: str) -> None:
+def run_iss(test: str, reset_vector: int) -> None:
     """Run the ISS for a test."""
     # Create the folder for the test
     elf_path = os.path.join("work", test, "test.elf")
@@ -48,9 +66,9 @@ def run_iss(test: str) -> None:
     # try and run the ISS
     try:
         if has_dmem:
-            os.system(f"python3 ./tools/rv_iss.py {elf_path} 0x100000 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}")
+            os.system(f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}")
         else:
-            os.system(f"python3 ./tools/rv_iss.py {elf_path} 0x100000 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}")
+            os.system(f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}")
     except Exception as e:
         print(f"Error running ISS for test {test}: {e}")
         sys.exit(1)
@@ -124,10 +142,10 @@ def read_task_list(filename: str) -> List[str]:
         print(f"Error reading task list file: {e}")
         return []
 
-def run_verilator(test: str) -> None:
+def run_verilator(test: str, reset_vector: int) -> None:
     """Execute Verilator simulation."""
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
-    verilator_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && verilator --cc --trace --trace-structs --build --timing --top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp -f $PROJ/rtl/core_top.flist -DICCM_INIT_FILE='\"imem.hex\"' -DRESET_VECTOR=32\\'h100000 -DSTACK_POINTER_INIT_VALUE=32\\'h80000000"
+    verilator_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && verilator --cc --trace --trace-structs --build --timing --top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp -f $PROJ/rtl/core_top.flist -DICCM_INIT_FILE='\"imem.hex\"' -DRESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} -DSTACK_POINTER_INIT_VALUE=32\\'h80000000"
     if has_dmem:
         verilator_cmd += f" -DDCCM_INIT_FILE='\"dmem.hex\"'"
     else:
@@ -147,10 +165,10 @@ def run_verilator(test: str) -> None:
             sim_log.close()
             sys.exit(1)
     
-def run_xsim(test: str) -> None:
+def run_xsim(test: str, reset_vector: int) -> None:
     """Execute XSim simulation."""
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
-    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h100000 --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
+    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
     if has_dmem:
         xsim_cmd += f" --define DCCM_INIT_FILE='\"dmem.hex\"'"
     else:
@@ -274,13 +292,13 @@ def process_rtl_log(test: str):
 def run_e2e(test: str, simulator: str):
     """Run a test through the entire pipeline."""
     try:
-        run_gen(test)
-        run_iss(test)
+        reset_vector = run_gen(test)
+        run_iss(test, reset_vector)
         prepare_imem(test)
         if simulator == "verilator":
-            run_verilator(test)
+            run_verilator(test, reset_vector)
         else:
-            run_xsim(test)
+            run_xsim(test, reset_vector)
         process_rtl_log(test)
         compare_results(test)
     except Exception as e:
