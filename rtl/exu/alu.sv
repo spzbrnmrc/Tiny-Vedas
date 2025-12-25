@@ -89,7 +89,9 @@ module alu (
 
   assign a = (alu_ctrl.jal | (alu_ctrl.pc & alu_ctrl.add)) ? alu_ctrl.instr_tag : alu_ctrl.rs1_data;
 
-  assign b = ({XLEN{alu_ctrl.imm_valid}} & alu_ctrl.imm) |
+  assign b = 
+             ({XLEN{alu_ctrl.jal}} & {{XLEN-3{1'b0}}, 3'b100}) |
+             ({XLEN{alu_ctrl.imm_valid & ~alu_ctrl.jal}} & alu_ctrl.imm) |
              ({XLEN{alu_ctrl.shimm5}} & {{(XLEN-5){1'b0}}, alu_ctrl.shamt[$clog2(
       XLEN
   )-1:0]}) | ({XLEN{alu_ctrl.rs2}} & alu_ctrl.rs2_data) | ({XLEN{alu_ctrl.jal}} & 32'h00000004);

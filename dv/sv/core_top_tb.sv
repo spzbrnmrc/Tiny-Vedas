@@ -152,7 +152,7 @@ module core_top_tb;
           core_top_i.exu_inst.lsu_inst.dc2_lsu_instr_tag_out,
           core_top_i.exu_inst.lsu_inst.dc2_lsu_instr_out,
           core_top_i.exu_inst.lsu_inst.dc2_computed_addr,
-          core_top_i.exu_inst.lsu_inst.dc2_store_buffer[XLEN-1:0] & core_top_i.exu_inst.lsu_inst.dc2_store_mask_base[XLEN-1:0]);
+          (core_top_i.exu_inst.lsu_inst.dc2_store_buffer[XLEN-1:0] >> {core_top_i.exu_inst.lsu_inst.dc2_computed_addr[1:0], 3'b000}) & core_top_i.exu_inst.lsu_inst.dc2_store_mask_base[XLEN-1:0]);
       reset_last_retired <= 1'b1;
     end
 
@@ -163,6 +163,12 @@ module core_top_tb;
           core_top_i.exu_inst.lsu_inst.dc3_lsu_instr_out,
           core_top_i.exu_inst.lsu_inst.dc3_computed_addr,
           core_top_i.exu_inst.lsu_inst.dc3_store_buffer[XLEN-1:0] & core_top_i.exu_inst.lsu_inst.dc3_wb_data_mask[XLEN-1:0]);
+      reset_last_retired <= 1'b1;
+    end
+
+    if (core_top_i.exu_inst.ecall_exe) begin  /* Hierarchical naming */
+      $fdisplay(fd, "%5d;0x%H;0x%H;ecall", cycle_count, core_top_i.exu_instr_tag_out,
+                core_top_i.exu_instr_out);
       reset_last_retired <= 1'b1;
     end
   end

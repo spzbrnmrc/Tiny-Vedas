@@ -595,16 +595,20 @@ class RISC_V_ISS:
         elif opcode == 0x73:
             if funct3 == 0:
                 if imm == 0:  # ECALL
-                    should_continue = False
+                    should_continue = True
                     resources.append("ecall")
                 elif imm == 1:  # EBREAK
-                    should_continue = False
+                    should_continue = True
                     resources.append("ebreak")
         
         # FENCE
         elif opcode == 0x0F:
             # FENCE is a NOP for our purposes
             pass
+        
+        # Invalid instruction
+        #else:
+        #    raise ValueError(f"Invalid instruction: 0x{inst:08X} at PC 0x{self.pc:08X} (opcode: 0x{opcode:02X})")
         
         # Update PC (unless it was modified by branch/jump)
         if opcode not in [0x6F, 0x67, 0x63]:
@@ -641,24 +645,36 @@ class RISC_V_ISS:
         with open(elf_file, 'rb') as f:
             elf = ELFFile(f)
             
+            # Get entry point and text section base from ELF
+            entry_point = elf.header['e_entry']
+            
             # Load text section
             text_section = elf.get_section_by_name('.text')
             if text_section is None:
                 raise ValueError("No .text section found in ELF file")
             
+            text_section_addr = text_section['sh_addr']
             text_data = text_section.data()
             text_size = len(text_data)
-            self.mem.load_data(self.text_start, text_data)
+            
+            # Load text section into memory at its ELF base address (word-aligned array)
+            self.mem.load_data(text_section_addr, text_data)
             
             # Load other sections (data, rodata, etc.)
             for section in elf.iter_sections():
-                if section.name in ['.data', '.rodata', '.bss', '.sdata'] and section.data_size > 0:
+                if section.name in ['.data', '.rodata', '.bss', '.sdata', ".init_array", ".fini_array"] and section.data_size > 0:
                     addr = section['sh_addr']
                     data = section.data()
                     self.mem.load_data(addr, data)
         
-        # Calculate text section end address
-        text_end = self.text_start + text_size
+        # Entry point from command line (self.text_start) is >= text_section_addr
+        # Since we loaded at text_section_addr, PC is simply the entry point
+        self.pc = self.text_start
+        
+        # Text section bounds (where we actually loaded it - from ELF, not entry point)
+        # This allows jumping backwards to instructions before the entry point
+        text_start_addr = text_section_addr
+        text_end_addr = text_section_addr + text_size
         
         # Execute instructions
         trace_lines = []
@@ -667,13 +683,17 @@ class RISC_V_ISS:
         
         while instruction_count < max_instructions:
             # Check if PC is within text section bounds before fetching
-            if self.pc < self.text_start or self.pc >= text_end:
-                # PC is outside the loaded text section, stop execution
+            # Only execute instructions from the actual text section address range
+            if self.pc < text_start_addr or self.pc >= text_end_addr:
+                # PC is outside the text section, stop execution
                 break
             
             # Fetch instruction
             if self.pc % 4 != 0:
                 raise ValueError(f"Misaligned PC: 0x{self.pc:08X}")
+            
+            # Save PC immediately after checking alignment (before fetching)
+            instruction_pc = self.pc
             
             inst = self.mem.read_word(self.pc)
             
@@ -692,9 +712,6 @@ class RISC_V_ISS:
                     break
                 instruction_count += 1
                 continue
-            
-            # Save PC before execution (for trace output)
-            instruction_pc = self.pc
             
             # Decode
             opcode, fields = self.decode_instruction(inst)

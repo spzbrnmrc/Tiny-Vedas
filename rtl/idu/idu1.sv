@@ -143,6 +143,7 @@ module idu1 #(
   assign idu1_out_i.div = idu0_out.div;
   assign idu1_out_i.rem = idu0_out.rem;
   assign idu1_out_i.nop = idu0_out.nop;
+  assign idu1_out_i.ecall = idu0_out.ecall;
   assign idu1_out_i.legal = idu0_out.legal;
 
   register_en_flush_sync_rstn #(

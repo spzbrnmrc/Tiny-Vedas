@@ -88,6 +88,7 @@ typedef struct packed {
   logic div;
   logic rem;
   logic nop;
+  logic ecall;
   logic legal;
 } idu0_out_t;
 
@@ -142,6 +143,7 @@ typedef struct packed {
   logic div;
   logic rem;
   logic nop;
+  logic ecall;
   logic legal;
 } idu1_out_t;
 

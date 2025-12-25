@@ -131,6 +131,7 @@ module idu0 (
   assign idu0_out_i.div = decode_out.div;
   assign idu0_out_i.rem = decode_out.rem;
   assign idu0_out_i.nop = decode_out.nop;
+  assign idu0_out_i.ecall = decode_out.ecall;
   assign idu0_out_i.legal = decode_out.legal;
 
   /* Output Flop */

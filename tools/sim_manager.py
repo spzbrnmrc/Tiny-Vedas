@@ -22,14 +22,20 @@ def run_gen(test: str) -> None:
     extension = ""
     if test_path[0] == "c":
         extension = ".c"
-    else:
-         extension = ".s"
+    elif test_path[0] == "asm":
+        extension = ".s"
+    elif test_path[0] == "elf":
+        extension == None
     # Try and compile the test, if it fails, print the error and exit
     try:
         if extension == ".s":
             os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib {os.path.join('tests', test_path[0], test_path[1] + extension)} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
         elif extension == ".c":
             os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib -fno-builtin-printf -fno-common -falign-functions=4 {os.path.join('tests', test_path[0], test_path[1] + extension)} {os.path.join('tests', test_path[0], 'asm_functions', 'printf.s')} {os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
+        else:
+            os.system(f"cp {os.path.join('tests', test_path[0], test_path[1])} work/{test}/test.elf")
+
+        os.system(f"riscv64-unknown-elf-objdump  -D work/{test}/test.elf > work/{test}/test.dump")
 
     # Get the reset vector from the elf file --> beginning of the _start function
     # Get the reset vector (address of _start) from the ELF file
@@ -65,10 +71,16 @@ def run_iss(test: str, reset_vector: int) -> None:
         shutil.copy(dmem_path, os.path.join("work", test, "dmem.hex"))
     # try and run the ISS
     try:
+        import subprocess
+        cmd = ""
         if has_dmem:
-            os.system(f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}")
+            cmd = f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
         else:
-            os.system(f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}")
+            cmd = f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}"
+        result = subprocess.run(cmd, shell=True)
+        if result.returncode != 0:
+            print(f"ISS returned error code {result.returncode} for test {test}. See iss.log for details.")
+            sys.exit(1)
     except Exception as e:
         print(f"Error running ISS for test {test}: {e}")
         sys.exit(1)
@@ -78,6 +90,8 @@ def prepare_imem(test: str) -> None:
     imem_path = os.path.join("work", test, "imem.hex")
     dmem_path = os.path.join("work", test, "dmem.hex")
     elf_path = os.path.join("work", test, "test.elf")
+
+    test_path = test.split(".")
     
     # Read the ELF file using elftools
     with open(elf_path, 'rb') as f:
@@ -98,57 +112,43 @@ def prepare_imem(test: str) -> None:
         if len(imem_data) < IMEM_DEPTH:
             imem_data = imem_data + b'\x00' * (IMEM_DEPTH - len(imem_data))
         
-        # Generate the data memory from the .rodata section
-        rodata_section = elf.get_section_by_name('.rodata')
-        # Get the address of the .rodata section
-        if rodata_section:
-            rodata_new = []
-            rodata_address = rodata_section.header['sh_addr']
-            rodata_base_address = rodata_address - 0x100000
-            rodata_data = rodata_section.data()
-            if len(rodata_data) > DMEM_DEPTH:
-                print(f"Warning: Data memory truncated to {DMEM_DEPTH} bytes")
-                rodata_data = rodata_data[:DMEM_DEPTH]
-            if rodata_base_address > 0:
-                # Fill with zeros
-                for i in range(rodata_base_address):
-                    rodata_new.append(0)
-                for i in range(len(rodata_data)):
-                    rodata_new.append(rodata_data[i])
-                for i in range(DMEM_DEPTH - len(rodata_new)):
-                    rodata_new.append(0)
-            with open(dmem_path, "w") as f:
+        # Build a single data memory image containing all relevant sections
+        dmem_image = bytearray(b'\x00' * DMEM_DEPTH)
+
+        # Helper to copy data from a section into dmem_image at correct offset
+        def copy_section_to_dmem(section):
+            if not section:
+                return
+            base_addr = section.header['sh_addr'] - 0x100000
+            data = section.data()
+            if base_addr < 0 or base_addr >= DMEM_DEPTH:
+                print(f"Warning: Section {section.name} base address 0x{base_addr+0x100000:x} (offset {base_addr}) out of DMEM image range")
+                return
+            max_bytes = min(len(data), DMEM_DEPTH - base_addr)
+            dmem_image[base_addr:base_addr+max_bytes] = data[:max_bytes]
+            if len(data) > max_bytes:
+                print(f"Warning: Section {section.name} truncated in DMEM file to {max_bytes} bytes")
+
+        # Copy all relevant sections in any order; later sections may overwrite overlapping regions.
+        for secname in ['.data', '.rodata', '.sdata', '.init_array']:
+            sec = elf.get_section_by_name(secname)
+            copy_section_to_dmem(sec)
+
+        # Write out the merged DMEM image, 4 bytes per line, little-endian words
+        with open(dmem_path, "w") as f:
+            dmem_path = os.path.join("tests", test_path[0], test_path[1] + ".mem")
+            has_dmem = os.path.exists(dmem_path)
+            if has_dmem:
+                os.system(f"cp {dmem_path} work/{test}/dmem.hex") 
+            else:
                 for i in range(0, DMEM_DEPTH, 4):
-                    word = rodata_new[i:i+4]
+                    word = dmem_image[i:i+4]
+                    # If less than 4 bytes (should not happen), pad with zeros
+                    if len(word) < 4:
+                        word = word + b'\x00' * (4 - len(word))
                     hex_str = '{:08x}'.format(int.from_bytes(word, byteorder='little'))
                     f.write(f"{hex_str}\n")
-        
-        # Generate the data memory from the .sdata section
-        sdata_section = elf.get_section_by_name('.sdata')
-        # Get the address of the .sdata section
-        if sdata_section:
-            sdata_new = []
-            sdata_address = sdata_section.header['sh_addr']
-            sdata_base_address = sdata_address - 0x100000
-            sdata_data = sdata_section.data()
-            if len(sdata_data) > DMEM_DEPTH:
-                print(f"Warning: Data memory truncated to {DMEM_DEPTH} bytes")
-                sdata_data = sdata_data[:DMEM_DEPTH]
-            if sdata_base_address > 0:
-                # Fill with zeros
-                for i in range(sdata_base_address):
-                    sdata_new.append(0)
-                for i in range(len(sdata_data)):
-                    sdata_new.append(sdata_data[i])
-                for i in range(DMEM_DEPTH - len(sdata_new)):
-                    sdata_new.append(0)
-            with open(dmem_path, "w") as f:
-                for i in range(0, DMEM_DEPTH, 4):
-                    word = sdata_new[i:i+4]
-                    hex_str = '{:08x}'.format(int.from_bytes(word, byteorder='little'))
-                    f.write(f"{hex_str}\n")
-            
-            
+
     # Write the instruction memory as hex, 4 bytes per line
     with open(imem_path, "w") as f:
         for i in range(0, IMEM_DEPTH, 4):
@@ -300,7 +300,7 @@ def process_rtl_log(test: str):
             # First store: mem[0xE]=0xBABE (lower 2 bytes)
             # Second store: mem[0x10]=0xCAFE (higher 2 bytes)
             # We need to merge them to get: mem[0xE]=0xCAFEBABE
-            lower_bytes = effect.split("=")[1].lstrip("0x")[8-alignment*2:]
+            lower_bytes = effect.split("=")[1].lstrip("0x")[:8-alignment*2]
             higher_bytes = nxt_effect.split("=")[1].lstrip("0x")[:8-alignment*2]
             # Combine them to get the full value
             merged_value = higher_bytes + lower_bytes

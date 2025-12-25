@@ -36,5 +36,6 @@ typedef struct packed {
 	logic div;
 	logic rem;
 	logic nop;
+	logic ecall;
 	logic legal;
 } decode_out_t;

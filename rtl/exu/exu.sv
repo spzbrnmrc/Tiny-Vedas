@@ -94,6 +94,8 @@ module exu (
   logic [REG_FILE_ADDR_WIDTH-1:0] lsu_wb_rd_addr;
   logic                           lsu_wb_rd_wr_en;
 
+  logic                           ecall_exe;
+
   /* ONLY FOR DEBUG */
   logic [               XLEN-1:0] alu_instr_tag_out;
   logic [          INSTR_LEN-1:0] alu_instr_out;
@@ -103,6 +105,8 @@ module exu (
   logic [          INSTR_LEN-1:0] div_instr_out;
   logic [               XLEN-1:0] lsu_instr_tag_out;
   logic [          INSTR_LEN-1:0] lsu_instr_out;
+  logic [               XLEN-1:0] ecall_instr_tag_out;
+  logic [          INSTR_LEN-1:0] ecall_instr_out;
 
   alu alu_inst (
       .clk            (clk),
@@ -167,12 +171,22 @@ module exu (
       .lsu_dccm_wdata     (dccm_wdata)
   );
 
-  assign exu_wb_data = ({XLEN{alu_wb_rd_wr_en}} & alu_wb_data) | 
-                       ({XLEN{mul_wb_rd_wr_en}} & mul_wb_data) | 
+  /* Handle ECALL */
+  register_sync_rstn #(
+      .WIDTH($bits({idu1_out.ecall, idu1_out.instr_tag, idu1_out.instr}))
+  ) ecall_reg (
+      .clk (clk),
+      .rstn(rstn),
+      .din ({idu1_out.ecall & idu1_out.legal, idu1_out.instr_tag, idu1_out.instr}),
+      .dout({ecall_exe, ecall_instr_tag_out, ecall_instr_out})
+  );
+
+  assign exu_wb_data = ({XLEN{alu_wb_rd_wr_en}} & alu_wb_data) |
+                       ({XLEN{mul_wb_rd_wr_en}} & mul_wb_data) |
                        ({XLEN{div_wb_rd_wr_en}} & div_wb_data) |
                        ({XLEN{lsu_wb_rd_wr_en}} & lsu_wb_data);
 
-  assign exu_wb_rd_addr = ({REG_FILE_ADDR_WIDTH{alu_wb_rd_wr_en}} & alu_wb_rd_addr) | 
+  assign exu_wb_rd_addr = ({REG_FILE_ADDR_WIDTH{alu_wb_rd_wr_en}} & alu_wb_rd_addr) |
                           ({REG_FILE_ADDR_WIDTH{mul_wb_rd_wr_en}} & mul_wb_rd_addr) | 
                           ({REG_FILE_ADDR_WIDTH{div_wb_rd_wr_en}} & div_wb_rd_addr) |
                           ({REG_FILE_ADDR_WIDTH{lsu_wb_rd_wr_en}} & lsu_wb_rd_addr);
@@ -183,11 +197,13 @@ module exu (
   assign instr_tag_out = ({XLEN{alu_wb_rd_wr_en}} & alu_instr_tag_out) | 
                          ({XLEN{mul_wb_rd_wr_en}} & mul_instr_tag_out) | 
                          ({XLEN{div_wb_rd_wr_en}} & div_instr_tag_out) |
-                         ({XLEN{lsu_wb_rd_wr_en}} & lsu_instr_tag_out);
+                         ({XLEN{lsu_wb_rd_wr_en}} & lsu_instr_tag_out) |
+                         ({XLEN{ecall_exe}} & ecall_instr_tag_out);
 
   assign instr_out = ({INSTR_LEN{alu_wb_rd_wr_en}} & alu_instr_out) | 
                      ({INSTR_LEN{mul_wb_rd_wr_en}} & mul_instr_out) | 
                      ({INSTR_LEN{div_wb_rd_wr_en}} & div_instr_out) |
-                     ({INSTR_LEN{lsu_wb_rd_wr_en}} & lsu_instr_out);
+                     ({INSTR_LEN{lsu_wb_rd_wr_en}} & lsu_instr_out) |
+                     ({INSTR_LEN{ecall_exe}} & ecall_instr_out) ;
 
 endmodule
