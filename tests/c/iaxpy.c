@@ -2,7 +2,7 @@
 
 extern void eot_sequence();
 
-void _start() {
+int main() {
     int y[LOOP_CNT] = {1, 2, 3};
     int x[LOOP_CNT] = {1, 2, 3};
     int a = 3;
@@ -11,5 +11,6 @@ void _start() {
         y[i] = a*x[i]+y[i];
     }
     eot_sequence();
+    return 0;
 
 }

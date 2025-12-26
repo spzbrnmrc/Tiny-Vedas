@@ -210,14 +210,11 @@ module idu1 #(
   */
   always_comb begin : pipe_stall_management
     pipe_stall = 1'b0;
-    if (last_issued_instr.mul & ~idu1_out_gated.mul & idu1_out_gated.legal & ~idu1_out_gated.nop) begin
-      pipe_stall = exu_mul_busy;
-    end
-    else if (last_issued_instr.mul & idu1_out_gated.mul & ((last_issued_instr.rd_addr == idu1_out_gated.rs1_addr) | (last_issued_instr.rd_addr == idu1_out_gated.rs2_addr)) & idu1_out_gated.legal & ~idu1_out_gated.nop) begin
+    if (last_issued_instr.mul & idu1_out_gated.legal & ~idu1_out_gated.nop) begin /* Always Stall after MUL operations */
       pipe_stall = exu_mul_busy;
     end else if (last_issued_instr.div) begin
       pipe_stall = exu_div_busy;
-    end else if (last_issued_instr.lsu & idu1_out_gated.legal & ~idu1_out_gated.nop) begin /* Always stall LSU operations */
+    end else if (last_issued_instr.lsu & idu1_out_gated.legal & ~idu1_out_gated.nop) begin /* Always stall after LSU operations */
       pipe_stall = exu_lsu_busy;
     end
     pipe_stall |= exu_lsu_stall;

@@ -1,7 +1,9 @@
-extern void printf(const char *format, ...);
+extern void vedas_printf(const char *format, ...);
 extern void eot_sequence();
 
-void _start() {
-    printf("Hello, World!\n");
+int main() {
+    vedas_printf("Hello, World!\n");
+    vedas_printf("Number is %d\n", 100);
     eot_sequence();
+    return 0;
 }
