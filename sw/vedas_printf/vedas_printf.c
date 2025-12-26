@@ -72,6 +72,15 @@ void vedas_printf(const char *fmt, ...) {
         for (int j = 0; j < n; j++) {
           uart_write(s[j]);
         }
+      } else if (*(fmt + 1) == 'c') {
+        char c = (char)va_arg(args, int);
+        uart_write(c);
+      } else if (*(fmt + 1) == 's') {
+        char *s = va_arg(args, char *);
+        while (*s != '\0') {
+          uart_write(*s);
+          ++s;
+        }
       }
       ++fmt;
     } else {

@@ -10,9 +10,10 @@ import shutil
 import concurrent.futures
 import multiprocessing
 import traceback
+from tqdm import tqdm
 
-IMEM_DEPTH = 2 ** 16
-DMEM_DEPTH = 2 ** 16
+IMEM_DEPTH = 2 ** 18
+DMEM_DEPTH = 2 ** 18
 
 def run_gen(test: str) -> None:
     """Run the generator for a test."""
@@ -212,39 +213,54 @@ def run_xsim(test: str, reset_vector: int) -> None:
             sim_log.close()
             sys.exit(1)
 
-def compare_results(test: str) -> None:
-    # Open the ISS log file
-    try:
-        with open(os.path.join("work", test, "iss.log"), "r") as f:
-            iss_log = f.read()
-        # Open the XSim log file
-        with open(os.path.join("work", test, "rtl.log"), "r") as f:
-            rtl_log = f.read()
-        iss_exe = []
-        rtl_exe = []
-        for line in iss_log.split("\n"):
-            if line != "":
-                line = line.split(";") 
-                iss_exe.append({
+def read_iss_log(test: str):
+    """Read and parse ISS log file."""
+    with open(os.path.join("work", test, "iss.log"), "r") as f:
+        iss_log = f.read()
+    iss_exe = []
+    for line in iss_log.split("\n"):
+        if line != "":
+            line = line.split(";") 
+            iss_exe.append({
                 'pc': line[0],
                 'instr': line[1],
                 'mnemonic': line[2],
                 'touch': line[3:]
             })
-        for line in rtl_log.split("\n"):
-            if line != "":
-                line = line.split(";")
-                rtl_exe.append({
-                    'pc': line[1],
-                    'instr': line[2],
-                    'touch': line[3:]
-                })
+    return iss_exe
+
+def read_rtl_log(test: str):
+    """Read and parse RTL log file."""
+    with open(os.path.join("work", test, "rtl.log"), "r") as f:
+        rtl_log = f.read()
+    rtl_exe = []
+    for line in rtl_log.split("\n"):
+        if line != "":
+            line = line.split(";")
+            rtl_exe.append({
+                'pc': line[1],
+                'instr': line[2],
+                'touch': line[3:]
+            })
+    return rtl_exe
+
+def compare_results(test: str) -> None:
+    # Read both log files in parallel using threads
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            iss_future = executor.submit(read_iss_log, test)
+            rtl_future = executor.submit(read_rtl_log, test)
+            
+            # Wait for both to complete
+            iss_exe = iss_future.result()
+            rtl_exe = rtl_future.result()
 
         # Compare the logs
         test_passed = True
         sim_log_path = os.path.join('work', test, 'sim.log')
         with open(sim_log_path, 'a') as sim_log:
-            for iss_idx in range(len(iss_exe)):
+            pbar = tqdm(range(len(iss_exe)), desc=f"Comparing {test}", unit="instr", ncols=100, leave=False)
+            for iss_idx in pbar:
                 if str(iss_exe[iss_idx]['pc']).upper() != str(rtl_exe[iss_idx]['pc']).upper():
                     sim_log.write(f"Error: PC Mismatch at PC {iss_exe[iss_idx]['pc']}\n")
                     sim_log.write(f"ISS: {iss_exe[iss_idx]['pc']}\n")
@@ -275,6 +291,7 @@ def compare_results(test: str) -> None:
                             test_passed = False
                 if not test_passed:
                     break
+            pbar.close()
     except:
         test_passed = False
 
@@ -286,17 +303,34 @@ def compare_results(test: str) -> None:
 def process_rtl_log(test: str):
     """Process the RTL log file."""
     with open(os.path.join("work", test, "rtl.log"), "r") as f:
-        rtl_log = f.read()
+        rtl_lines = f.readlines()
+    
+    # Remove newlines and filter empty lines
+    rtl_lines = [line.rstrip('\n') for line in rtl_lines if line.strip()]
+    total_lines = len(rtl_lines) - 1
     line_idx = 0
-    while line_idx < len(rtl_log.split("\n"))-2:
-        line = rtl_log.split("\n")[line_idx].split(";")
-        nxt_line = rtl_log.split("\n")[line_idx + 1].split(";")
-        if line not in ["", " "] and nxt_line not in ["", " "] and line[1] == nxt_line[1] and line[2] == nxt_line[2] and "Nothing": # Merge them
-            effect = line[3]
-            nxt_effect = nxt_line[3]
+    pbar = tqdm(total=total_lines, desc=f"Processing RTL log {test}", unit="line", leave=False, ncols=100)
+    
+    while line_idx < total_lines:
+        if line_idx + 1 >= len(rtl_lines):
+            break
+            
+        line_parts = rtl_lines[line_idx].split(";")
+        nxt_line_parts = rtl_lines[line_idx + 1].split(";")
+        
+        # Check if we need to merge (same PC and instruction, both have memory effects)
+        if (len(line_parts) > 3 and len(nxt_line_parts) > 3 and 
+            line_parts[1] == nxt_line_parts[1] and 
+            line_parts[2] == nxt_line_parts[2] and
+            "mem[" in line_parts[3] and "mem[" in nxt_line_parts[3]):
+            
+            effect = line_parts[3]
+            nxt_effect = nxt_line_parts[3]
+            
             # Get the memory address
             mem_addr = effect.split("[")[1].split("]")[0]
             alignment = int(mem_addr, 16) % 4
+            
             # For unaligned stores, we need to merge the two parts
             # First part is the lower bytes (at higher address)
             # Second part is the higher bytes (at lower address)
@@ -306,17 +340,27 @@ def process_rtl_log(test: str):
             # We need to merge them to get: mem[0xE]=0xCAFEBABE
             lower_bytes = effect.split("=")[1].lstrip("0x")[:8-alignment*2]
             higher_bytes = nxt_effect.split("=")[1].lstrip("0x")[:8-alignment*2]
+            
             # Combine them to get the full value
             merged_value = higher_bytes + lower_bytes
-            # Remove nxt line from rtl_log
-            rtl_log = rtl_log.replace(rtl_log.split("\n")[line_idx + 1], "")
-            # Replace the line with the merged value
-            rtl_log = rtl_log.replace(rtl_log.split("\n")[line_idx], f"{line[0]};{line[1]};{line[2]};mem[{mem_addr}]=0x{merged_value}")
+            
+            # Update the current line with merged value
+            rtl_lines[line_idx] = f"{line_parts[0]};{line_parts[1]};{line_parts[2]};mem[{mem_addr}]=0x{merged_value}"
+            
+            # Remove the next line
+            del rtl_lines[line_idx + 1]
+            total_lines -= 1
             line_idx += 1
-        line_idx += 1
+        else:
+            line_idx += 1
+        
+        pbar.update(1)
+    
+    pbar.close()
+    
     # Write the updated rtl_log
     with open(os.path.join("work", test, "rtl.log"), "w") as f:
-        f.write(rtl_log)
+        f.write("\n".join(rtl_lines))
 
 def run_e2e(test: str, simulator: str):
     """Run a test through the entire pipeline."""

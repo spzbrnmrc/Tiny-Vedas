@@ -51,12 +51,12 @@ localparam int DATA_LEN = XLEN;
 localparam int DATA_LEN_BYTES = DATA_LEN / 8;
 
 localparam int INSTR_MEM_WIDTH = XLEN;
-localparam int INSTR_MEM_DEPTH = 2 ** 16;
+localparam int INSTR_MEM_DEPTH = 2 ** 18;
 localparam int INSTR_MEM_ADDR_WIDTH = $clog2(INSTR_MEM_DEPTH * INSTR_MEM_WIDTH / 8);
 localparam int INSTR_MEM_TAG_WIDTH = XLEN;
 
 localparam int DATA_MEM_WIDTH = XLEN;
-localparam int DATA_MEM_DEPTH = 2 ** 16;
+localparam int DATA_MEM_DEPTH = 2 ** 18;
 localparam int DATA_MEM_ADDR_WIDTH = $clog2(DATA_MEM_DEPTH * DATA_MEM_WIDTH / 8);
 
 localparam int REG_FILE_DEPTH = 32;
