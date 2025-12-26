@@ -17,4 +17,4 @@ asm.basic_blt
 asm.basic_bge
 c.helloworld
 c.iaxpy
-elf.dhrystone-snip4
+elf.dhrystone-snip5

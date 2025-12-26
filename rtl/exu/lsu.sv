@@ -169,7 +169,7 @@ module lsu (
       .dout(dc1_lsu_instr_out)
   );
   assign dc1_lsu_valid = dc1_legal & (dc1_load | dc1_store);
-  assign dc1_computed_addr = dc1_rs1_data + {{XLEN - 12{~dc1_unsign & dc1_imm[11]}}, dc1_imm[11:0]};
+  assign dc1_computed_addr = dc1_rs1_data + {{XLEN - 12{dc1_imm[11]}}, dc1_imm[11:0]};
 
   /* LSU Unaligned Address Check */
   assign dc1_unaligned_addr = lsu_stall_q ? 'b0 : (|dc1_computed_addr[1:0] & dc1_word) | (&dc1_computed_addr[1:0] & dc1_half);

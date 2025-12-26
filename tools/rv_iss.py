@@ -406,7 +406,7 @@ class RISC_V_ISS:
                 val = 0
             
             self.regs.write(rd, val)
-            resources.append(f"{self.regs.get_name(rd)}=0x{self.regs.read(rd):08X}")
+            resources.append(f"{self.regs.get_name(rd)}=0x{self.regs.read(rd):08X} // Loading from 0x{addr:08X}")
         
         # Store
         elif opcode == 0x23:
@@ -666,7 +666,7 @@ class RISC_V_ISS:
                     addr = section['sh_addr']
                     data = section.data()
                     self.mem.load_data(addr, data)
-        
+
         # Entry point from command line (self.text_start) is >= text_section_addr
         # Since we loaded at text_section_addr, PC is simply the entry point
         self.pc = self.text_start

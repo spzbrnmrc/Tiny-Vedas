@@ -130,7 +130,7 @@ def prepare_imem(test: str) -> None:
                 print(f"Warning: Section {section.name} truncated in DMEM file to {max_bytes} bytes")
 
         # Copy all relevant sections in any order; later sections may overwrite overlapping regions.
-        for secname in ['.data', '.rodata', '.sdata', '.init_array']:
+        for secname in ['.data', '.rodata', '.bss', '.sdata', ".init_array", ".fini_array"]:
             sec = elf.get_section_by_name(secname)
             copy_section_to_dmem(sec)
 
@@ -147,7 +147,7 @@ def prepare_imem(test: str) -> None:
                     if len(word) < 4:
                         word = word + b'\x00' * (4 - len(word))
                     hex_str = '{:08x}'.format(int.from_bytes(word, byteorder='little'))
-                    f.write(f"{hex_str}\n")
+                    f.write(f"{hex_str}  // {hex(i)}\n")
 
     # Write the instruction memory as hex, 4 bytes per line
     with open(imem_path, "w") as f:
@@ -264,7 +264,11 @@ def compare_results(test: str) -> None:
                 # Same length, check each element
                 else:
                     for touch_idx in range(len(iss_exe[iss_idx]['touch'])):
-                        if str(iss_exe[iss_idx]['touch'][touch_idx]).upper() != str(rtl_exe[iss_idx]['touch'][touch_idx]).upper():
+                        # Remove comments after '//' from ISS value before comparison
+                        iss_touch = str(iss_exe[iss_idx]['touch'][touch_idx])
+                        iss_touch = iss_touch.split("//")[0].strip() if "//" in iss_touch else iss_touch
+                        rtl_touch = str(rtl_exe[iss_idx]['touch'][touch_idx])
+                        if iss_touch.upper() != rtl_touch.upper():
                             sim_log.write(f"Error: Result mismatch at PC {iss_exe[iss_idx]['pc']} for instruction --> {iss_exe[iss_idx]['mnemonic']}\n")
                             sim_log.write(f"ISS: {iss_exe[iss_idx]['touch'][touch_idx]}\n")
                             sim_log.write(f"RTL: {rtl_exe[iss_idx]['touch'][touch_idx]}\n")
