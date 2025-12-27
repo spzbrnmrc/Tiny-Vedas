@@ -156,7 +156,8 @@ typedef struct packed {
   logic mul;
   logic alu;
   logic div;
-  logic lsu;
+  logic load;
+  logic store;
 } last_issued_instr_t;
 
 typedef enum logic [2:0] {

@@ -140,7 +140,7 @@ module core_top_tb;
     end
 
     if (core_top_i.exu_inst.alu_inst.alu_ctrl.condbr & ~core_top_i.exu_inst.alu_inst.brn_taken & core_top_i.exu_inst.alu_inst.alu_ctrl.legal) begin  /* BEQ/BNE/BGE/BLT/BLTU/BGEU not taken */
-      $fdisplay(fd, "%5d;0x%H;0x%H;taken=false", cycle_count,
+      $fdisplay(fd, "%5d;0x%H;0x%H;taken=false", cycle_count + 1,
                 core_top_i.exu_inst.alu_inst.alu_ctrl.instr_tag,
                 core_top_i.exu_inst.alu_inst.alu_ctrl.instr);
       reset_last_retired <= 1'b1;
