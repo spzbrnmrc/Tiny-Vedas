@@ -178,10 +178,6 @@ module idu1 #(
       .flush(pipe_flush)
   );
 
-  /* Check if I had any updates to a register that moved past the PRF query stage while I was stalled */
-  logic [XLEN-1:0] stall_rs1_fwd_data, stall_rs2_fwd_data;
-  logic stall_rs1_fwd_data_val, stall_rs2_fwd_data_val;
-
   /* WB to EXU forwarding */
   always_comb begin : operand_forwarding
     idu1_out_gated = idu1_out_before_fwd;
@@ -191,14 +187,10 @@ module idu1 #(
       idu1_out_gated.rs1_data = exu_wb_data;
     end
 
-    if (stall_rs1_fwd_data_val) idu1_out_gated.rs1_data = stall_rs1_fwd_data;
-
     /* RS2 */
     if (idu1_out_before_fwd.rs2 & (exu_wb_rd_addr == idu1_out_before_fwd.rs2_addr)) begin
       idu1_out_gated.rs2_data = exu_wb_data;
     end
-
-    if (stall_rs2_fwd_data_val) idu1_out_gated.rs2_data = stall_rs2_fwd_data;
 
   end
 
@@ -224,5 +216,7 @@ module idu1 #(
     idu1_out = idu1_out_gated;
     idu1_out.legal = idu1_out_gated.legal & ~pipe_stall;
   end
+
+
 
 endmodule

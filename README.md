@@ -212,7 +212,7 @@ This project is licensed under the Apache License, Version 2.0. See [LICENSE](LI
 
 ## Performance Scoreboard
 
-| Benchmark               | IPC    |
-|-------------------------|--------|
-| c.helloworld            | 0.5612 |
-| elf.dhrystone           | 0.4478 |
+|    Benchmark     |  IPC   |
+|:----------------:|:------:|
+| c.helloworld     | 0.5612 |
+| elf.dhrystone    | 0.4478 |
