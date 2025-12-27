@@ -210,15 +210,9 @@ The design is synthesizable with standard ASIC tools. Use `rtl/core_top.flist` a
 
 This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
-## Acknowledgments
+## Performance Scoreboard
 
-- RISC-V Foundation for the open instruction set architecture
-- Verilator team for the fast SystemVerilog simulator
-- Open-source community for tools and libraries
-
-## Support
-
-For issues and questions:
-- Open a GitHub issue
-- Check the test programs for usage examples
-- Review the SystemVerilog source code for implementation details
+| Benchmark               | IPC    |
+|-------------------------|--------|
+| c.helloworld            | 0.5612 |
+| elf.dhrystone           | 0.4478 |

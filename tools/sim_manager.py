@@ -362,6 +362,48 @@ def process_rtl_log(test: str):
     with open(os.path.join("work", test, "rtl.log"), "w") as f:
         f.write("\n".join(rtl_lines))
 
+def calculate_perf_stats(test: str):
+    # Open the rtl log file for this test
+    rtl_log_path = os.path.join("work", test, "rtl.log")
+    with open(rtl_log_path, "r") as f:
+        rtl_lines = f.readlines()
+    # Get the first line of the rtl log
+    first_line = rtl_lines[0].split(";")
+    # Get The last line of the rtl log
+    last_line = rtl_lines[-1].split(";")
+    # The number of instructions is how many lines in the RTL log we have
+    num_instructions = len(rtl_lines)
+    # The number of cycles is the difference between the last line and the first line
+    num_cycles = int(last_line[0]) - int(first_line[0])
+    # The number of cycles per instruction is the number of cycles divided by the number of instructions
+    cycles_per_instruction = num_cycles / num_instructions
+    # The number of instructions per cycle is the number of instructions divided by the number of cycles
+    instructions_per_cycle = num_instructions / num_cycles
+
+    # Prepare the performance stats as a pretty table
+    headers = ["Metric", "Value"]
+    rows = [
+        ["Number of instructions", num_instructions],
+        ["Number of cycles", num_cycles],
+        ["Cycles per instruction", f"{cycles_per_instruction:.4f}"],
+        ["Instructions per cycle", f"{instructions_per_cycle:.4f}"]
+    ]
+
+    col_width_0 = max(len(headers[0]), max(len(str(row[0])) for row in rows))
+    col_width_1 = max(len(headers[1]), max(len(str(row[1])) for row in rows))
+
+    table_lines = []
+    table_lines.append(f"{headers[0]:<{col_width_0}} | {headers[1]:<{col_width_1}}")
+    table_lines.append(f"{'-'*col_width_0}-+-{'-'*col_width_1}")
+    for row in rows:
+        table_lines.append(f"{row[0]:<{col_width_0}} | {row[1]:<{col_width_1}}")
+    table_str = "\n".join(table_lines)
+
+    # Write the table to 'stats.txt' in the test's folder
+    stats_path = os.path.join("work", test, "stats.txt")
+    with open(stats_path, "w") as stats_file:
+        stats_file.write(table_str)
+
 def run_e2e(test: str, simulator: str):
     """Run a test through the entire pipeline."""
     try:
@@ -374,6 +416,7 @@ def run_e2e(test: str, simulator: str):
             run_xsim(test, reset_vector)
         process_rtl_log(test)
         compare_results(test)
+        calculate_perf_stats(test)
     except Exception as e:
         print(f"Error running test {test}: {e}")
         print(traceback.format_exc())
