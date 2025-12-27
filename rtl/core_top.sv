@@ -79,6 +79,7 @@ module core_top #(
   /* IDU1 -> EXU Interface */
   idu1_out_t                            idu1_out;
   logic                                 pipe_stall;
+  logic                                 idu0_rsb_hit_stall;
 
   /* EXU -> IDU1 (WB) Interface */
   logic      [                XLEN-1:0] exu_wb_data;
@@ -138,7 +139,7 @@ module core_top #(
       .instr                (instr),
       .instr_valid          (instr_valid),
       .instr_tag            (instr_tag),
-      .pipe_stall           (pipe_stall),
+      .pipe_stall           (pipe_stall | idu0_rsb_hit_stall),
       .pc_exu               (pc_out),
       .pc_load              (pc_load)
   );
@@ -150,7 +151,7 @@ module core_top #(
       .instr      (instr),
       .instr_valid(instr_valid),
       .instr_tag  (instr_tag),
-      .pipe_stall (pipe_stall),
+      .pipe_stall (pipe_stall | idu0_rsb_hit_stall),
       .idu0_out   (idu0_out),
       .pipe_flush (pc_load)
   );
@@ -159,19 +160,20 @@ module core_top #(
   idu1 #(
       .STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)
   ) idu1_inst (
-      .clk            (clk),
-      .rstn           (rstn),
-      .idu0_out       (idu0_out),
-      .idu1_out       (idu1_out),
-      .exu_wb_data    (exu_wb_data),
-      .exu_wb_rd_addr (exu_wb_rd_addr),
-      .exu_wb_rd_wr_en(exu_wb_rd_wr_en),
-      .exu_mul_busy   (exu_mul_busy),
-      .exu_div_busy   (exu_div_busy),
-      .exu_lsu_busy   (exu_lsu_busy),
-      .exu_lsu_stall  (exu_lsu_stall),
-      .pipe_stall     (pipe_stall),
-      .pipe_flush     (pc_load)
+      .clk               (clk),
+      .rstn              (rstn),
+      .idu0_out          (idu0_out),
+      .idu1_out          (idu1_out),
+      .exu_wb_data       (exu_wb_data),
+      .exu_wb_rd_addr    (exu_wb_rd_addr),
+      .exu_wb_rd_wr_en   (exu_wb_rd_wr_en),
+      .exu_mul_busy      (exu_mul_busy),
+      .exu_div_busy      (exu_div_busy),
+      .exu_lsu_busy      (exu_lsu_busy),
+      .exu_lsu_stall     (exu_lsu_stall),
+      .pipe_stall        (pipe_stall),
+      .idu0_rsb_hit_stall(idu0_rsb_hit_stall),
+      .pipe_flush        (pc_load)
   );
 
   /* Execute Unit */

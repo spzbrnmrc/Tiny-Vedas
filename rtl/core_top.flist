@@ -14,6 +14,7 @@ $PROJ/rtl/ifu/ifu.sv
 $PROJ/rtl/idu/rv32im_decoder.sv
 $PROJ/rtl/idu/idu0.sv
 $PROJ/rtl/idu/idu1.sv
+$PROJ/rtl/idu/rsb.sv
 $PROJ/rtl/exu/exu.sv
 $PROJ/rtl/exu/alu.sv
 $PROJ/rtl/exu/mul.sv

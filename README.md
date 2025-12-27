@@ -212,8 +212,8 @@ This project is licensed under the Apache License, Version 2.0. See [LICENSE](LI
 
 ## Performance Scoreboard
 
-| Benchmark               | IPC    |
-|-------------------------|--------|
-| c.helloworld            | 0.5612 |
-| c.iaxpy                 | 0.4227 |
-| elf.dhrystone           | 0.4478 |
+|    Benchmark     |  IPC   |
+|:----------------:|:------:|
+| c.helloworld     | 0.6177 |
+| c.iaxpy          | 0.4564 |
+| elf.dhrystone    | 0.5078 |

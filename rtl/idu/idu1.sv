@@ -58,6 +58,7 @@ module idu1 #(
 
     /* Control Signals */
     output logic                           pipe_stall,
+    output logic                           idu0_rsb_hit_stall,
     input  logic                           pipe_flush,
     /* EXU -> IDU1 (WB) Interface */
     input  logic [               XLEN-1:0] exu_wb_data,
@@ -74,6 +75,9 @@ module idu1 #(
   logic [XLEN-1:0] rs1_data, rs2_data;
   last_issued_instr_t last_issued_instr;
   idu1_out_t idu1_out_gated;
+
+  logic rs1_fwd_idu0, rs2_fwd_idu0;
+  logic rs1_rsb_hit_idu0, rs2_rsb_hit_idu0;
 
   /* Instantiate Register file */
   reg_file #(
@@ -92,6 +96,26 @@ module idu1 #(
       .rd_wr_en (exu_wb_rd_wr_en)
   );
 
+  /* Register Scoreboard - IDU0 Stage */
+  rsb #(
+      .N_REG(32)
+  ) rsb_idu0_i (
+      .clk           (clk),
+      .rstn          (rstn),
+      .pipe_flush    (pipe_flush),
+      .rs1_addr      (idu0_out.rs1_addr),
+      .rs2_addr      (idu0_out.rs2_addr),
+      .rs1_rd_en     (idu0_out.rs1 & idu0_out.legal),
+      .rs2_rd_en     (idu0_out.rs2 & idu0_out.legal),
+      .rs1_hit       (rs1_rsb_hit_idu0),
+      .rs2_hit       (rs2_rsb_hit_idu0),
+      .set_rd_addr   (idu0_out.rd_addr),
+      .set_rd_wr_en  (idu0_out.legal & (idu0_out.mul | idu0_out.load) & ~(pipe_stall | idu0_rsb_hit_stall)),
+      .clear_rd_addr (exu_wb_rd_addr),
+      .clear_rd_wr_en(exu_wb_rd_wr_en)
+  );
+
+
   assign idu1_out_i.instr = idu0_out.instr;
   assign idu1_out_i.instr_tag = idu0_out.instr_tag;
   assign idu1_out_i.imm = idu0_out.imm;
@@ -105,6 +129,10 @@ module idu1 #(
   /* WB to IDU1 forwarding */
   assign idu1_out_i.rs1_data = ((exu_wb_rd_addr == idu0_out.rs1_addr) & idu0_out.rs1 & exu_wb_rd_wr_en) ? exu_wb_data : rs1_data;
   assign idu1_out_i.rs2_data = ((exu_wb_rd_addr == idu0_out.rs2_addr) & idu0_out.rs2 & exu_wb_rd_wr_en) ? exu_wb_data : rs2_data;
+  assign rs1_fwd_idu0 = ((exu_wb_rd_addr == idu0_out.rs1_addr) & idu0_out.rs1 & exu_wb_rd_wr_en);
+  assign rs2_fwd_idu0 = ((exu_wb_rd_addr == idu0_out.rs2_addr) & idu0_out.rs2 & exu_wb_rd_wr_en);
+
+  assign idu0_rsb_hit_stall = (rs1_rsb_hit_idu0 & ~rs1_fwd_idu0) | (rs2_rsb_hit_idu0 & ~rs2_fwd_idu0);
 
   assign idu1_out_i.alu = idu0_out.alu;
   assign idu1_out_i.rs1 = idu0_out.rs1;
@@ -144,7 +172,7 @@ module idu1 #(
   assign idu1_out_i.rem = idu0_out.rem;
   assign idu1_out_i.nop = idu0_out.nop;
   assign idu1_out_i.ecall = idu0_out.ecall;
-  assign idu1_out_i.legal = idu0_out.legal;
+  assign idu1_out_i.legal = idu0_out.legal & ~(idu0_rsb_hit_stall);
 
   register_en_flush_sync_rstn #(
       .WIDTH($bits(idu1_out_t))
@@ -171,36 +199,27 @@ module idu1 #(
         idu1_out_before_fwd.mul,
         idu1_out_before_fwd.alu,
         idu1_out_before_fwd.div,
-        (idu1_out_before_fwd.load | idu1_out_before_fwd.store)
+        idu1_out_before_fwd.load,
+        idu1_out_before_fwd.store
       }),
       .dout(last_issued_instr),
       .en(~pipe_stall),
       .flush(pipe_flush)
   );
 
-  /* Check if I had any updates to a register that moved past the PRF query stage while I was stalled */
-  logic [XLEN-1:0] stall_rs1_fwd_data, stall_rs2_fwd_data;
-  logic stall_rs1_fwd_data_val, stall_rs2_fwd_data_val;
-
   /* WB to EXU forwarding */
   always_comb begin : operand_forwarding
     idu1_out_gated = idu1_out_before_fwd;
-
     /* RS1 */
     if (idu1_out_before_fwd.rs1 & (exu_wb_rd_addr == idu1_out_before_fwd.rs1_addr)) begin
       idu1_out_gated.rs1_data = exu_wb_data;
     end
-
-    if (stall_rs1_fwd_data_val) idu1_out_gated.rs1_data = stall_rs1_fwd_data;
-
     /* RS2 */
     if (idu1_out_before_fwd.rs2 & (exu_wb_rd_addr == idu1_out_before_fwd.rs2_addr)) begin
       idu1_out_gated.rs2_data = exu_wb_data;
     end
-
-    if (stall_rs2_fwd_data_val) idu1_out_gated.rs2_data = stall_rs2_fwd_data;
-
   end
+
 
   /* Manage The pipe_stall signal 
     We stall the pipeline in the following conditions:
@@ -210,11 +229,13 @@ module idu1 #(
   */
   always_comb begin : pipe_stall_management
     pipe_stall = 1'b0;
-    if (last_issued_instr.mul & idu1_out_gated.legal & ~idu1_out_gated.nop) begin /* Always Stall after MUL operations */
+    if (last_issued_instr.mul & (idu1_out_gated.legal & ~idu1_out_gated.mul) & ~idu1_out_gated.nop) begin /* Always Stall after MUL operations if following instruction is not a MUL operation --> in-order issue */
       pipe_stall = exu_mul_busy;
     end else if (last_issued_instr.div) begin
       pipe_stall = exu_div_busy;
-    end else if (last_issued_instr.lsu & idu1_out_gated.legal & ~idu1_out_gated.nop) begin /* Always stall after LSU operations */
+    end else if (last_issued_instr.load & (idu1_out_gated.legal & ~idu1_out_gated.load)) begin /* Pipeline Loads */ 
+      pipe_stall = exu_lsu_busy;
+    end else if (last_issued_instr.store & (idu1_out_gated.legal & ~idu1_out_gated.store)) begin /* Pipeline Stores */
       pipe_stall = exu_lsu_busy;
     end
     pipe_stall |= exu_lsu_stall;
@@ -224,5 +245,7 @@ module idu1 #(
     idu1_out = idu1_out_gated;
     idu1_out.legal = idu1_out_gated.legal & ~pipe_stall;
   end
+
+
 
 endmodule
