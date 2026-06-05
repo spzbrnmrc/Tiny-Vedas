@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Trace-input → StaticBuffer materialization strategies.
 
 ``FlatRowMajorMaterializer`` is the default strategy. Replace or compose

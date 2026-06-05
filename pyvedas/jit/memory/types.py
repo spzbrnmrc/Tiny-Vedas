@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Compile-time memory types for PyVedas buffer planning.
 
 Logical tensors from the GraphModule are lowered to StaticBuffer objects.

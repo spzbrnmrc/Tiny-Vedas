@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Discover PyVedas runtime ops and resolve graph nodes to implementations."""
 
 from __future__ import annotations

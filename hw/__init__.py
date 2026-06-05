@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 from .load import (
     DEFAULT_PRESET,
     PRESETS_DIR,

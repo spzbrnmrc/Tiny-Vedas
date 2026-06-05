@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 # 1:1 map: GraphModule op name -> PyVedas implementation.
 # YAML keys must match FX node targets exactly (e.g. aten.add.Tensor).
 # Each key maps to exactly one implementation; duplicates are rejected at load.

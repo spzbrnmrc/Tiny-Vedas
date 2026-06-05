@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Typed hardware configuration for Tiny-Vedas CPU flavors."""
 
 from __future__ import annotations

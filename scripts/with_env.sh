@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+#
 # Run a command with the Tiny-Vedas toolchain environment active.
 set -euo pipefail
 

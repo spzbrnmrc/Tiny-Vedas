@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Lower an FX graph to a host-testable C program that calls PyVedas runtime ops."""
 
 from __future__ import annotations

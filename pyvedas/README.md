@@ -145,3 +145,8 @@ pyvedas/
 To add tiling: subclass `BufferMaterializer` or add a post-pass on `MemoryPlan`
 that rewrites `BufferLayout` and changes `emit.py` — without touching op handlers
 or the runtime `(ptr, n)` contract.
+
+## License
+
+Apache License 2.0 — see [LICENSE](../LICENSE), [NOTICE](../NOTICE), and
+[THIRD_PARTY.md](../THIRD_PARTY.md).

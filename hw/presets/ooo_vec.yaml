@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 # Target: configurable out-of-order core with vector co-processor (scaffold).
 name: ooo_vec
 version: 1

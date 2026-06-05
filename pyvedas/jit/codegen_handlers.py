@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Graph op → C statement handlers.
 
 Each handler reads/writes a :class:`MemoryPlan` and returns one statement.

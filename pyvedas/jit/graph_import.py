@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Import a torch.compile / torch.export compatible FX graph from a PyTorch module."""
 
 from __future__ import annotations

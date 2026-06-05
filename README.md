@@ -387,4 +387,9 @@ If you change instruction decode, update `open-decode-tables/tables/rv32im.yaml`
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+- [NOTICE](NOTICE) — attribution for this repo and bundled submodules
+- [THIRD_PARTY.md](THIRD_PARTY.md) — dev-only tools vs shipped components
+
+SPDX: `Apache-2.0`

@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Emit C declarations from a :class:`MemoryPlan`."""
 
 from __future__ import annotations

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+#
 # Install Tiny-Vedas development dependencies:
 #   - Ubuntu build packages (build-essential, Verilator build deps)
 #   - Python virtual environment + pip packages

@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 # Target: configurable in-order superscalar with vector co-processor (scaffold).
 name: superscalar_vec
 version: 1

@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """PyVedas JIT entry point: PyTorch module -> generated C + link manifest."""
 
 from __future__ import annotations
