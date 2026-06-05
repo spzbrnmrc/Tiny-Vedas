@@ -1,0 +1,33 @@
+Tiny-Vedas
+Copyright (c) 2025 Siliscale Consulting, LLC
+
+This product includes software developed by Siliscale Consulting, LLC
+and distributed under the Apache License, Version 2.0.
+
+================================================================================
+Bundled components (same license unless noted)
+================================================================================
+
+SVLib
+  Copyright (c) 2025 Siliscale Consulting, LLC
+  Apache License 2.0
+  https://github.com/siliscale/SVLib
+
+open-decode-tables
+  Apache License 2.0
+  https://github.com/siliscale/open-decode-tables
+
+PyVedas (pyvedas/)
+  Copyright (c) 2025 Siliscale Consulting, LLC
+  Apache License 2.0
+
+Hardware presets (hw/)
+  Copyright (c) 2025 Siliscale Consulting, LLC
+  Apache License 2.0
+
+================================================================================
+Development dependencies (not shipped in silicon products)
+================================================================================
+
+See THIRD_PARTY.md for build-time and simulation tools (Verilator, RISC-V GCC,
+PyTorch, etc.) and their licenses.

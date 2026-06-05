@@ -258,10 +258,9 @@ Programs signal completion by storing `0xdeadbeef` to address `0x10000000`. See 
 
 ### Smoke regression (`tests/smoke.tlist`)
 
-Smoke tests cover ALU, forwarding, multiply, load/store, branches, jumps, C
-programs, PyVedas JIT tests (`pyvedas.{vector,matrix,tensor}_{add,mul}`), and
-Dhrystone. The
-assembly test `asm.basic_div` exists but is not currently in the smoke list.
+Smoke tests cover ALU, forwarding, multiply, divide (`asm.basic_div`,
+`asm.div_regression`), load/store, branches, jumps, C programs, PyVedas JIT tests
+(`pyvedas.{vector,matrix,tensor}_{add,mul}`), and Dhrystone.
 
 ## Memory Map
 
@@ -420,7 +419,7 @@ GitHub Actions runs on every push and pull request to `main`. The workflow (`.gi
 1. Checkout with submodules
 2. `make deps` — system packages, Python venv, RISC-V toolchain, Verilator, `scripts/env.sh`
 3. `make decodes` — regenerate the instruction decoder
-4. `make smoke-verilator` — full 20-test regression
+4. `make smoke-verilator` — full smoke regression (`tests/smoke.tlist`)
 
 No Vivado license is required. `make deps` writes `scripts/env.sh`; subsequent `make` targets load it automatically — no manual `PATH` or `source venv/bin/activate` in CI.
 

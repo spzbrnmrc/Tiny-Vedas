@@ -6,6 +6,8 @@ asm.basic_alu_r
 asm.basic_sub
 asm.basic_mul
 asm.basic_mul_forwarding
+asm.basic_div
+asm.div_regression
 asm.basic_load
 asm.basic_load_dep
 asm.basic_store
