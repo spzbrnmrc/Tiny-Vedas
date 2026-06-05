@@ -1,0 +1,20 @@
+# 1:1 map: GraphModule op name -> PyVedas implementation.
+# YAML keys must match FX node targets exactly (e.g. aten.add.Tensor).
+# Each key maps to exactly one implementation; duplicates are rejected at load.
+
+ops:
+  aten.add.Tensor:
+    codegen: elementwise_binary
+    symbol: pyvedas_aten_add_Tensor
+    signature: "void pyvedas_aten_add_Tensor(const int32_t *a, const int32_t *b, int32_t *out, size_t n)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_add_Tensor.c
+
+  aten.mul.Tensor:
+    codegen: elementwise_binary
+    symbol: pyvedas_aten_mul_Tensor
+    signature: "void pyvedas_aten_mul_Tensor(const int32_t *a, const int32_t *b, int32_t *out, size_t n)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_mul_Tensor.c

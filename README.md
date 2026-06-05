@@ -51,11 +51,16 @@ Tiny-Vedas/
 ├── dv/
 │   ├── sv/                  # core_top_tb.sv, lsu_tb.sv
 │   └── verilator/           # Verilator C++ harness
+├── hw/                      # Hardware presets (scalar, VLIW, OoO + vector)
+│   ├── presets/             # YAML configs shared by RTL/SW (see hw/README.md)
+│   └── types.py             # Typed HwConfig loader
 ├── tests/
 │   ├── asm/                 # Assembly test programs
 │   ├── c/                   # C benchmarks (helloworld, iaxpy)
 │   ├── elf/                 # Prebuilt ELF binaries (dhrystone)
+│   ├── pyvedas/             # PyTorch → JIT model specs
 │   └── smoke.tlist          # Regression test list
+├── pyvedas/                 # PyTorch → Tiny-Vedas JIT
 ├── tools/
 │   ├── sim_manager.py       # Main test runner (compile → ISS → RTL → compare)
 │   └── rv_iss.py            # Reference instruction-set simulator
@@ -206,6 +211,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
 | `asm.` | `tests/asm/<name>.s` | `asm.basic_mul` |
 | `c.` | `tests/c/<name>.c` | `c.helloworld` |
 | `elf.` | `tests/elf/<name>` (prebuilt) | `elf.dhrystone` |
+| `pyvedas.` | `tests/pyvedas/<name>.py` (JIT → ELF) | `pyvedas.vector_add` |
 
 ### sim_manager.py usage
 
@@ -215,6 +221,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
   -s, --simulator   verilator | xsim
   -n, --test-name   Run a single test (e.g. asm.basic_alu_r)
   -t, --task-list   Run all tests listed in a file (e.g. tests/smoke.tlist)
+  --hw-config       Hardware preset YAML (default: hw/presets/rv32im_scalar.yaml)
 ```
 
 `make smoke-verilator` and `make smoke` invoke `with_env.sh` automatically.
@@ -224,8 +231,8 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
 | Target | Command |
 |--------|---------|
 | `make deps` | Install system packages, Python venv, RISC-V toolchain, and Verilator |
-| `make smoke-verilator` | Run the 20-test regression via Verilator (CI default) |
-| `make smoke` | Run the 20-test regression via XSim (requires Vivado) |
+| `make smoke-verilator` | Run the smoke regression via Verilator (CI default) |
+| `make smoke` | Run the smoke regression via XSim (requires Vivado) |
 | `make decodes` | Regenerate `rtl/idu/rv32im_decoder.sv` from YAML |
 | `make clean` | Remove build artifacts (`work/`, `obj_dir/`, logs, VCDs) |
 
@@ -250,7 +257,10 @@ Programs signal completion by storing `0xdeadbeef` to address `0x10000000`. See 
 
 ### Smoke regression (`tests/smoke.tlist`)
 
-20 tests covering ALU, forwarding, multiply, load/store, branches, jumps, C programs, and Dhrystone. The assembly test `asm.basic_div` exists but is not currently in the smoke list.
+Smoke tests cover ALU, forwarding, multiply, load/store, branches, jumps, C
+programs, PyVedas JIT tests (`pyvedas.{vector,matrix,tensor}_{add,mul}`), and
+Dhrystone. The
+assembly test `asm.basic_div` exists but is not currently in the smoke list.
 
 ## Memory Map
 

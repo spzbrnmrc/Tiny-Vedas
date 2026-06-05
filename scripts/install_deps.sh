@@ -115,6 +115,11 @@ install_python_venv() {
     source "${VENV_DIR}/bin/activate"
     python -m pip install --upgrade pip
     python -m pip install -r "${REPO_ROOT}/requirements.txt"
+    if [[ -f "${REPO_ROOT}/pyvedas/requirements.txt" ]]; then
+        log "Installing PyVedas dependencies (CPU PyTorch)..."
+        python -m pip install -r "${REPO_ROOT}/pyvedas/requirements.txt" \
+            --index-url https://download.pytorch.org/whl/cpu
+    fi
     log "Python dependencies installed."
 }
 

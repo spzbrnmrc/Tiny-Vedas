@@ -1,0 +1,31 @@
+# Target: configurable in-order superscalar with vector co-processor (scaffold).
+name: superscalar_vec
+version: 1
+description: >
+  In-order dual-issue (configurable) with vector co-processor. RTL not yet
+  implemented; preset drives future PyVedas tiling and sim memory layout.
+
+cpu:
+  kind: superscalar
+  isa: rv32im
+  issue_width: 2
+  commit_width: 2
+  pipeline_stages: 5
+  out_of_order: false
+
+vector:
+  enabled: true
+  width_bits: 128
+  lanes: 4
+  local_mem_bytes: 16384
+
+memory:
+  iccm_depth_words: 262144
+  dccm_depth_words: 262144
+  link_address: 0x00100000
+  uart_address: 0x00200000
+  eot_address: 0x10000000
+
+software:
+  materializer: flat_row_major
+  vectorize_min_numel: 4

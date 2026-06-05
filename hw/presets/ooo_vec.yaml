@@ -1,0 +1,31 @@
+# Target: configurable out-of-order core with vector co-processor (scaffold).
+name: ooo_vec
+version: 1
+description: >
+  Out-of-order RV32IM core with vector co-processor. RTL not yet implemented;
+  preset captures expected issue/commit widths for future SW scheduling.
+
+cpu:
+  kind: ooo
+  isa: rv32im
+  issue_width: 4
+  commit_width: 4
+  pipeline_stages: 12
+  out_of_order: true
+
+vector:
+  enabled: true
+  width_bits: 256
+  lanes: 8
+  local_mem_bytes: 32768
+
+memory:
+  iccm_depth_words: 262144
+  dccm_depth_words: 262144
+  link_address: 0x00100000
+  uart_address: 0x00200000
+  eot_address: 0x10000000
+
+software:
+  materializer: flat_row_major
+  vectorize_min_numel: 8

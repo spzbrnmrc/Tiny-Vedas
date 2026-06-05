@@ -17,4 +17,10 @@ asm.basic_blt
 asm.basic_bge
 c.helloworld
 c.iaxpy
+pyvedas.vector_add
+pyvedas.matrix_add
+pyvedas.tensor_add
+pyvedas.vector_mul
+pyvedas.matrix_mul
+pyvedas.tensor_mul
 elf.dhrystone

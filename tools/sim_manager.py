@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import sys
 import os
+from pathlib import Path
 from typing import List, Optional
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from hw import HwConfig, default_hw_config_path, load_hw_config
 from elftools.elf.elffile import ELFFile
 import subprocess
 import shutil
@@ -24,10 +32,59 @@ def safe_write(msg: str) -> None:
 IMEM_DEPTH = 2 ** 18
 DMEM_DEPTH = 2 ** 18
 
-def run_gen(test: str) -> None:
+
+def _write_hw_config_artifact(test: str, hw_config: HwConfig) -> None:
+    out_path = os.path.join("work", test, "hw_config.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(hw_config.to_dict(), f, indent=2)
+
+
+def _pyvedas_python() -> str:
+    """Pick a Python interpreter that can run the PyVedas JIT."""
+    candidates = [
+        os.path.join("pyvedas", ".venv", "bin", "python3"),
+        os.path.join("venv", "bin", "python3"),
+        "python3",
+    ]
+    for candidate in candidates:
+        if candidate == "python3" or os.path.isfile(candidate):
+            return candidate
+    return "python3"
+
+
+def _compile_riscv_elf(test: str, sources: List[str], include_dirs: List[str]) -> int:
+    """Link *sources* into work/<test>/test.elf. Returns the reset vector."""
+    compile_log = os.path.join("work", test, "compile.log")
+    inc_flags = " ".join(f"-I{inc}" for inc in include_dirs)
+    source_list = " ".join(sources)
+    cmd = (
+        f"riscv64-unknown-elf-gcc -O0 {inc_flags} "
+        f"-march=rv32im -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
+        f"-fno-builtin-printf -fno-common -falign-functions=4 "
+        f"{source_list} -lgcc "
+        f"-Wl,-Ttext=0x100000 -Wl,--defsym,_start=main "
+        f"> {compile_log} 2>&1"
+    )
+    if os.system(cmd) != 0:
+        raise RuntimeError(f"RISC-V compile failed for {test}; see {compile_log}")
+
+    elf_path = os.path.join("work", test, "test.elf")
+    with open(elf_path, "rb") as f:
+        elf = ELFFile(f)
+        symtab = elf.get_section_by_name('.symtab')
+        if symtab is None:
+            raise RuntimeError("No symbol table found in ELF file")
+        for symbol in symtab.iter_symbols():
+            if symbol.name == "_start":
+                return symbol['st_value']
+    raise RuntimeError("Could not find _start symbol in ELF file")
+
+
+def run_gen(test: str, hw_config: HwConfig) -> int:
     """Run the generator for a test."""
     # Create the folder for the test
     os.makedirs(f"work/{test}", exist_ok=True)
+    _write_hw_config_artifact(test, hw_config)
     test_path = test.split(".")
     extension = ""
     if test_path[0] == "c":
@@ -35,51 +92,67 @@ def run_gen(test: str) -> None:
     elif test_path[0] == "asm":
         extension = ".s"
     elif test_path[0] == "elf":
-        extension == None
+        extension = None
+    elif test_path[0] == "pyvedas":
+        extension = ".py"
     # Try and compile the test, if it fails, print the error and exit
     try:
-        if extension == ".s":
+        if extension == ".py":
+            example_py = os.path.join("tests", "pyvedas", test_path[1] + ".py")
+            if not os.path.exists(example_py):
+                raise RuntimeError(f"PyVedas example not found: {example_py}")
+
+            out_dir = os.path.join("work", test)
+            jit_log = os.path.join(out_dir, "jit.log")
+            pyvedas_python = _pyvedas_python()
+            jit_cmd = (
+                f"PYTHONPATH=pyvedas:{_REPO_ROOT} {pyvedas_python} -m jit "
+                f"--model-spec {example_py} -o {out_dir} --target "
+                f"--hw-config {hw_config.source_path} "
+                f"> {jit_log} 2>&1"
+            )
+            if os.system(jit_cmd) != 0:
+                raise RuntimeError(f"PyVedas JIT failed for {test}; see {jit_log}")
+
+            manifest_path = os.path.join(out_dir, "manifest.json")
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+
+            eot_source = os.path.join("tests", "c", "asm_functions", "eot_sequence.s")
+            sources = [manifest["generated_c"], eot_source, *manifest["sources"]]
+            reset_vector = _compile_riscv_elf(test, sources, manifest["include_dirs"])
+            os.system(
+                f"riscv64-unknown-elf-objdump -D work/{test}/test.elf "
+                f"> work/{test}/test.dump"
+            )
+            return reset_vector
+        elif extension == ".s":
             os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib {os.path.join('tests', test_path[0], test_path[1] + extension)} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
         elif extension == ".c":
             c_source = os.path.join('tests', test_path[0], test_path[1] + extension)
             eot_source = os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')
             printf_source = os.path.join('sw', 'vedas_printf', 'vedas_printf.c')
-            # Build vedas_printf from source with matching -march=rv32im. Use -nostdlib
-            # to avoid multilib lookup failures in the prebuilt riscv64-unknown-elf toolchain.
             sources = [c_source, eot_source]
             if test_path[1] == 'helloworld':
                 sources.insert(1, printf_source)
-            source_list = ' '.join(sources)
-            os.system(
-                f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} "
-                f"-march=rv32im -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
-                f"-fno-builtin-printf -fno-common -falign-functions=4 "
-                f"{source_list} -lgcc "
-                f"-Wl,-Ttext=0x100000 -Wl,--defsym,_start=main "
-                f"> {os.path.join('work', test, 'compile.log')}"
-            )
+            include_dirs = [os.path.join('tests', test_path[0])]
+            reset_vector = _compile_riscv_elf(test, sources, include_dirs)
+            return reset_vector
         else:
             os.system(f"cp {os.path.join('tests', test_path[0], test_path[1])} work/{test}/test.elf")
 
-        os.system(f"riscv64-unknown-elf-objdump  -D work/{test}/test.elf > work/{test}/test.dump")
+        os.system(f"riscv64-unknown-elf-objdump -D work/{test}/test.elf > work/{test}/test.dump")
 
-    # Get the reset vector from the elf file --> beginning of the _start function
-    # Get the reset vector (address of _start) from the ELF file
         elf_path = os.path.join("work", test, "test.elf")
         with open(elf_path, "rb") as f:
             elf = ELFFile(f)
             symtab = elf.get_section_by_name('.symtab')
             if symtab is None:
                 raise RuntimeError("No symbol table found in ELF file")
-            reset_vector = None
             for symbol in symtab.iter_symbols():
                 if symbol.name == "_start":
-                    reset_vector = symbol['st_value']
-                    return reset_vector
-            if reset_vector is None:
-                raise RuntimeError("Could not find _start symbol in ELF file")
-            # You can now use reset_vector as needed (for debugging, logging, etc.)
-            # print(f"Reset vector for {test}: 0x{reset_vector:X}")
+                    return symbol['st_value']
+            raise RuntimeError("Could not find _start symbol in ELF file")
     except Exception as e:
         print(f"Error compiling test {test}: {e}")
         sys.exit(1)
@@ -440,10 +513,15 @@ def calculate_perf_stats(test: str):
     with open(stats_path, "w") as stats_file:
         stats_file.write(table_str)
 
-def run_e2e(test: str, simulator: str, show_progress: bool = True):
+def run_e2e(
+    test: str,
+    simulator: str,
+    hw_config: HwConfig,
+    show_progress: bool = True,
+):
     """Run a test through the entire pipeline."""
     try:
-        reset_vector = run_gen(test)
+        reset_vector = run_gen(test, hw_config)
         run_iss(test, reset_vector)
         prepare_imem(test)
         if simulator == "verilator":
@@ -474,8 +552,15 @@ def main():
         choices=["verilator", "xsim"],
         help="Name of the simulator to use"
     )
-    
+    parser.add_argument(
+        "--hw-config",
+        default=str(default_hw_config_path()),
+        help="Hardware preset YAML (cpu/vector/memory/software contract)",
+    )
+
     args = parser.parse_args()
+    hw_config = load_hw_config(args.hw_config)
+    safe_write(f"Hardware preset: {hw_config.name} ({hw_config.cpu.kind.value})")
     
     # Create work directory
     os.makedirs("work", exist_ok=True)
@@ -501,7 +586,7 @@ def main():
     # Run tests in parallel using thread pool
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_cores) as executor:
         future_to_test = {
-            executor.submit(run_e2e, test, args.simulator, show_progress): test
+            executor.submit(run_e2e, test, args.simulator, hw_config, show_progress): test
             for test in tests
         }
 
