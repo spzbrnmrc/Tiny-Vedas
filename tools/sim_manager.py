@@ -41,7 +41,23 @@ def run_gen(test: str) -> None:
         if extension == ".s":
             os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib {os.path.join('tests', test_path[0], test_path[1] + extension)} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
         elif extension == ".c":
-            os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -fno-builtin-printf -fno-common -falign-functions=4 {os.path.join('tests', test_path[0], test_path[1] + extension)} {os.path.join('tests', test_path[0], 'lib', 'vedas_printf.o')} {os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')} $LOADLIBES $LDLIBS -lm -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
+            c_source = os.path.join('tests', test_path[0], test_path[1] + extension)
+            eot_source = os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')
+            printf_source = os.path.join('sw', 'vedas_printf', 'vedas_printf.c')
+            # Build vedas_printf from source with matching -march=rv32im. Use -nostdlib
+            # to avoid multilib lookup failures in the prebuilt riscv64-unknown-elf toolchain.
+            sources = [c_source, eot_source]
+            if test_path[1] == 'helloworld':
+                sources.insert(1, printf_source)
+            source_list = ' '.join(sources)
+            os.system(
+                f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} "
+                f"-march=rv32im -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
+                f"-fno-builtin-printf -fno-common -falign-functions=4 "
+                f"{source_list} -lgcc "
+                f"-Wl,-Ttext=0x100000 -Wl,--defsym,_start=main "
+                f"> {os.path.join('work', test, 'compile.log')}"
+            )
         else:
             os.system(f"cp {os.path.join('tests', test_path[0], test_path[1])} work/{test}/test.elf")
 

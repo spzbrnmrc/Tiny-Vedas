@@ -1,7 +1,5 @@
-#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 #define STR(x) #x
 #define XSTR(s) STR(s)
@@ -63,13 +61,11 @@ void vedas_printf(const char *fmt, ...) {
     if (*fmt == '%') {
       if (*(fmt + 1) == 'd') {
         int i = va_arg(args, int);
-        int n = floor(log10(i)) + 1;
-        char *s;
-        s = (char *)malloc(n + 1);
+        char s[12];
 
         intToStr(i, s);
 
-        for (int j = 0; j < n; j++) {
+        for (int j = 0; s[j] != '\0'; j++) {
           uart_write(s[j]);
         }
       } else if (*(fmt + 1) == 'c') {
