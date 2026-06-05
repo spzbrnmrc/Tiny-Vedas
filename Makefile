@@ -1,8 +1,18 @@
+.PHONY: deps smoke smoke-verilator decodes clean
+
+RUN = ./scripts/with_env.sh
+
+deps:
+	./scripts/install_deps.sh
+
 smoke:
-	./tools/sim_manager.py -s xsim -t tests/smoke.tlist 
+	$(RUN) ./tools/sim_manager.py -s xsim -t tests/smoke.tlist
+
+smoke-verilator:
+	$(RUN) ./tools/sim_manager.py -s verilator -t tests/smoke.tlist
 
 decodes:
-	python3 open-decode-tables/src/main.py -t open-decode-tables/tables/rv32im.yaml -o rtl/idu
+	$(RUN) python3 open-decode-tables/src/main.py -t open-decode-tables/tables/rv32im.yaml -o rtl/idu
 
 clean:
 	rm -rf obj_dir

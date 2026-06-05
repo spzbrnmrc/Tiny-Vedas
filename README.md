@@ -1,19 +1,21 @@
-# Tiny Vedas - RISC-V RV32IM Processor
+# Tiny Vedas — RISC-V RV32IM Processor
 
-A complete, open-source implementation of a RISC-V RV32IM processor written in SystemVerilog. Tiny Vedas is a 4-stage pipelined processor with full RV32IM instruction set support, hazard handling, and comprehensive verification.
+A complete, open-source, synthesizable implementation of a RISC-V RV32IM processor written in SystemVerilog. Tiny Vedas is a 4-stage pipelined CPU with Harvard memory, hazard handling, and ISS/RTL co-simulation verification.
 
-It is used as a reference for a [free course on RISC-V Processor Design](https://youtu.be/izPdo7n1u1I).
+It is used as a reference for the [free course on RISC-V Processor Design](https://youtu.be/izPdo7n1uI).
 
 ## Features
 
 ### Architecture
+
 - **ISA**: RISC-V RV32IM (32-bit integer + multiply/divide)
-- **Pipeline**: 4-stage pipeline (IFU → IDU0 → IDU1 → EXU)
-- **Data Width**: 32-bit (XLEN = 32)
-- **Memory**: Harvard architecture with separate instruction and data memories
-- **Reset Vector**: Configurable (default: 0x80000000)
+- **Pipeline**: 4-stage (IFU → IDU0 → IDU1 → EXU)
+- **Memory**: Harvard architecture — separate instruction memory (ICCM) and data memory (DCCM)
+- **Decode**: Spec-driven via the `open-decode-tables` submodule (YAML → SystemVerilog)
+- **Verification**: Python instruction-set simulator (ISS) compared against RTL traces
 
 ### Instruction Set Support
+
 - **Arithmetic**: ADD, SUB, ADDI, LUI, AUIPC
 - **Logical**: AND, OR, XOR, ANDI, ORI, XORI
 - **Shifts**: SLL, SRL, SRA, SLLI, SRLI, SRAI
@@ -22,198 +24,357 @@ It is used as a reference for a [free course on RISC-V Processor Design](https:/
 - **Jumps**: JAL, JALR
 - **Memory**: LB, LH, LW, LBU, LHU, SB, SH, SW
 - **Multiply/Divide**: MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU
+- **System**: NOP (`addi x0, x0, 0`), ECALL (decoded; no trap handler yet — behaves as NOP)
 
 ### Advanced Features
-- **Data Hazard Resolution**: Register forwarding from EXU to IDU1
-- **Control Hazard Handling**: Pipeline flush on branches
-- **Multi-cycle Operations**: Pipelined multiplier and divider
-- **Unaligned Memory Access**: Support for byte and half-word aligned loads/stores
-- **Memory Forwarding**: Store-to-load forwarding for performance
+
+- Register forwarding from EXU to IDU1
+- Pipeline flush on taken branches and jumps
+- Register scoreboard for RAW hazard detection
+- Multi-cycle multiplier and divider
+- Unaligned load/store support with store-to-load forwarding
 
 ## Project Structure
 
 ```
-tiny-vedas/
-├── rtl/                    # RTL design files
-│   ├── core_top.sv        # Top-level processor module
-│   ├── core_top.flist     # File list for synthesis
-│   ├── ifu/               # Instruction fetch unit
-│   │   └── ifu.sv         # IFU implementation
-│   ├── idu/               # Instruction decode units
-│   │   ├── idu0.sv        # Decode stage 0
-│   │   ├── idu1.sv        # Decode stage 1
-│   │   ├── reg_file.sv    # Register file
-│   │   ├── decode.sv      # Auto-generated decode logic
-│   │   └── decode         # Decode table specification
-│   ├── exu/               # Execute unit
-│   │   ├── exu.sv         # Execute unit top-level
-│   │   ├── alu.sv         # Arithmetic logic unit
-│   │   ├── mul.sv         # Multiplier unit
-│   │   ├── div.sv         # Divider unit
-│   │   └── lsu.sv         # Load/store unit
-│   ├── include/           # Global definitions
-│   │   ├── global.svh     # Global parameters
-│   │   └── types.svh      # Type definitions
-│   └── lib/               # Utility modules
-│       ├── mem_lib.sv     # Memory modules
-│       └── beh_lib.sv     # Behavioral models
-├── tests/                 # Test programs
-│   ├── asm/              # Assembly test programs
-│   ├── c/                # C program tests
-│   └── raw/              # Raw binary tests
-├── dv/                    # Design verification
-│   ├── sv/               # SystemVerilog testbenches
-│   │   ├── core_top_tb.sv # Main testbench
-│   │   └── lsu_tb.sv      # LSU testbench
-│   └── verilator/        # Verilator simulation files
-├── tools/                 # Development utilities
-│   ├── dec_table_gen.py  # Decode table generator
-│   ├── sim_manager.py    # Simulation manager
-│   └── riscv_sim         # RISC-V simulator
-├── SVLib/                 # SystemVerilog library
-├── docs/                  # Documentation and Slides for the course
-├── Makefile              # Build and simulation targets
-└── LICENSE               # Apache 2.0 license
+Tiny-Vedas/
+├── rtl/                     # Processor RTL
+│   ├── core_top.sv          # Top-level module
+│   ├── core_top.flist       # File list for synthesis/simulation
+│   ├── ifu/                 # Instruction fetch unit
+│   ├── idu/                 # Decode stages, regfile, scoreboard
+│   │   ├── rv32im_decoder.sv   # Generated — do not hand-edit
+│   │   └── decode_out_t.svh      # Generated — do not hand-edit
+│   ├── exu/                 # ALU, MUL, DIV, LSU
+│   ├── include/             # global.svh, types.svh
+│   └── lib/                 # ICCM/DCCM memory models
+├── dv/
+│   ├── sv/                  # core_top_tb.sv, lsu_tb.sv
+│   └── verilator/           # Verilator C++ harness
+├── tests/
+│   ├── asm/                 # Assembly test programs
+│   ├── c/                   # C benchmarks (helloworld, iaxpy)
+│   ├── elf/                 # Prebuilt ELF binaries (dhrystone)
+│   └── smoke.tlist          # Regression test list
+├── tools/
+│   ├── sim_manager.py       # Main test runner (compile → ISS → RTL → compare)
+│   └── rv_iss.py            # Reference instruction-set simulator
+├── sw/vedas_printf/         # Bare-metal printf library for C tests
+├── SVLib/                   # Git submodule — reusable SystemVerilog primitives
+├── open-decode-tables/      # Git submodule — YAML decode table generator
+├── scripts/
+│   ├── install_deps.sh      # Dependency installer (`make deps`)
+│   ├── env.sh               # Generated PATH + venv (by `make deps`)
+│   └── with_env.sh          # Wrapper used by Makefile targets
+├── .github/workflows/ci.yml # GitHub Actions CI pipeline
+├── Makefile
+├── requirements.txt
+└── LICENSE
 ```
+
+## Prerequisites
+
+| Tool | Purpose |
+|------|---------|
+| **Verilator** | RTL simulation (primary; used in CI) |
+| **riscv64-unknown-elf-gcc** | Bare-metal cross-compiler for test programs (RV32IM / ILP32) |
+| **Python 3** | `sim_manager.py`, `rv_iss.py`, decode generation |
+| **Xilinx Vivado** (optional) | XSim simulation — only needed if you prefer `make smoke` over Verilator |
+
+Tested on Ubuntu 22.04 and 24.04. Other Linux distributions should work with equivalent packages installed manually.
 
 ## Quick Start
 
-### Prerequisites
-- **SystemVerilog Simulator**: Verilator (recommended) or Xilinx Vivado
-- **RISC-V Toolchain**: GCC with RISC-V target
-- **Python 3**: For build scripts
-- **Ubuntu 20.04+**: Tested platform
+### 1. Clone with submodules
 
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/siliscale/Tiny-Vedas.git
-   cd Tiny-Vedas
-   ```
-
-2. **Install dependencies**
-   ```bash
-   # Install Verilator
-   sudo apt-get install verilator
-   
-   # Install RISC-V toolchain
-   sudo apt-get install gcc-riscv64-linux-gnu
-   
-   # Install Python dependencies
-   pip install -r requirements.txt
-   ```
-
-3. **Build and run simulation**
-   ```bash
-   # Run core simulation
-   make core_top_sim
-   
-   # Run specific tests
-   cd tests/asm
-   make basic_alu_r
-   ```
-
-## Simulation
-
-### Core Simulation
 ```bash
-make core_top_sim
-```
-This runs the main testbench with Verilator, executing test programs and generating execution traces.
-
-### Individual Unit Tests
-```bash
-# Test load/store unit
-make lsu_sim
-
-# Test specific assembly programs
-cd tests/asm
-make basic_alu_r    # Test ALU register operations
-make basic_mul      # Test multiplication
-make basic_branch   # Test branch instructions
+git clone --recurse-submodules https://github.com/siliscale/Tiny-Vedas.git
+cd Tiny-Vedas
 ```
 
-### C Program Tests
+If you already cloned without submodules:
+
 ```bash
-cd tests/c
-make helloworld     # Compile and run C program
+git submodule update --init --recursive
 ```
 
-## Configuration
+### 2. Install dependencies
 
-### Memory Configuration
-- **Instruction Memory**: 1KB (1024 words)
-- **Data Memory**: 1KB (1024 words)
-- **Stack Pointer**: Configurable initial value (default: 0x80000000)
+On Ubuntu, `make deps` installs everything needed for simulation and verification:
 
-### Pipeline Configuration
-- **Stages**: 4-stage pipeline
-- **Forwarding**: Full forwarding from EXU to IDU1
-- **Stalling**: Multi-cycle operation support
+- System build packages (`build-essential`, Verilator build deps)
+- Python virtual environment with packages from `requirements.txt`
+- Prebuilt **RISC-V GNU bare-metal toolchain** (`riscv64-unknown-elf-gcc`) into `.local/riscv/`
+- Latest stable Verilator compiled from source into `.local/verilator/`
+
+```bash
+make deps
+```
+
+`make deps` also generates `scripts/env.sh` (PATH + venv) and verifies the toolchain. All Makefile test targets use it automatically via `scripts/with_env.sh`, so CI and local runs work without manual setup.
+
+For interactive shells, source the environment once per session:
+
+```bash
+source scripts/env.sh
+riscv64-unknown-elf-gcc --version
+verilator --version
+```
+
+Override pinned versions if needed:
+
+```bash
+RISCV_TOOLCHAIN_VERSION=2026.06.05 make deps   # default
+VERILATOR_TAG=v5.048 make deps                   # pin a specific Verilator release
+FORCE_RISCV_TOOLCHAIN_REINSTALL=1 make deps      # re-download toolchain
+FORCE_VERILATOR_REBUILD=1 make deps              # rebuild Verilator
+```
+
+Do **not** run `make deps` with `sudo` — only the apt step needs elevated privileges. If a previous `sudo make deps` left `deps/verilator` root-owned, fix ownership then rebuild:
+
+```bash
+sudo chown -R "$USER:$USER" deps/verilator
+FORCE_VERILATOR_REBUILD=1 make deps
+```
+
+### 3. Run the smoke regression
+
+```bash
+# Verilator (recommended; same as CI)
+make smoke-verilator
+
+# Xilinx XSim (requires Vivado — optional)
+make smoke
+```
+
+### 4. Run a single test
+
+```bash
+./tools/sim_manager.py -s verilator -n asm.basic_alu_r
+./tools/sim_manager.py -s verilator -n c.helloworld
+```
+
+## RISC-V GNU Toolchain
+
+Tiny Vedas compiles bare-metal test programs with `riscv64-unknown-elf-gcc` using `-march=rv32im -mabi=ilp32`. Do **not** use the Linux cross-compiler (`riscv64-linux-gnu-gcc`) or distribution packages that lack newlib — they will not produce working bare-metal ELFs.
+
+### Automatic install (recommended)
+
+`make deps` downloads a prebuilt **riscv64-unknown-elf** toolchain from the [riscv-collab/riscv-gnu-toolchain releases](https://github.com/riscv-collab/riscv-gnu-toolchain/releases) page and installs it to `.local/riscv/`. The Ubuntu series (22.04 or 24.04) is detected automatically.
+
+### Manual install
+
+1. Go to [riscv-gnu-toolchain releases](https://github.com/riscv-collab/riscv-gnu-toolchain/releases).
+2. Download the **`riscv64-elf-ubuntu-<version>-gcc.tar.xz`** archive matching your Ubuntu version.
+3. Extract and add to your `PATH`:
+
+```bash
+# Example for Ubuntu 22.04, release 2026.06.05
+wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.06.05/riscv64-elf-ubuntu-22.04-gcc.tar.xz
+mkdir -p ~/.local
+tar -xJf riscv64-elf-ubuntu-22.04-gcc.tar.xz -C ~/.local
+
+# Add to ~/.bashrc
+export PATH="$HOME/.local/riscv/bin:$PATH"
+source ~/.bashrc
+```
+
+4. Verify RV32IM support:
+
+```bash
+riscv64-unknown-elf-gcc --version
+echo 'int main(void) { return 0; }' | riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -x c -
+```
+
+### Build from source (not recommended for CI)
+
+If prebuilt binaries are unavailable for your platform, follow the build instructions in the [riscv-gnu-toolchain README](https://github.com/riscv-collab/riscv-gnu-toolchain). Configure for bare metal:
+
+```bash
+./configure --prefix=/opt/riscv --with-arch=rv32im --with-abi=ilp32
+make -j$(nproc)
+```
+
+This takes a long time. Prefer the prebuilt nightly releases for development and CI.
+
+## Running Tests
+
+All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
+
+| Prefix | Source | Example |
+|--------|--------|---------|
+| `asm.` | `tests/asm/<name>.s` | `asm.basic_mul` |
+| `c.` | `tests/c/<name>.c` | `c.helloworld` |
+| `elf.` | `tests/elf/<name>` (prebuilt) | `elf.dhrystone` |
+
+### sim_manager.py usage
+
+```
+./scripts/with_env.sh ./tools/sim_manager.py -s <simulator> (-n <test> | -t <task-list>)
+
+  -s, --simulator   verilator | xsim
+  -n, --test-name   Run a single test (e.g. asm.basic_alu_r)
+  -t, --task-list   Run all tests listed in a file (e.g. tests/smoke.tlist)
+```
+
+`make smoke-verilator` and `make smoke` invoke `with_env.sh` automatically.
+
+### Makefile targets
+
+| Target | Command |
+|--------|---------|
+| `make deps` | Install system packages, Python venv, RISC-V toolchain, and Verilator |
+| `make smoke-verilator` | Run the 20-test regression via Verilator (CI default) |
+| `make smoke` | Run the 20-test regression via XSim (requires Vivado) |
+| `make decodes` | Regenerate `rtl/idu/rv32im_decoder.sv` from YAML |
+| `make clean` | Remove build artifacts (`work/`, `obj_dir/`, logs, VCDs) |
+
+### Per-test output
+
+Each test writes artifacts to `work/<test>/`:
+
+| File | Contents |
+|------|----------|
+| `iss.log` | Golden ISS execution trace |
+| `rtl.log` | RTL architectural trace |
+| `sim.log` | Simulator stdout and comparison errors |
+| `console.log` | Program UART output |
+| `stats.txt` | IPC/CPI performance metrics |
+| `core_top.vcd` | Waveform (Verilator only) |
 
 ## Verification
 
-### Test Coverage
-- **Unit Tests**: Individual component verification
-- **Integration Tests**: Full pipeline verification
-- **Instruction Tests**: Complete RV32IM instruction set coverage
-- **Hazard Tests**: Data and control hazard scenarios
+Tiny Vedas uses **co-simulation**: a Python ISS generates a golden trace, the RTL simulator produces its own trace, and `sim_manager.py` compares them instruction by instruction (PC, opcode, register writes, memory stores, branches).
 
-### Test Results
-Simulation results are logged to:
-- `rtl.log`: Instruction execution trace
-- `console.log`: Program output
-- Waveform files: For detailed timing analysis
+Programs signal completion by storing `0xdeadbeef` to address `0x10000000`. See `tests/asm/eot_sequence.s`.
+
+### Smoke regression (`tests/smoke.tlist`)
+
+20 tests covering ALU, forwarding, multiply, load/store, branches, jumps, C programs, and Dhrystone. The assembly test `asm.basic_div` exists but is not currently in the smoke list.
+
+## Memory Map
+
+### Processor memories
+
+| Memory | Depth | Width | Notes |
+|--------|-------|-------|-------|
+| ICCM (instructions) | 2^18 words | 32-bit | Loaded from ELF `.text` section |
+| DCCM (data) | 2^18 words | 32-bit | Loaded from `.data`, `.rodata`, `.bss`, etc. |
+
+Configured in `rtl/include/global.svh`.
+
+### Software-visible addresses
+
+| Address | Purpose |
+|---------|---------|
+| `0x00100000` | Default link address for test programs (`-Wl,-Ttext=0x100000`) |
+| `0x00200000` | MMIO UART — bare-metal `printf` output (`sw/vedas_printf`) |
+| `0x10000000` | End-of-test flag — write `0xdeadbeef` to halt simulation |
+| `0x80000000` | Default initial stack pointer (register x2) |
+
+The reset vector is taken from the ELF `_start` symbol, not hardcoded.
+
+## Decode Table Generation
+
+Instruction decode logic is generated from YAML, not hand-written. The source of truth is `open-decode-tables/tables/rv32im.yaml`.
+
+```bash
+make decodes
+```
+
+This regenerates:
+
+- `rtl/idu/rv32im_decoder.sv`
+- `rtl/idu/decode_out_t.svh`
+
+To add or modify instructions, edit the YAML in the `open-decode-tables` submodule, commit and push there, then update the submodule pointer in this repo and run `make decodes`.
+
+## Writing Tests
+
+### Assembly test
+
+Create `tests/asm/my_test.s`:
+
+```asm
+    .globl   _start
+    .section .text
+
+_start:
+    li   x1, 42
+    add  x2, x1, x1
+    .include "eot_sequence.s"
+```
+
+Run with:
+
+```bash
+./tools/sim_manager.py -s verilator -n asm.my_test
+```
+
+### C test
+
+Create `tests/c/my_test.c` using `vedas_printf` for output. `sim_manager.py` compiles `sw/vedas_printf/vedas_printf.c` alongside the test with `-march=rv32im -mabi=ilp32 -nostdlib -lgcc` (required by the prebuilt bare-metal toolchain). The end-of-test sequence comes from `tests/c/asm_functions/eot_sequence.s`.
 
 ## Synthesis
 
-### FPGA Synthesis
-```bash
-# Generate decode tables
-make decodes
+The design is synthesizable. Use `rtl/core_top.flist` as the file list for FPGA or ASIC flows. The file list references the `SVLib` submodule and sets `$PROJ` to the repository root.
 
-# Synthesize with Vivado
-make vivado_synth
+```bash
+make decodes   # ensure decoder is up to date before synthesis
 ```
 
-### ASIC Synthesis
-The design is synthesizable with standard ASIC tools. Use `rtl/core_top.flist` as the file list.
+## Performance Scoreboard
 
-## Performance
+IPC values from RTL simulation (see `work/<test>/stats.txt` after a run):
 
-### Pipeline Performance
-- **CPI**: ~1.0 for most workloads
-- **Branch Penalty**: 1 cycle for taken branches
-- **Memory Latency**: 1 cycle for aligned accesses
+| Benchmark | IPC |
+|:---------:|:---:|
+| c.helloworld | 0.6177 |
+| c.iaxpy | 0.4564 |
+| elf.dhrystone | 0.5078 |
 
-### Resource Utilization
-- **Registers**: ~2000 flip-flops
-- **LUTs**: ~5000 (FPGA estimate)
-- **Memory**: 2KB total (1KB instruction + 1KB data)
+## Submodules
+
+| Submodule | Repository | Purpose |
+|-----------|------------|---------|
+| `SVLib` | [siliscale/SVLib](https://github.com/siliscale/SVLib) | Registers, program counter, arithmetic primitives |
+| `open-decode-tables` | [siliscale/open-decode-tables](https://github.com/siliscale/open-decode-tables) | YAML → SystemVerilog decode generator |
+
+After pulling submodule updates:
+
+```bash
+git submodule update --init --recursive
+make decodes
+```
+
+## Continuous Integration
+
+GitHub Actions runs on every push and pull request to `main`. The workflow (`.github/workflows/ci.yml`) mirrors a from-scratch developer setup:
+
+1. Checkout with submodules
+2. `make deps` — system packages, Python venv, RISC-V toolchain, Verilator, `scripts/env.sh`
+3. `make decodes` — regenerate the instruction decoder
+4. `make smoke-verilator` — full 20-test regression
+
+No Vivado license is required. `make deps` writes `scripts/env.sh`; subsequent `make` targets load it automatically — no manual `PATH` or `source venv/bin/activate` in CI.
+
+If CI fails, check the job log for the failing test name, then reproduce locally with:
+
+```bash
+make deps   # if not already done
+./scripts/with_env.sh ./tools/sim_manager.py -s verilator -n <test.name>
+```
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
+3. Make your changes and add tests
+4. Run `make smoke-verilator` before submitting
 5. Submit a pull request
 
-### Development Guidelines
-- Follow SystemVerilog coding standards
-- Add comprehensive tests for new features
-- Update documentation for API changes
-- Ensure all tests pass before submitting
+If you change instruction decode, update `open-decode-tables/tables/rv32im.yaml` in the submodule, push there, then bump the submodule pointer in this repo.
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
-
-## Performance Scoreboard
-
-|    Benchmark     |  IPC   |
-|:----------------:|:------:|
-| c.helloworld     | 0.6177 |
-| c.iaxpy          | 0.4564 |
-| elf.dhrystone    | 0.5078 |
+Apache License 2.0. See [LICENSE](LICENSE).

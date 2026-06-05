@@ -1,11 +1,37 @@
-obj_dir
+# Simulation and synthesis artifacts
+obj_dir/
+work/
+x*/
+.Xil/
 *.vcd
+*.wdb
+*.pb
+*.jou
+*.zip
+
+# Build outputs
 *.log
 *.hex
 *.elf
 *.bin
 *.dump
-*.vcd
-*.log
-work/
-x*
+
+# Local toolchain installs (see `make deps`)
+.local/
+deps/
+
+# Generated environment (see `make deps`)
+scripts/env.sh
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Generated decode tables (regenerate with `make decodes`)
+open-decode-tables/gen/
+
+# Local reference copy of the RISC-V ISA manual (not a project dependency)
+riscv-isa-manual/
