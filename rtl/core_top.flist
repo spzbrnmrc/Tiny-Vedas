@@ -5,6 +5,15 @@ $PROJ/SVLib/src/registers_regfiles/register_en_flush_sync_rstn.sv
 $PROJ/SVLib/src/registers_regfiles/register_en_sync_rstn_vector.sv
 $PROJ/SVLib/src/registers_regfiles/program_counter.sv
 $PROJ/SVLib/src/arith/twoscomp.sv
+$PROJ/SVLib/src/arith/ha.sv
+$PROJ/SVLib/src/arith/fa.sv
+$PROJ/SVLib/src/arith/cla_4.sv
+$PROJ/SVLib/src/arith/adder.sv
+$PROJ/SVLib/src/arith/csa_3_2.sv
+$PROJ/SVLib/src/arith/csa_4_2.sv
+$PROJ/SVLib/src/arith/booth_encoder.sv
+$PROJ/SVLib/src/arith/adder_pipe.sv
+$PROJ/SVLib/src/arith/mul.sv
 $PROJ/rtl/include/global.svh
 $PROJ/rtl/include/types.svh
 $PROJ/rtl/idu/decode_out_t.svh
@@ -17,7 +26,7 @@ $PROJ/rtl/idu/idu1.sv
 $PROJ/rtl/idu/rsb.sv
 $PROJ/rtl/exu/exu.sv
 $PROJ/rtl/exu/alu.sv
-$PROJ/rtl/exu/mul.sv
+$PROJ/rtl/exu/exu_mul.sv
 $PROJ/rtl/exu/div.sv
 $PROJ/rtl/exu/lsu.sv
 $PROJ/rtl/idu/reg_file.sv

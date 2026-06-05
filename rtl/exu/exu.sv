@@ -121,7 +121,7 @@ module exu (
       .pc_load        (pc_load)
   );
 
-  mul mul_inst (
+  exu_mul exu_mul_inst (
       .clk          (clk),
       .rstn         (rstn),
       .freeze       (1'b0),

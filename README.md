@@ -157,6 +157,7 @@ make smoke
 ```bash
 ./tools/sim_manager.py -s verilator -n asm.basic_alu_r
 ./tools/sim_manager.py -s verilator -n c.helloworld
+./scripts/with_env.sh ./tools/sim_manager.py -s verilator -n pyvedas.vector_add
 ```
 
 ## RISC-V GNU Toolchain
@@ -325,7 +326,62 @@ Run with:
 
 Create `tests/c/my_test.c` using `vedas_printf` for output. `sim_manager.py` compiles `sw/vedas_printf/vedas_printf.c` alongside the test with `-march=rv32im -mabi=ilp32 -nostdlib -lgcc` (required by the prebuilt bare-metal toolchain). The end-of-test sequence comes from `tests/c/asm_functions/eot_sequence.s`.
 
-## Synthesis
+### Python test (PyVedas)
+
+PyVedas tests are **model spec files** under `tests/pyvedas/`. Each file describes a small `torch.compile` module and concrete trace inputs. `sim_manager.py` JIT-compiles the model to C, links it with the PyVedas runtime, builds an RV32 ELF, and runs the usual ISS/RTL comparison.
+
+**Prerequisites:** run `make deps` once — it installs CPU PyTorch into the repo `venv/` (used automatically by `sim_manager.py`). For JIT-only debugging you can also use `pyvedas/.venv`; see [pyvedas/README.md](pyvedas/README.md).
+
+Create `tests/pyvedas/my_add.py`:
+
+```python
+"""PyVedas smoke test: elementwise add."""
+
+import torch
+
+
+class MyAdd(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return x + y
+
+
+MODEL = torch.compile(MyAdd())
+TRACE_INPUTS = (
+    torch.tensor([1, 2, 3, 4], dtype=torch.int32),
+    torch.tensor([10, 20, 30, 40], dtype=torch.int32),
+)
+```
+
+| Symbol | Purpose |
+|--------|---------|
+| `MODEL` | `torch.compile` module exported by the JIT |
+| `TRACE_INPUTS` | Tuple of concrete tensors — used for `torch.export` tracing **and** to bake static buffer values into `generated.c` |
+
+**Constraints today**
+
+- Use **`torch.int32`** tensors (bare-metal target has no soft-float).
+- Every graph op must have a **1:1 entry** in `pyvedas/runtime/ops.yaml` with a matching C kernel (e.g. `aten.add.Tensor`, `aten.mul.Tensor`). Adding a new op requires a registry entry and runtime implementation — see [pyvedas/README.md](pyvedas/README.md).
+
+Run with:
+
+```bash
+./scripts/with_env.sh ./tools/sim_manager.py -s verilator -n pyvedas.my_add
+```
+
+Add the test name to `tests/smoke.tlist` to include it in `make smoke-verilator`:
+
+```
+pyvedas.my_add
+```
+
+**What happens under the hood**
+
+1. JIT (`pyvedas/jit`) exports the graph and writes `work/pyvedas.my_add/generated.c`, `graph.txt`, and `manifest.json`.
+2. The RISC-V linker builds `test.elf` from `generated.c`, runtime sources from the manifest, and `eot_sequence.s`.
+3. ISS and Verilator traces are compared like any other test.
+
+Inspect JIT output on failure: `work/pyvedas.my_add/jit.log`, `compile.log`, `sim.log`.
+
 
 The design is synthesizable. Use `rtl/core_top.flist` as the file list for FPGA or ASIC flows. The file list references the `SVLib` submodule and sets `$PROJ` to the repository root.
 
