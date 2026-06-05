@@ -9,8 +9,17 @@ import subprocess
 import shutil
 import concurrent.futures
 import multiprocessing
+import threading
 import traceback
 from tqdm import tqdm
+
+_console_lock = threading.Lock()
+
+
+def safe_write(msg: str) -> None:
+    """Thread-safe console output that does not corrupt tqdm bars."""
+    with _console_lock:
+        tqdm.write(msg)
 
 IMEM_DEPTH = 2 ** 18
 DMEM_DEPTH = 2 ** 18
@@ -244,7 +253,7 @@ def read_rtl_log(test: str):
             })
     return rtl_exe
 
-def compare_results(test: str) -> None:
+def compare_results(test: str, show_progress: bool = True) -> None:
     # Read both log files in parallel using threads
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -259,7 +268,15 @@ def compare_results(test: str) -> None:
         test_passed = True
         sim_log_path = os.path.join('work', test, 'sim.log')
         with open(sim_log_path, 'a') as sim_log:
-            pbar = tqdm(range(len(iss_exe)), desc=f"Comparing {test}", unit="instr", ncols=100, leave=False)
+            indices = range(len(iss_exe))
+            pbar = tqdm(
+                indices,
+                desc=f"Comparing {test}",
+                unit="instr",
+                ncols=100,
+                leave=False,
+                disable=not show_progress,
+            )
             for iss_idx in pbar:
                 if str(iss_exe[iss_idx]['pc']).upper() != str(rtl_exe[iss_idx]['pc']).upper():
                     sim_log.write(f"Error: PC Mismatch at PC {iss_exe[iss_idx]['pc']}\n")
@@ -291,16 +308,13 @@ def compare_results(test: str) -> None:
                             test_passed = False
                 if not test_passed:
                     break
-            pbar.close()
     except:
         test_passed = False
 
-    if test_passed:
-        print(f"{test} {'.' * (50 - len(test))}. \033[92mPASSED\033[0m")
-    else:
-        print(f"{test} {'.' * (50 - len(test))}. \033[91mFAILED\033[0m")
+    status = "\033[92mPASSED\033[0m" if test_passed else "\033[91mFAILED\033[0m"
+    safe_write(f"{test} {'.' * (50 - len(test))}. {status}")
 
-def process_rtl_log(test: str):
+def process_rtl_log(test: str, show_progress: bool = True):
     """Process the RTL log file."""
     with open(os.path.join("work", test, "rtl.log"), "r") as f:
         rtl_lines = f.readlines()
@@ -309,8 +323,15 @@ def process_rtl_log(test: str):
     rtl_lines = [line.rstrip('\n') for line in rtl_lines if line.strip()]
     total_lines = len(rtl_lines) - 1
     line_idx = 0
-    pbar = tqdm(total=total_lines, desc=f"Processing RTL log {test}", unit="line", leave=False, ncols=100)
-    
+    pbar = tqdm(
+        total=total_lines,
+        desc=f"Processing RTL log {test}",
+        unit="line",
+        leave=False,
+        ncols=100,
+        disable=not show_progress,
+    )
+
     while line_idx < total_lines:
         if line_idx + 1 >= len(rtl_lines):
             break
@@ -354,10 +375,9 @@ def process_rtl_log(test: str):
         else:
             line_idx += 1
         
-        pbar.update(1)
-    
-    pbar.close()
-    
+        if show_progress:
+            pbar.update(1)
+
     # Write the updated rtl_log
     with open(os.path.join("work", test, "rtl.log"), "w") as f:
         f.write("\n".join(rtl_lines))
@@ -404,7 +424,7 @@ def calculate_perf_stats(test: str):
     with open(stats_path, "w") as stats_file:
         stats_file.write(table_str)
 
-def run_e2e(test: str, simulator: str):
+def run_e2e(test: str, simulator: str, show_progress: bool = True):
     """Run a test through the entire pipeline."""
     try:
         reset_vector = run_gen(test)
@@ -414,8 +434,8 @@ def run_e2e(test: str, simulator: str):
             run_verilator(test, reset_vector)
         else:
             run_xsim(test, reset_vector)
-        process_rtl_log(test)
-        compare_results(test)
+        process_rtl_log(test, show_progress=show_progress)
+        compare_results(test, show_progress=show_progress)
         calculate_perf_stats(test)
     except Exception as e:
         print(f"Error running test {test}: {e}")
@@ -459,21 +479,42 @@ def main():
     
     # Get number of CPU cores
     num_cores = multiprocessing.cpu_count()
-    
+    parallel = len(tests) > 1
+    show_progress = not parallel
+
     # Run tests in parallel using thread pool
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_cores) as executor:
-        # Submit all tasks to the thread pool
-        future_to_test = {executor.submit(run_e2e, test, args.simulator): test for test in tests}
-        
-        # Process completed tasks
+        future_to_test = {
+            executor.submit(run_e2e, test, args.simulator, show_progress): test
+            for test in tests
+        }
+
+        desc = os.path.basename(args.task_list) if args.task_list else "tests"
+        suite_pbar = tqdm(
+            total=len(tests),
+            desc=f"Running {desc}",
+            unit="test",
+            ncols=100,
+            disable=not parallel,
+        )
+
+        failed = []
         for future in concurrent.futures.as_completed(future_to_test):
             test = future_to_test[future]
             try:
-                future.result()  # This will raise any exceptions that occurred
-                # Print a detailed tracebacki on exception
+                future.result()
             except Exception as e:
-                print(f"Error running test {test}: {e}")
-                continue
+                failed.append(test)
+                safe_write(f"Error running test {test}: {e}")
+            if parallel:
+                suite_pbar.update(1)
+
+        if parallel:
+            suite_pbar.close()
+
+        if failed:
+            safe_write(f"\n{len(failed)} test(s) failed: {', '.join(failed)}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     try:
