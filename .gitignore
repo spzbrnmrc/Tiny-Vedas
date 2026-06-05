@@ -35,3 +35,7 @@ open-decode-tables/gen/
 
 # Local reference copy of the RISC-V ISA manual (not a project dependency)
 riscv-isa-manual/
+
+# PyVedas JIT generated output
+pyvedas/work/
+pyvedas/.venv/

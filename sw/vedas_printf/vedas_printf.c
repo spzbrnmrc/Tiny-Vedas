@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2025 Siliscale Consulting, LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include <stdarg.h>
 #include <stdio.h>
 

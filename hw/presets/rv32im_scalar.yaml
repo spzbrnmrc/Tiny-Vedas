@@ -1,0 +1,34 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Baseline Tiny-Vedas: 4-stage in-order scalar RV32IM (shipping RTL).
+name: rv32im_scalar
+version: 1
+description: >
+  4-stage in-order scalar pipeline with Harvard ICCM/DCCM. Matches the current
+  shipping RTL and smoke regression defaults.
+
+cpu:
+  kind: scalar
+  isa: rv32im
+  issue_width: 1
+  commit_width: 1
+  pipeline_stages: 4
+  out_of_order: false
+
+vector:
+  enabled: false
+  width_bits: 0
+  lanes: 0
+  local_mem_bytes: 0
+
+memory:
+  iccm_depth_words: 262144   # 2^18
+  dccm_depth_words: 262144   # 2^18
+  link_address: 0x00100000
+  uart_address: 0x00200000
+  eot_address: 0x10000000
+
+software:
+  materializer: flat_row_major
+  vectorize_min_numel: 0     # 0 = scalar-only lowering until vector unit lands

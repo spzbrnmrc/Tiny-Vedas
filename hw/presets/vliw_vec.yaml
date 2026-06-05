@@ -1,0 +1,34 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Target: configurable VLIW core with vector co-processor (scaffold).
+name: vliw_vec
+version: 1
+description: >
+  VLIW issue slots with a local vector co-processor. RTL not yet implemented;
+  preset exists so SW can be developed against a stable config contract.
+
+cpu:
+  kind: vliw
+  isa: rv32im
+  issue_width: 4
+  commit_width: 4
+  pipeline_stages: 6
+  out_of_order: false
+
+vector:
+  enabled: true
+  width_bits: 128
+  lanes: 4
+  local_mem_bytes: 16384
+
+memory:
+  iccm_depth_words: 262144
+  dccm_depth_words: 262144
+  link_address: 0x00100000
+  uart_address: 0x00200000
+  eot_address: 0x10000000
+
+software:
+  materializer: flat_row_major
+  vectorize_min_numel: 4
