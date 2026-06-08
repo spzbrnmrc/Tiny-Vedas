@@ -1,11 +1,13 @@
-.PHONY: deps smoke smoke-verilator decodes clean clean-sim clean-pd clean-pyvedas config sv2v rtl2gds pd-report timing mul-sweep
+.PHONY: deps smoke smoke-verilator decodes clean clean-sim clean-pd clean-pyvedas config sv2v rtl2gds pd-report timing mul-sweep pd-synth
 
 RUN = ./scripts/with_env.sh
 
 PD_PLATFORM ?= asap7
 HW_CONFIG ?= hw/presets/rv32im_scalar.yaml
 ORFS_TARGET ?= all
-export ORFS_TARGET
+ORFS_IMAGE ?= openroad/orfs:26Q2-446-g85d92b593
+SV2V_VERSION ?= v0.0.13
+export ORFS_TARGET ORFS_IMAGE SV2V_VERSION
 
 deps:
 	./scripts/install_deps.sh
@@ -32,6 +34,10 @@ pd-report:
 	python3 pd/scripts/report_timing.py
 
 timing: rtl2gds pd-report
+
+pd-synth:
+	python3 open-decode-tables/src/main.py -t open-decode-tables/tables/rv32im.yaml -o rtl/idu
+	ORFS_TARGET=synth PD_PLATFORM=ci-asap7 ./scripts/pd_docker.sh make rtl2gds
 
 mul-sweep:
 	python3 pd/scripts/sweep_mul_pipeline.py -j $(shell nproc)

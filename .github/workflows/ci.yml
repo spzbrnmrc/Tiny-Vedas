@@ -33,3 +33,21 @@ jobs:
 
       - name: Run smoke regression (Verilator)
         run: make smoke-verilator
+
+  pd-synth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      ORFS_IMAGE: openroad/orfs:26Q2-446-g85d92b593
+      SV2V_VERSION: v0.0.13
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: PD synthesis smoke (ORFS Docker)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-yaml
+          make pd-synth

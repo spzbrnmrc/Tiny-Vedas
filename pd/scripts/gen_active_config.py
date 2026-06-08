@@ -163,6 +163,9 @@ def main() -> int:
     with open(platform_path, "r", encoding="utf-8") as f:
         plat = yaml.safe_load(f) or {}
 
+    # Tool-path preset (e.g. ci-asap7) may still target the same ORFS PDK (asap7).
+    orfs_platform = str(plat.get("orfs_platform", args.platform))
+
     iccm = int(plat.get("synth_iccm_depth_words", 1024))
     dccm = int(plat.get("synth_dccm_depth_words", 1024))
     orfs_root = Path(str(plat.get("orfs_root", "/tools/OpenROAD-flow-scripts")))
@@ -187,7 +190,7 @@ def main() -> int:
     mul_config_dst.write_text(mul_config_src.read_text(encoding="utf-8"), encoding="utf-8")
 
     verilog_out = work_dir / "sv2v" / "tiny_vedas.v"
-    sdc_template_path = pd_dir / "orfs" / args.platform / "tiny_vedas" / "constraint.sdc"
+    sdc_template_path = pd_dir / "orfs" / orfs_platform / "tiny_vedas" / "constraint.sdc"
     if not sdc_template_path.exists():
         print(f"error: missing SDC template {sdc_template_path}", file=sys.stderr)
         return 1
@@ -223,7 +226,7 @@ export PD_TARGET_CLOCK_GHZ="{target_ghz if target_ghz is not None else ""}"
     orfs_config = work_dir / "orfs_config.mk"
     orfs_config.write_text(
         _orfs_config_lines(
-            args.platform,
+            orfs_platform,
             verilog_out,
             sdc_file,
             core_util,
