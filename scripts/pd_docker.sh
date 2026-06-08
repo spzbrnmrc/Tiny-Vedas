@@ -30,11 +30,15 @@ docker run --rm \
     -v "${REPO_ROOT}:${WORK_MOUNT}" \
     -w "${WORK_MOUNT}" \
     -u "$(id -u):$(id -g)" \
+    -e "HOME=${WORK_MOUNT}/.cache/home" \
     -e "ORFS_TARGET=${ORFS_TARGET:-}" \
     -e "PD_PLATFORM=${PD_PLATFORM:-ci-asap7}" \
     -e "HW_CONFIG=${HW_CONFIG:-hw/presets/rv32im_scalar.yaml}" \
+    -e "WORK_HOME=${WORK_MOUNT}/pd/work/orfs" \
+    -e "FLOW_HOME=/OpenROAD-flow-scripts/flow" \
     "${ORFS_IMAGE}" \
     bash -euxo pipefail -c '
+        mkdir -p "${HOME}"
         python3 -m pip install --user -q pyyaml
         cd "'"${WORK_MOUNT}"'"
         exec "$@"

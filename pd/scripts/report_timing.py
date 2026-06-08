@@ -27,8 +27,18 @@ _LAYOUT_IMAGES = (
 
 
 def _orfs_reports_dir(env: dict[str, str]) -> Path:
+    platform = env.get("PD_ORFS_PLATFORM") or env.get("PD_PLATFORM", "asap7")
+    work_home = env.get("ORFS_WORK_HOME")
+    if work_home:
+        return (
+            Path(work_home)
+            / "reports"
+            / platform
+            / _DESIGN_NICKNAME
+            / _DESIGN_VARIANT
+        )
+
     orfs_root = Path(env.get("ORFS_ROOT", "/tools/OpenROAD-flow-scripts"))
-    platform = env.get("PD_PLATFORM", "asap7")
     return (
         orfs_root
         / "flow"

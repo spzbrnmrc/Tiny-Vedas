@@ -25,8 +25,13 @@ fi
 
 "${REPO_ROOT}/pd/scripts/sv2v.sh"
 
-echo "==> OpenROAD-flow-scripts (DESIGN_CONFIG=${ORFS_CONFIG})"
+ORFS_WORK_HOME="${REPO_ROOT}/pd/work/orfs"
+mkdir -p "${ORFS_WORK_HOME}"
+
+echo "==> OpenROAD-flow-scripts (DESIGN_CONFIG=${ORFS_CONFIG}, WORK_HOME=${ORFS_WORK_HOME})"
 # shellcheck disable=SC1090
 source "${ORFS_ENV}"
 
+# ORFS defaults WORK_HOME to the flow tree (read-only in Docker / system installs).
+export WORK_HOME="${ORFS_WORK_HOME}"
 make -C "${ORFS_FLOW}" DESIGN_CONFIG="${ORFS_CONFIG}" ${ORFS_TARGET:-all}
