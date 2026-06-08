@@ -167,4 +167,37 @@ typedef enum logic [2:0] {
   LSU_DONE
 } lsu_state_t;
 
+`ifndef SYNTHESIS
+/* Simulation retire events exported from core_top (one struct per issue lane). */
+typedef struct packed {
+  logic reg_wr;
+  logic reg_wr_jal;
+  logic br_taken;
+  logic br_not_taken;
+  logic mem_store;
+  logic mem_store_unaligned;
+  logic ecall;
+  logic [XLEN-1:0] wb_instr_tag;
+  logic [INSTR_LEN-1:0] wb_instr;
+  logic [REG_FILE_ADDR_WIDTH-1:0] wb_rd_addr;
+  logic [XLEN-1:0] wb_data;
+  logic [XLEN-1:0] wb_pc;
+  logic [XLEN-1:0] br_taken_instr_tag;
+  logic [INSTR_LEN-1:0] br_taken_instr;
+  logic [XLEN-1:0] br_taken_pc;
+  logic [XLEN-1:0] br_not_taken_instr_tag;
+  logic [INSTR_LEN-1:0] br_not_taken_instr;
+  logic [XLEN-1:0] mem_store_instr_tag;
+  logic [INSTR_LEN-1:0] mem_store_instr;
+  logic [XLEN-1:0] mem_store_addr;
+  logic [XLEN-1:0] mem_store_wdata;
+  logic [XLEN-1:0] mem_store_unaligned_instr_tag;
+  logic [INSTR_LEN-1:0] mem_store_unaligned_instr;
+  logic [XLEN-1:0] mem_store_unaligned_addr;
+  logic [XLEN-1:0] mem_store_unaligned_wdata;
+  logic [XLEN-1:0] ecall_instr_tag;
+  logic [INSTR_LEN-1:0] ecall_instr;
+} core_debug_lane_t;
+`endif
+
 `endif

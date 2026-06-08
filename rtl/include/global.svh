@@ -62,4 +62,14 @@ localparam int DATA_MEM_ADDR_WIDTH = $clog2(DATA_MEM_DEPTH * DATA_MEM_WIDTH / 8)
 localparam int REG_FILE_DEPTH = 32;
 localparam int REG_FILE_ADDR_WIDTH = $clog2(REG_FILE_DEPTH);
 
+localparam int ISSUE_WIDTH = 1;
+
+enum logic [1:0] {
+  VLIW = 2'b00,
+  SUPERSCALAR = 2'b01,
+  OOO = 2'b10
+} PIPELINE_KIND = VLIW;
+
+`include "hw_config.svh"
+
 `endif

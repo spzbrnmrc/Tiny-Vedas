@@ -16,6 +16,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from hw import HwConfig, default_hw_config_path, load_hw_config
+from hw.rtl_config import write_hw_config_svh
 from elftools.elf.elffile import ELFFile
 import subprocess
 import shutil
@@ -273,7 +274,7 @@ def read_task_list(filename: str) -> List[str]:
 def run_verilator(test: str, reset_vector: int) -> None:
     """Execute Verilator simulation."""
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
-    verilator_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && verilator --cc --trace --trace-structs --build --timing --top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp -f $PROJ/rtl/core_top.flist -DICCM_INIT_FILE='\"imem.hex\"' -DRESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} -DSTACK_POINTER_INIT_VALUE=32\\'h80000000"
+    verilator_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && verilator --cc --trace --trace-structs --build --timing --top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp -I$PROJ/rtl/include -f $PROJ/rtl/core_top.flist -DICCM_INIT_FILE='\"imem.hex\"' -DRESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} -DSTACK_POINTER_INIT_VALUE=32\\'h80000000"
     if has_dmem:
         verilator_cmd += f" -DDCCM_INIT_FILE='\"dmem.hex\"'"
     else:
@@ -296,7 +297,7 @@ def run_verilator(test: str, reset_vector: int) -> None:
 def run_xsim(test: str, reset_vector: int) -> None:
     """Execute XSim simulation."""
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
-    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
+    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -i $PROJ/rtl/include -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
     if has_dmem:
         xsim_cmd += f" --define DCCM_INIT_FILE='\"dmem.hex\"'"
     else:
@@ -564,6 +565,7 @@ def main():
 
     args = parser.parse_args()
     hw_config = load_hw_config(args.hw_config)
+    write_hw_config_svh(_REPO_ROOT / "rtl" / "include" / "hw_config.svh", hw_config)
     safe_write(f"Hardware preset: {hw_config.name} ({hw_config.cpu.kind.value})")
     
     # Create work directory

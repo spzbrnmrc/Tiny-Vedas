@@ -36,9 +36,12 @@ module exu_mul (
     output logic      [XLEN-1:0] out,
     output logic      [     4:0] out_rd_addr,
     output logic                 out_rd_wr_en,
-    output logic      [XLEN-1:0] instr_tag_out,
-    output logic      [    31:0] instr_out,
     output logic                 mul_busy
+`ifndef SYNTHESIS
+    ,
+    output logic [XLEN-1:0] instr_tag_out,
+    output logic [    31:0] instr_out
+`endif
 );
 
   localparam int MUL_LAT = 1 + `MUL_PIPE_STAGE_AFTER_BOOTH + `MUL_PIPE_STAGE_CSA_LR1 + `MUL_PIPE_STAGE_CSA_LR2 + `MUL_PIPE_STAGE_CSA_LR3 + `MUL_PIPE_STAGE_CSA_LR4 + `MUL_PIPE_STAGES_CPA + 1;
@@ -54,8 +57,10 @@ module exu_mul (
   logic        [      4:0] out_rd_addr_e  [MUL_LAT:0];
   logic        [MUL_LAT:0] out_rd_wr_en_e;
 
-  logic        [ XLEN-1:0] instr_tag_e    [MUL_LAT:0];
-  logic        [     31:0] instr_e        [MUL_LAT:0];
+`ifndef SYNTHESIS
+  logic [XLEN-1:0] instr_tag_e[MUL_LAT:0];
+  logic [    31:0] instr_e    [MUL_LAT:0];
+`endif
 
   logic [XLEN-1:0] a, b;
 
@@ -104,8 +109,10 @@ module exu_mul (
     assign low_e[0]          = mul_ctrl.low;
     assign out_rd_addr_e[0]  = mul_ctrl.rd_addr;
     assign out_rd_wr_en_e[0] = mul_ctrl.legal & mul_ctrl.mul;
+`ifndef SYNTHESIS
     assign instr_tag_e[0]    = mul_ctrl.instr_tag;
     assign instr_e[0]        = mul_ctrl.instr;
+`endif
     for (lat = 0; lat < MUL_LAT; lat++) begin : gen_sideband_ff
 
       register_sync_rstn #(
@@ -135,14 +142,16 @@ module exu_mul (
           .dout(out_rd_wr_en_e[lat+1])
       );
 
+`ifndef SYNTHESIS
       register_sync_rstn #(
-          .WIDTH(XLEN * 2)
+          .WIDTH(XLEN + 32)
       ) instr_tag_ff (
           .clk (clk),
           .rstn(rstn),
           .din ({instr_tag_e[lat], instr_e[lat]}),
           .dout({instr_tag_e[lat+1], instr_e[lat+1]})
       );
+`endif
     end
   endgenerate
 
@@ -231,7 +240,9 @@ module exu_mul (
 
   assign mul_busy      = |out_rd_wr_en_e[MUL_LAT-1:1];
 
+`ifndef SYNTHESIS
   assign instr_tag_out = instr_tag_e[MUL_LAT];
   assign instr_out     = instr_e[MUL_LAT];
+`endif
 
 endmodule

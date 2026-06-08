@@ -51,15 +51,20 @@ module alu (
 
     input idu1_out_t alu_ctrl,
 
-    output logic [XLEN-1:0] instr_tag_out,
-    output logic [    31:0] instr_out,
-
     output logic [XLEN-1:0] alu_wb_data,
     output logic [     4:0] alu_wb_rd_addr,
     output logic            alu_wb_rd_wr_en,
 
     output logic [XLEN-1:0] pc_out,
     output logic            pc_load
+`ifndef SYNTHESIS
+    ,
+    output logic [XLEN-1:0] instr_tag_out,
+    output logic [    31:0] instr_out,
+    output logic            debug_br_not_taken,
+    output logic [XLEN-1:0] debug_br_not_taken_instr_tag,
+    output logic [    31:0] debug_br_not_taken_instr
+`endif
 
 );
 
@@ -124,6 +129,11 @@ module alu (
 
   assign pc_vld = (alu_ctrl.jal | (alu_ctrl.condbr & brn_taken)) & alu_ctrl.legal & ~alu_ctrl.nop & alu_ctrl.alu;
 
+`ifndef SYNTHESIS
+  assign debug_br_not_taken           = alu_ctrl.condbr & ~brn_taken & alu_ctrl.legal;
+  assign debug_br_not_taken_instr_tag = alu_ctrl.instr_tag;
+  assign debug_br_not_taken_instr     = alu_ctrl.instr;
+`endif
 
   assign ashift[XLEN-1:0] = $signed(a) >>> b[$clog2(XLEN)-1:0];
 
@@ -162,6 +172,7 @@ module alu (
       .dout({alu_wb_data, alu_wb_rd_addr, alu_wb_rd_wr_en})
   );
 
+`ifndef SYNTHESIS
   register_sync_rstn #(
       .WIDTH(XLEN + 32)
   ) instr_tag_ff (
@@ -170,6 +181,7 @@ module alu (
       .din ({alu_ctrl.instr_tag, alu_ctrl.instr}),
       .dout({instr_tag_out, instr_out})
   );
+`endif
 
   register_sync_rstn #(
       .WIDTH(XLEN + 1)

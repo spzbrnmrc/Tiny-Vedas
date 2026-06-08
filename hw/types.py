@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 
 class CpuKind(str, Enum):
@@ -18,13 +18,26 @@ class CpuKind(str, Enum):
 
 
 @dataclass(frozen=True)
+class ExuUnitMask:
+    """Functional units enabled in one EXU instance."""
+
+    alu: bool
+    mul: bool
+    div: bool
+    lsu: bool
+
+    @staticmethod
+    def all_enabled() -> ExuUnitMask:
+        return ExuUnitMask(alu=True, mul=True, div=True, lsu=True)
+
+
+@dataclass(frozen=True)
 class CpuConfig:
     kind: CpuKind
     isa: str
     issue_width: int
-    commit_width: int
-    pipeline_stages: int
     out_of_order: bool
+    exu: Tuple[ExuUnitMask, ...]
 
 
 @dataclass(frozen=True)
@@ -75,6 +88,8 @@ class HwConfig:
                 return obj.value
             if hasattr(obj, "__dataclass_fields__"):
                 return {k: _convert(v) for k, v in asdict(obj).items()}
+            if isinstance(obj, tuple):
+                return [_convert(v) for v in obj]
             return obj
 
         return _convert(self)

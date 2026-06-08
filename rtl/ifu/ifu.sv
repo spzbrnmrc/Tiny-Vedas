@@ -47,22 +47,22 @@ module ifu (
     input logic [XLEN-1:0] reset_vector,
 
     /* Instruction Memory Interface */
-    output logic [INSTR_MEM_ADDR_WIDTH-1:0] instr_mem_addr,
-    output logic                            instr_mem_addr_valid,
-    output logic [                XLEN-1:0] instr_mem_tag_out,
-    input  logic [     INSTR_MEM_WIDTH-1:0] instr_mem_rdata,
-    input  logic                            instr_mem_rdata_valid,
-    input  logic [ INSTR_MEM_TAG_WIDTH-1:0] instr_mem_tag_in,
+    output logic [       INSTR_MEM_ADDR_WIDTH-1:0] instr_mem_addr,
+    output logic                                   instr_mem_addr_valid,
+    output logic [                       XLEN-1:0] instr_mem_tag_out,
+    input  logic [INSTR_MEM_WIDTH*ISSUE_WIDTH-1:0] instr_mem_rdata,
+    input  logic                                   instr_mem_rdata_valid,
+    input  logic [        INSTR_MEM_TAG_WIDTH-1:0] instr_mem_tag_in,
 
     /* EXU -> IFU Interface */
     input logic [XLEN-1:0] pc_exu,
     input logic            pc_load,
 
     /* Control Signals */
-    input  logic                 pipe_stall,
-    output logic [INSTR_LEN-1:0] instr,
-    output logic                 instr_valid,
-    output logic [     XLEN-1:0] instr_tag
+    input  logic                                  pipe_stall,
+    output logic [ISSUE_WIDTH-1:0][INSTR_LEN-1:0] instr,
+    output logic [ISSUE_WIDTH-1:0]                instr_valid,
+    output logic [ISSUE_WIDTH-1:0][     XLEN-1:0] instr_tag
 );
 
   logic [XLEN-1:0] pc_out;
@@ -75,7 +75,7 @@ module ifu (
   /* Instantiate the Program Counter */
   program_counter #(
       .PC_WIDTH  (XLEN),
-      .INC_AMOUNT(INSTR_LEN_BYTES)
+      .INC_AMOUNT(INSTR_LEN_BYTES * ISSUE_WIDTH)
   ) pc_inst (
       .clk         (clk),
       .rstn        (rstn),
@@ -92,7 +92,7 @@ module ifu (
 
   /* Generate the outputs */
   register_en_flush_sync_rstn #(
-      .WIDTH(INSTR_LEN + 1 + XLEN)
+      .WIDTH(INSTR_LEN * ISSUE_WIDTH + 1 + XLEN)
   ) instr_dff_rst_inst (
       .clk  (clk),
       .rstn (rstn),

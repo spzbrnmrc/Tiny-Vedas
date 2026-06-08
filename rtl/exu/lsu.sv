@@ -55,10 +55,6 @@ module lsu (
     output logic      lsu_stall,
     output logic      lsu_busy,
 
-    /* DEBUG */
-    output logic [XLEN-1:0] instr_tag_out,
-    output logic [    31:0] instr_out,
-
     /* LSU WB Data */
     output logic [XLEN-1:0] lsu_wb_data,
     output logic [     4:0] lsu_wb_rd_addr,
@@ -72,6 +68,21 @@ module lsu (
     output logic [XLEN-1:0] lsu_dccm_waddr,
     output logic            lsu_dccm_wen,
     output logic [XLEN-1:0] lsu_dccm_wdata
+`ifndef SYNTHESIS
+    ,
+    output logic [XLEN-1:0] instr_tag_out,
+    output logic [    31:0] instr_out,
+    output logic            debug_store_dc2_valid,
+    output logic [XLEN-1:0] debug_store_dc2_instr_tag,
+    output logic [    31:0] debug_store_dc2_instr,
+    output logic [XLEN-1:0] debug_store_dc2_addr,
+    output logic [XLEN-1:0] debug_store_dc2_wdata,
+    output logic            debug_store_dc3_valid,
+    output logic [XLEN-1:0] debug_store_dc3_instr_tag,
+    output logic [    31:0] debug_store_dc3_instr,
+    output logic [XLEN-1:0] debug_store_dc3_addr,
+    output logic [XLEN-1:0] debug_store_dc3_wdata
+`endif
 );
 
   logic dc1_by, dc1_half, dc1_word, dc1_load, dc1_store, dc1_unsign, dc1_legal;
@@ -110,14 +121,14 @@ module lsu (
   logic [             2:0] dc3_shamt_by;
   logic [        XLEN-1:0] dc3_rs2_data;
 
-  logic [        XLEN-1:0] dc1_lsu_instr_tag_out;
-  logic [            31:0] dc1_lsu_instr_out;
-
-  logic [        XLEN-1:0] dc2_lsu_instr_tag_out;
-  logic [            31:0] dc2_lsu_instr_out;
-
-  logic [        XLEN-1:0] dc3_lsu_instr_tag_out;
-  logic [            31:0] dc3_lsu_instr_out;
+`ifndef SYNTHESIS
+  logic [XLEN-1:0] dc1_lsu_instr_tag_out;
+  logic [    31:0] dc1_lsu_instr_out;
+  logic [XLEN-1:0] dc2_lsu_instr_tag_out;
+  logic [    31:0] dc2_lsu_instr_out;
+  logic [XLEN-1:0] dc3_lsu_instr_tag_out;
+  logic [    31:0] dc3_lsu_instr_out;
+`endif
   logic [        XLEN-1:0] dc3_store_buffer;
   logic                    dc3_store_forward;
   logic [        XLEN-1:0] dc3_forward_value;
@@ -151,6 +162,7 @@ module lsu (
       .dout({dc1_rs1_data, dc1_rs2_data, dc1_imm, dc1_rd_addr})
   );
 
+`ifndef SYNTHESIS
   register_sync_rstn #(
       .WIDTH(XLEN)
   ) lsu_instr_tag_reg (
@@ -168,6 +180,7 @@ module lsu (
       .din (lsu_ctrl.instr),
       .dout(dc1_lsu_instr_out)
   );
+`endif
   assign dc1_lsu_valid = dc1_legal & (dc1_load | dc1_store);
   assign dc1_computed_addr = dc1_rs1_data + {{XLEN - 12{dc1_imm[11]}}, dc1_imm[11:0]};
 
@@ -238,6 +251,7 @@ module lsu (
       })
   );
 
+`ifndef SYNTHESIS
   register_sync_rstn #(
       .WIDTH(XLEN)
   ) dc2_instr_tag_reg (
@@ -255,6 +269,7 @@ module lsu (
       .din (dc1_lsu_instr_out),
       .dout(dc2_lsu_instr_out)
   );
+`endif
 
   logic [2*XLEN-1:0] dc2_store_mask_base;
   logic [2*XLEN-1:0] dc2_store_mask;
@@ -332,6 +347,7 @@ module lsu (
       })
   );
 
+`ifndef SYNTHESIS
   register_sync_rstn #(
       .WIDTH(XLEN)
   ) dc3_instr_tag_reg (
@@ -349,6 +365,7 @@ module lsu (
       .din (dc2_lsu_instr_out),
       .dout(dc3_lsu_instr_out)
   );
+`endif
 
   register_sync_rstn #(
       .WIDTH(1)
@@ -404,7 +421,22 @@ module lsu (
   assign lsu_stall = dc1_unaligned_addr;
   assign lsu_busy = dc1_lsu_valid | dc2_lsu_valid;
 
+`ifndef SYNTHESIS
   assign instr_tag_out = dc3_lsu_instr_tag_out;
-  assign instr_out = dc3_lsu_instr_out;
+  assign instr_out     = dc3_lsu_instr_out;
+
+  assign debug_store_dc2_valid     = dc2_legal & dc2_store;
+  assign debug_store_dc2_instr_tag = dc2_lsu_instr_tag_out;
+  assign debug_store_dc2_instr     = dc2_lsu_instr_out;
+  assign debug_store_dc2_addr      = dc2_computed_addr;
+  assign debug_store_dc2_wdata     = (dc2_store_buffer[XLEN-1:0] >> {dc2_computed_addr[1:0], 3'b000}) &
+                                     dc2_store_mask_base[XLEN-1:0];
+
+  assign debug_store_dc3_valid     = dc3_legal & dc3_store & dc3_unaligned_addr;
+  assign debug_store_dc3_instr_tag = dc3_lsu_instr_tag_out;
+  assign debug_store_dc3_instr     = dc3_lsu_instr_out;
+  assign debug_store_dc3_addr      = dc3_computed_addr;
+  assign debug_store_dc3_wdata     = dc3_store_buffer[XLEN-1:0] & dc3_wb_data_mask[XLEN-1:0];
+`endif
 
 endmodule

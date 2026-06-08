@@ -21,7 +21,7 @@
 //      /:::/\:::\    \     
 //     /:::/__\:::\    \            Vendor      : Siliscale
 //     \:::\   \:::\    \           Version     : 2025.1
-//   ___\:::\   \:::\    \          Description : Tiny Vedas - IDU1
+//   ___\:::\   \:::\    \          Description : Tiny Vedas - IDU1 Single Issue
 //  /\   \:::\   \:::\    \ 
 // /::\   \:::\   \:::\____\
 // \:::\   \:::\   \::/    /
@@ -56,6 +56,20 @@ module idu1 #(
     /* IDU1 -> EXU Interface */
     output idu1_out_t idu1_out,
 
+    /* IDU1 -> Reg File Interface */
+    output logic [REG_FILE_ADDR_WIDTH-1:0] rs1_addr,
+    output logic [REG_FILE_ADDR_WIDTH-1:0] rs2_addr,
+    output logic                           rs1_rd_en,
+    output logic                           rs2_rd_en,
+    input  logic [               XLEN-1:0] rs1_data,
+    input  logic [               XLEN-1:0] rs2_data,
+
+    /* IDU1 <-> Register Scoreboard Interface */
+    output logic [REG_FILE_ADDR_WIDTH-1:0] rsb_set_rd_addr,
+    output logic                           rsb_set_rd_wr_en,
+    input  logic                           rs1_rsb_hit,
+    input  logic                           rs2_rsb_hit,
+
     /* Control Signals */
     output logic                           pipe_stall,
     output logic                           idu0_rsb_hit_stall,
@@ -72,49 +86,18 @@ module idu1 #(
 
   idu1_out_t idu1_out_i;
   idu1_out_t idu1_out_before_fwd;
-  logic [XLEN-1:0] rs1_data, rs2_data;
   last_issued_instr_t last_issued_instr;
   idu1_out_t idu1_out_gated;
 
   logic rs1_fwd_idu0, rs2_fwd_idu0;
-  logic rs1_rsb_hit_idu0, rs2_rsb_hit_idu0;
 
-  /* Instantiate Register file */
-  reg_file #(
-      .STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)
-  ) reg_file_i (
-      .clk      (clk),
-      .rstn     (rstn),
-      .rs1_addr (idu0_out.rs1_addr),
-      .rs2_addr (idu0_out.rs2_addr),
-      .rs1_rd_en(idu0_out.rs1 & idu0_out.legal),
-      .rs2_rd_en(idu0_out.rs2 & idu0_out.legal),
-      .rs1_data (rs1_data),
-      .rs2_data (rs2_data),
-      .rd_addr  (exu_wb_rd_addr),
-      .rd_data  (exu_wb_data),
-      .rd_wr_en (exu_wb_rd_wr_en)
-  );
+  assign rs1_addr = idu0_out.rs1_addr;
+  assign rs2_addr = idu0_out.rs2_addr;
+  assign rs1_rd_en = idu0_out.rs1 & idu0_out.legal;
+  assign rs2_rd_en = idu0_out.rs2 & idu0_out.legal;
 
-  /* Register Scoreboard - IDU0 Stage */
-  rsb #(
-      .N_REG(32)
-  ) rsb_idu0_i (
-      .clk           (clk),
-      .rstn          (rstn),
-      .pipe_flush    (pipe_flush),
-      .rs1_addr      (idu0_out.rs1_addr),
-      .rs2_addr      (idu0_out.rs2_addr),
-      .rs1_rd_en     (idu0_out.rs1 & idu0_out.legal),
-      .rs2_rd_en     (idu0_out.rs2 & idu0_out.legal),
-      .rs1_hit       (rs1_rsb_hit_idu0),
-      .rs2_hit       (rs2_rsb_hit_idu0),
-      .set_rd_addr   (idu0_out.rd_addr),
-      .set_rd_wr_en  (idu0_out.legal & (idu0_out.mul | idu0_out.load) & ~(pipe_stall | idu0_rsb_hit_stall)),
-      .clear_rd_addr (exu_wb_rd_addr),
-      .clear_rd_wr_en(exu_wb_rd_wr_en)
-  );
-
+  assign rsb_set_rd_addr  = idu0_out.rd_addr;
+  assign rsb_set_rd_wr_en = idu0_out.legal & (idu0_out.mul | idu0_out.load) & ~(pipe_stall | idu0_rsb_hit_stall);
 
   assign idu1_out_i.instr = idu0_out.instr;
   assign idu1_out_i.instr_tag = idu0_out.instr_tag;
@@ -132,7 +115,7 @@ module idu1 #(
   assign rs1_fwd_idu0 = ((exu_wb_rd_addr == idu0_out.rs1_addr) & idu0_out.rs1 & exu_wb_rd_wr_en);
   assign rs2_fwd_idu0 = ((exu_wb_rd_addr == idu0_out.rs2_addr) & idu0_out.rs2 & exu_wb_rd_wr_en);
 
-  assign idu0_rsb_hit_stall = (rs1_rsb_hit_idu0 & ~rs1_fwd_idu0) | (rs2_rsb_hit_idu0 & ~rs2_fwd_idu0);
+  assign idu0_rsb_hit_stall = (rs1_rsb_hit & ~rs1_fwd_idu0) | (rs2_rsb_hit & ~rs2_fwd_idu0);
 
   assign idu1_out_i.alu = idu0_out.alu;
   assign idu1_out_i.rs1 = idu0_out.rs1;

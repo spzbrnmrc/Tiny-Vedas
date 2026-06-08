@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 import yaml
 
 from .types import (
     CpuConfig,
     CpuKind,
+    ExuUnitMask,
     HwConfig,
     MemoryConfig,
     SoftwareHints,
@@ -48,6 +49,35 @@ def _require(mapping: dict, key: str, ctx: str) -> Any:
     return mapping[key]
 
 
+def _parse_exu_units(cpu_raw: dict, issue_width: int, ctx: str) -> tuple[ExuUnitMask, ...]:
+    if "exu" not in cpu_raw:
+        return tuple(ExuUnitMask.all_enabled() for _ in range(issue_width))
+
+    exu_raw = cpu_raw["exu"]
+    if not isinstance(exu_raw, list):
+        raise HwConfigError(f"cpu.exu must be a list in {ctx}")
+
+    if len(exu_raw) != issue_width:
+        raise HwConfigError(
+            f"cpu.exu length ({len(exu_raw)}) must match cpu.issue_width "
+            f"({issue_width}) in {ctx}"
+        )
+
+    units: list[ExuUnitMask] = []
+    for idx, entry in enumerate(exu_raw):
+        if not isinstance(entry, dict):
+            raise HwConfigError(f"cpu.exu[{idx}] must be a mapping in {ctx}")
+        units.append(
+            ExuUnitMask(
+                alu=bool(entry.get("alu", True)),
+                mul=bool(entry.get("mul", True)),
+                div=bool(entry.get("div", True)),
+                lsu=bool(entry.get("lsu", True)),
+            )
+        )
+    return tuple(units)
+
+
 def load_hw_config(path: Path | str | None = None) -> HwConfig:
     """Load a hardware config YAML file into a typed :class:`HwConfig`."""
     config_path = Path(path).resolve() if path else DEFAULT_PRESET.resolve()
@@ -69,6 +99,8 @@ def load_hw_config(path: Path | str | None = None) -> HwConfig:
             f"expected one of {sorted(_VALID_CPU_KINDS)}"
         )
 
+    issue_width = int(_require(cpu_raw, "issue_width", "cpu"))
+
     return HwConfig(
         name=str(_require(raw, "name", config_path.name)),
         version=int(_require(raw, "version", config_path.name)),
@@ -77,10 +109,9 @@ def load_hw_config(path: Path | str | None = None) -> HwConfig:
         cpu=CpuConfig(
             kind=CpuKind(cpu_kind),
             isa=str(_require(cpu_raw, "isa", "cpu")),
-            issue_width=int(_require(cpu_raw, "issue_width", "cpu")),
-            commit_width=int(_require(cpu_raw, "commit_width", "cpu")),
-            pipeline_stages=int(_require(cpu_raw, "pipeline_stages", "cpu")),
+            issue_width=issue_width,
             out_of_order=bool(_require(cpu_raw, "out_of_order", "cpu")),
+            exu=_parse_exu_units(cpu_raw, issue_width, config_path.name),
         ),
         vector=VectorUnitConfig(
             enabled=bool(_require(vector_raw, "enabled", "vector")),
