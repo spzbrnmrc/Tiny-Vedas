@@ -6,8 +6,8 @@ PD_PLATFORM ?= asap7
 HW_CONFIG ?= hw/presets/rv32im_scalar.yaml
 ORFS_TARGET ?= all
 ORFS_IMAGE ?= openroad/orfs:26Q2-446-g85d92b593
-SV2V_VERSION ?= v0.0.13
-export ORFS_TARGET ORFS_IMAGE SV2V_VERSION
+SV2V_TAG ?= v0.0.13
+export ORFS_TARGET ORFS_IMAGE SV2V_TAG
 
 deps:
 	./scripts/install_deps.sh

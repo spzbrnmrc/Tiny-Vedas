@@ -1,7 +1,7 @@
 # CI / Docker (openroad/orfs): same ASAP7 targets as asap7.yaml, container tool paths.
 orfs_platform: asap7
 orfs_root: /OpenROAD-flow-scripts
-sv2v: /work/.local/sv2v/bin/sv2v
+sv2v: /work/deps/sv2v/bin/sv2v
 
 # Address widths for synthesis (memories are outside core_top).
 synth_iccm_depth_words: 1024

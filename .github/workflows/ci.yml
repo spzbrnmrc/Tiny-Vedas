@@ -36,18 +36,24 @@ jobs:
 
   pd-synth:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       ORFS_IMAGE: openroad/orfs:26Q2-446-g85d92b593
-      SV2V_VERSION: v0.0.13
+      SV2V_TAG: v0.0.13
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
+      - name: Cache sv2v
+        uses: actions/cache@v4
+        with:
+          path: deps/sv2v
+          key: sv2v-${{ runner.os }}-${{ env.SV2V_TAG }}
+
       - name: PD synthesis smoke (ORFS Docker)
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-yaml
+          sudo apt-get install -y python3-yaml haskell-stack
           make pd-synth
