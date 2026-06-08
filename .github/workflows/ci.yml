@@ -10,11 +10,20 @@ jobs:
   smoke-verilator:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
+    env:
+      # Pin for reproducible CI and a stable Actions cache key (bump when upgrading Verilator).
+      VERILATOR_TAG: v5.048
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Cache Verilator
+        uses: actions/cache@v4
+        with:
+          path: .local/verilator
+          key: verilator-${{ runner.os }}-${{ env.VERILATOR_TAG }}
 
       - name: Install dependencies
         run: make deps

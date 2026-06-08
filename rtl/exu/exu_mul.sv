@@ -189,15 +189,6 @@ module exu_mul (
       .dout(b_ff_e2[XLEN:0])
   );
 
-  register_sync_rstn #(
-      .WIDTH(1)
-  ) out_rd_wr_en_e2_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (out_rd_wr_en_e1),
-      .dout(out_rd_wr_en_e2)
-  );
-
   // ---------------------- E2 Logic Stage --------------------------
 
   logic signed [2 * XLEN+1:0] prod_e2;
@@ -228,7 +219,7 @@ module exu_mul (
   ) prod_e3_ff (
       .clk (clk),
       .rstn(rstn),
-      .din ({booth_upper, booth_lower}),
+      .din ({1'b0, booth_upper, booth_lower}),
       .dout(prod_e3[2*XLEN:0])
   );
 
