@@ -1,8 +1,30 @@
-# Tiny Vedas — RISC-V RV32IM Processor
+# Tiny Vedas — Open Infrastructure for RISC-V AI Accelerators
 
-A complete, open-source, synthesizable implementation of a RISC-V RV32IM processor written in SystemVerilog. Tiny Vedas is a 4-stage pipelined CPU with Harvard memory, hazard handling, and ISS/RTL co-simulation verification.
+Tiny Vedas is an open-source stack for designing, verifying, and bringing up RISC-V AI accelerators — from synthesizable processor RTL and spec-driven decode, through ISS/RTL co-simulation, to a PyTorch JIT that targets bare-metal firmware on the core.
 
-It is used as a reference for the [free course on RISC-V Processor Design](https://youtu.be/izPdo7n1uI).
+**Today**, the repo ships a complete **RV32IM** reference core: a 4-stage in-order pipeline with Harvard memory, hazard handling, and end-to-end test infrastructure. **Next**, the same contracts extend to additional microarchitectures (VLIW, superscalar, out-of-order) and vector units — hardware presets and software hooks are already scaffolded in [`hw/`](hw/README.md) so RTL, simulation, and PyVedas can evolve together without breaking the workflow.
+
+It is also used as a reference for the [free course on RISC-V Processor Design](https://youtu.be/izPdo7n1uI).
+
+## What's in the stack
+
+| Layer | Role |
+|-------|------|
+| **RTL** | Synthesizable RISC-V cores and SoC integration (`rtl/`) |
+| **Verification** | Python ISS + RTL trace comparison (`tools/rv_iss.py`, `sim_manager.py`) |
+| **Decode** | YAML-driven instruction tables → SystemVerilog (`open-decode-tables/`) |
+| **Primitives** | Reusable arithmetic and register blocks (`SVLib/`) |
+| **Software** | Bare-metal runtime, printf, assembly/C/PyTorch tests |
+| **PyVedas** | `torch.compile` → C → RV32 ELF for on-core inference kernels |
+| **PD** | Optional ASIC flow: sv2v + OpenROAD (`pd/`) |
+
+## Current focus: RV32IM
+
+The shipping RTL is a **4-stage pipelined RV32IM** processor written in SystemVerilog. It is the baseline CPU flavor (`hw/presets/rv32im_scalar.yaml`) used by CI, examples, and the course.
+
+## Roadmap: microarchitectures and vector
+
+Tiny Vedas is built to support **multiple CPU organizations** behind one hardware-config contract. Presets in [`hw/presets/`](hw/presets/) already describe scalar, VLIW, superscalar, and out-of-order variants with optional vector units; only `rv32im_scalar` matches implemented RTL today. As new microarchitectures land, `sim_manager`, PyVedas, and the test suite will target them through the same `--hw-config` YAML — so accelerator exploration stays one toolchain, not a fork per design.
 
 ## Features
 
@@ -511,6 +533,10 @@ make deps   # if not already done
 5. Submit a pull request
 
 If you change instruction decode, update `open-decode-tables/tables/rv32im.yaml` in the submodule, push there, then bump the submodule pointer in this repo.
+
+## Business inquiries
+
+For partnerships, consulting, custom accelerator work, or commercial licensing questions, contact **[marco@siliscale.com](mailto:marco@siliscale.com)**.
 
 ## License
 
