@@ -43,9 +43,12 @@ module div (
     output logic                 div_stall,
     output logic [        31:0]  out,
     output logic [         4:0]  out_addr,
-    output logic                 out_valid,
+    output logic                 out_valid
+`ifndef SYNTHESIS
+    ,
     output logic [XLEN-1:0]      instr_tag_out,
     output logic [        31:0]  instr_out
+`endif
 );
 
   typedef enum logic [1:0] {
@@ -240,6 +243,7 @@ module div (
       .dout(out_addr)
   );
 
+`ifndef SYNTHESIS
   register_en_sync_rstn #(
       .WIDTH(XLEN + INSTR_LEN)
   ) instr_tag_ff (
@@ -249,6 +253,7 @@ module div (
       .din ({dp.instr_tag, dp.instr}),
       .dout({instr_tag_out, instr_out})
   );
+`endif
 
   register #(
       .WIDTH(1)

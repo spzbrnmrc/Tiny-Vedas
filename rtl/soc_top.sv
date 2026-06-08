@@ -42,6 +42,10 @@
 `include "global.svh"
 `endif
 
+`ifndef TYPES_SVH
+`include "types.svh"
+`endif
+
 module soc_top #(
     parameter string ICCM_INIT_FILE = "",
     parameter string DCCM_INIT_FILE = "",
@@ -51,6 +55,13 @@ module soc_top #(
     input logic            clk,
     input logic            rstn,
     input logic [XLEN-1:0] reset_vector
+`ifndef SYNTHESIS
+    ,
+    output core_debug_lane_t core_debug[ISSUE_WIDTH-1:0],
+    output logic [XLEN-1:0]  core_dccm_waddr,
+    output logic             core_dccm_wen,
+    output logic [XLEN-1:0]  core_dccm_wdata
+`endif
 
 );
 
@@ -88,7 +99,17 @@ module soc_top #(
       .dccm_waddr           (dccm_waddr),
       .dccm_wen             (dccm_wen),
       .dccm_wdata           (dccm_wdata)
+`ifndef SYNTHESIS
+      ,
+      .debug(core_debug)
+`endif
   );
+
+`ifndef SYNTHESIS
+  assign core_dccm_waddr = dccm_waddr;
+  assign core_dccm_wen   = dccm_wen;
+  assign core_dccm_wdata = dccm_wdata;
+`endif
 
   iccm #(
       .DEPTH(INSTR_MEM_DEPTH),

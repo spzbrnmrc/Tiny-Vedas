@@ -26,8 +26,6 @@ cpu:
   kind: scalar | vliw | superscalar | ooo
   isa: rv32im
   issue_width: <int>
-  commit_width: <int>
-  pipeline_stages: <int>
   out_of_order: <bool>
 
 vector:

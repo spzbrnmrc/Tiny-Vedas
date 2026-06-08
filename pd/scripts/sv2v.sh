@@ -28,6 +28,7 @@ mapfile -t SOURCES < <(
 
 echo "==> sv2v (${#SOURCES[@]} files) -> ${PD_VERILOG}"
 "${SV2V}" \
+  -DSYNTHESIS \
   -I "${REPO_ROOT}/pd/include" \
   -I "${REPO_ROOT}/rtl/include" \
   -I "${REPO_ROOT}/rtl/idu" \

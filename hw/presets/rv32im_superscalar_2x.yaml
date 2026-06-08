@@ -2,22 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Baseline Tiny-Vedas: 4-stage in-order scalar RV32IM (shipping RTL).
-name: rv32im_scalar
+name: rv32im_superscalar_2x
 version: 1
 description: >
-  4-stage in-order scalar pipeline with Harvard ICCM/DCCM. Matches the current
-  shipping RTL and smoke regression defaults.
+  4-stage in-order scalar pipeline with Harvard ICCM/DCCM. Superscalar.
 
 cpu:
-  kind: scalar
+  kind: superscalar
   isa: rv32im
-  issue_width: 1
+  issue_width: 2
   out_of_order: false
   exu:
     - alu: true
+      mul: false
+      div: false
+      lsu: true
+    - alu: true
       mul: true
       div: true
-      lsu: true
+      lsu: false
 
 vector:
   enabled: false
@@ -33,6 +36,6 @@ memory:
   eot_address: 0x10000000
 
 software:
-  vliw_compiler: false
+  vliw_compiler: true
   materializer: flat_row_major
   vectorize_min_numel: 0     # 0 = scalar-only lowering until vector unit lands
