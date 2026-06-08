@@ -32,6 +32,8 @@ It is used as a reference for the [free course on RISC-V Processor Design](https
 - Pipeline flush on taken branches and jumps
 - Register scoreboard for RAW hazard detection
 - Multi-cycle multiplier and divider
+- Booth-encoded 32×32 multiplier with per-operand signedness (MUL / MULH / MULHU / MULHSU)
+- Non-restoring divider with combinational Kogge-Stone adders on the iteration path
 - Unaligned load/store support with store-to-load forwarding
 
 ## Project Structure
@@ -39,7 +41,8 @@ It is used as a reference for the [free course on RISC-V Processor Design](https
 ```
 Tiny-Vedas/
 ├── rtl/                     # Processor RTL
-│   ├── core_top.sv          # Top-level module
+│   ├── core_top.sv          # CPU pipeline (memory ports exposed)
+│   ├── soc_top.sv           # core_top + ICCM/DCCM (simulation / integration)
 │   ├── core_top.flist       # File list for synthesis/simulation
 │   ├── ifu/                 # Instruction fetch unit
 │   ├── idu/                 # Decode stages, regfile, scoreboard
@@ -256,6 +259,62 @@ Tiny Vedas uses **co-simulation**: a Python ISS generates a golden trace, the RT
 
 Programs signal completion by storing `0xdeadbeef` to address `0x10000000`. See `tests/asm/eot_sequence.s`.
 
+## Arithmetic units
+
+### Multiply (`rtl/exu/exu_mul.sv` → SVLib `mul`)
+
+The multiply unit is a **Booth-encoded** 32×32 multiplier. Operands enter at EXU
+stage e2; the 64-bit product is registered at e3 and written when sideband
+latency (`MUL_LAT`) expires.
+
+| RV32M instruction | rs1 sign | rs2 sign |
+|-------------------|----------|----------|
+| MUL, MULH         | signed   | signed   |
+| MULHU             | unsigned | unsigned |
+| MULHSU            | signed   | unsigned |
+
+Inside `mul`, the **signed operand is always the multiplicand** and the
+**unsigned operand is Booth-scanned as the multiplier**. When rs1 is unsigned
+and rs2 is signed, operands are swapped (product is commutative). Separate
+controls drive multiplicand sign extension (`mc_sign`) and unsigned-multiplier
+correction (`mult_unsign`); a single global unsigned flag is not sufficient for
+MULHSU.
+
+Pipeline placement is configured in `rtl/include/mul_pd_config.svh` (included by
+`exu_mul`). At most **one** internal register stage should be enabled for PD
+experiments — see [pd/README.md](pd/README.md).
+
+**Final CPA** (`CPA_ALGORITHM` on SVLib `mul`):
+
+| Value | Module | Notes |
+|-------|--------|-------|
+| `0` | `adder_pipe` + RCA | `PIPE_STAGES_CPA` splits width |
+| `1` | `adder_pipe` + 4-bit CLA | Default for generic builds |
+| `2` | `kogge_stone_pipe` | 2-cycle CPA, **one flop** mid prefix tree; production `exu_mul` uses this |
+
+### Divide (`rtl/exu/div.sv`)
+
+| Path | When | Latency |
+|------|------|---------|
+| **Fast** | Divide by zero/one, zero dividend, signed overflow, or both magnitudes ≤4 bits (`small_div`) | 1 cycle after issue |
+| **Slow** | Everything else — 32-step non-restoring divider on absolute magnitudes | ~33 cycles |
+
+The slow path uses **combinational** `kogge_stone_adder` instances for the
+per-iteration trial add/subtract and remainder correction. Do **not** use
+`kogge_stone_pipe` here — that module has a pipeline register and is reserved
+for the multiplier CPA.
+
+### SVLib adders (`SVLib/src/arith/`)
+
+| Module | Registers | Use |
+|--------|-----------|-----|
+| `adder` | No | Generic wrapper: `ALGORITHM` 0=RCA, 1=CLA, 2=Kogge-Stone (comb.) |
+| `kogge_stone_adder` | No | Combinational Kogge-Stone prefix adder (power-of-2 width) |
+| `kogge_stone_pipe` | One | Pipelined Kogge-Stone (prefix tree split across two cycles) |
+| `adder_pipe` | Optional | Multi-lane pipelined CPA for non-Kogge multiplier configs |
+
+See [SVLib/README.md](SVLib/README.md) for the full library inventory.
+
 ### Smoke regression (`tests/smoke.tlist`)
 
 Smoke tests cover ALU, forwarding, multiply, divide (`asm.basic_div`,
@@ -382,7 +441,20 @@ pyvedas.my_add
 Inspect JIT output on failure: `work/pyvedas.my_add/jit.log`, `compile.log`, `sim.log`.
 
 
-The design is synthesizable. Use `rtl/core_top.flist` as the file list for FPGA or ASIC flows. The file list references the `SVLib` submodule and sets `$PROJ` to the repository root.
+The design is synthesizable. Use `rtl/core_top.flist` as the file list for FPGA
+flows. The file list references the `SVLib` submodule and sets `$PROJ` to the
+repository root.
+
+For ASIC physical design (SystemVerilog → Verilog via
+[sv2v](https://github.com/zachjs/sv2v), then OpenROAD-flow-scripts), see
+[pd/README.md](pd/README.md):
+
+```bash
+make config                    # CPU flavor + PDK platform
+make sv2v                      # convert RTL only
+make rtl2gds                   # sv2v + synthesis/place/route/GDS
+make rtl2gds ORFS_TARGET=synth # stop after synthesis
+```
 
 ```bash
 make decodes   # ensure decoder is up to date before synthesis

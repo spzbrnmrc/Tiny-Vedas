@@ -24,6 +24,10 @@
 `include "types.svh"
 `endif
 
+`ifndef MUL_PD_CONFIG_SVH
+`include "mul_pd_config.svh"
+`endif
+
 module exu_mul (
     input  logic                 clk,
     input  logic                 rstn,
@@ -37,36 +41,29 @@ module exu_mul (
     output logic                 mul_busy
 );
 
-  logic valid_e1, valid_e2;
+  localparam int MUL_LAT = 1 + `MUL_PIPE_STAGE_AFTER_BOOTH + `MUL_PIPE_STAGE_CSA_LR1 + `MUL_PIPE_STAGE_CSA_LR2 + `MUL_PIPE_STAGE_CSA_LR3 + `MUL_PIPE_STAGE_CSA_LR4 + `MUL_PIPE_STAGES_CPA + 1;
+
   logic [XLEN-1:0] a_ff_e1, a_e1;
   logic [XLEN-1:0] b_ff_e1, b_e1;
   logic rs1_sign_e1, rs1_sign_e2, rs1_neg_e1;
   logic rs2_sign_e1, rs2_sign_e2, rs2_neg_e1;
   logic signed [XLEN:0] a_ff_e2, b_ff_e2;
-  logic signed [2*XLEN:0] prod_e3;
-  logic low_e1, low_e2, low_e3;
+  logic signed [ 2*XLEN:0] prod_e3;
+
+  logic        [MUL_LAT:0] low_e;
+  logic        [      4:0] out_rd_addr_e  [MUL_LAT:0];
+  logic        [MUL_LAT:0] out_rd_wr_en_e;
+
+  logic        [ XLEN-1:0] instr_tag_e    [MUL_LAT:0];
+  logic        [     31:0] instr_e        [MUL_LAT:0];
 
   logic [XLEN-1:0] a, b;
-  logic [4:0] out_rd_addr_e1, out_rd_addr_e2, out_rd_addr_e3;
-  logic out_rd_wr_en_e1, out_rd_wr_en_e2, out_rd_wr_en_e3;
-
-  logic [XLEN-1:0] instr_tag_e1, instr_tag_e2, instr_tag_e3;
-  logic [31:0] instr_e1, instr_e2, instr_e3;
 
   assign a = mul_ctrl.rs1_data;
   assign b = mul_ctrl.rs2_data;
 
-  // --------------------------- Input flops    ----------------------------------
+  // --------------------------- Input flops - Datapath ----------------------------------
 
-  register_en_sync_rstn #(
-      .WIDTH(1)
-  ) valid_e1_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (mul_ctrl.legal & mul_ctrl.mul),
-      .dout(valid_e1),
-      .en  (~freeze)
-  );
   register_sync_rstn #(
       .WIDTH(1)
   ) rs1_sign_e1_ff (
@@ -82,14 +79,6 @@ module exu_mul (
       .rstn(rstn),
       .din (mul_ctrl.rs2_sign),
       .dout(rs2_sign_e1)
-  );
-  register_sync_rstn #(
-      .WIDTH(1)
-  ) low_e1_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (mul_ctrl.low),
-      .dout(low_e1)
   );
 
   register_sync_rstn #(
@@ -109,33 +98,53 @@ module exu_mul (
       .dout(b_ff_e1[XLEN-1:0])
   );
 
-  register_sync_rstn #(
-      .WIDTH(5)
-  ) out_rd_addr_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (mul_ctrl.rd_addr),
-      .dout(out_rd_addr_e1)
-  );
+  // --------------------------- Input flops - Sideband ----------------------------------
+  genvar lat;
+  generate
+    assign low_e[0]          = mul_ctrl.low;
+    assign out_rd_addr_e[0]  = mul_ctrl.rd_addr;
+    assign out_rd_wr_en_e[0] = mul_ctrl.legal & mul_ctrl.mul;
+    assign instr_tag_e[0]    = mul_ctrl.instr_tag;
+    assign instr_e[0]        = mul_ctrl.instr;
+    for (lat = 0; lat < MUL_LAT; lat++) begin : gen_sideband_ff
 
-  register_sync_rstn #(
-      .WIDTH(1)
-  ) out_rd_wr_en_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (mul_ctrl.legal & mul_ctrl.mul),
-      .dout(out_rd_wr_en_e1)
-  );
+      register_sync_rstn #(
+          .WIDTH(1)
+      ) sideband_ff (
+          .clk (clk),
+          .rstn(rstn),
+          .din (low_e[lat]),
+          .dout(low_e[lat+1])
+      );
 
-  register_sync_rstn #(
-      .WIDTH(XLEN + 32)
-  ) instr_tag_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din ({mul_ctrl.instr_tag, mul_ctrl.instr}),
-      .dout({instr_tag_e1, instr_e1})
-  );
+      register_sync_rstn #(
+          .WIDTH(5)
+      ) out_rd_addr_ff (
+          .clk (clk),
+          .rstn(rstn),
+          .din (out_rd_addr_e[lat]),
+          .dout(out_rd_addr_e[lat+1])
+      );
 
+      register_sync_rstn #(
+          .WIDTH(1)
+      ) out_rd_wr_en_ff (
+          .clk (clk),
+          .rstn(rstn),
+          .din (out_rd_wr_en_e[lat]),
+          .dout(out_rd_wr_en_e[lat+1])
+      );
+
+      register_sync_rstn #(
+          .WIDTH(XLEN * 2)
+      ) instr_tag_ff (
+          .clk (clk),
+          .rstn(rstn),
+          .din ({instr_tag_e[lat], instr_e[lat]}),
+          .dout({instr_tag_e[lat+1], instr_e[lat+1]})
+      );
+    end
+  endgenerate
 
   // --------------------------- E1 Logic Stage ----------------------------------
 
@@ -146,23 +155,6 @@ module exu_mul (
   assign rs2_neg_e1 = rs2_sign_e1 & b_e1[XLEN-1];
 
 
-  register_en_sync_rstn #(
-      .WIDTH(1)
-  ) valid_e2_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (valid_e1),
-      .dout(valid_e2),
-      .en  (~freeze)
-  );
-  register_sync_rstn #(
-      .WIDTH(1)
-  ) low_e2_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (low_e1),
-      .dout(low_e2)
-  );
   register_sync_rstn #(
       .WIDTH(1)
   ) rs1_sign_e2_ff (
@@ -196,14 +188,6 @@ module exu_mul (
       .din ({rs2_neg_e1, b_e1[XLEN-1:0]}),
       .dout(b_ff_e2[XLEN:0])
   );
-  register_sync_rstn #(
-      .WIDTH(5)
-  ) out_rd_addr_e2_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (out_rd_addr_e1),
-      .dout(out_rd_addr_e2)
-  );
 
   register_sync_rstn #(
       .WIDTH(1)
@@ -214,106 +198,49 @@ module exu_mul (
       .dout(out_rd_wr_en_e2)
   );
 
-  register_sync_rstn #(
-      .WIDTH(XLEN + 32)
-  ) instr_tag_e2_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din ({instr_tag_e1, instr_e1}),
-      .dout({instr_tag_e2, instr_e2})
-  );
-
-
   // ---------------------- E2 Logic Stage --------------------------
 
   logic signed [2 * XLEN+1:0] prod_e2;
   logic [XLEN-1:0] booth_lower;
   logic [XLEN-1:0] booth_upper;
-  logic [2*XLEN-1:0] booth_prod;
-  logic [XLEN-1:0] booth_a, booth_b;
-  logic booth_unsign;
-  logic booth_negate;
-
-  // SVLib mul uses one global unsigned flag. MUL/MULH are signed; MULHU and MULHSU
-  // use unsigned Booth encoding. MULHSU negates the product when rs1 is negative.
-  assign booth_unsign = ~(rs1_sign_e2 & rs2_sign_e2);
-  assign booth_negate = rs1_sign_e2 & ~rs2_sign_e2 & a_ff_e2[XLEN-1];
-  assign booth_a = booth_negate ? (~a_ff_e2[XLEN-1:0] + 1'b1) : a_ff_e2[XLEN-1:0];
-  assign booth_b = b_ff_e2[XLEN-1:0];
 
   mul #(
-      .WIDTH              (XLEN),
-      .CPA_ALGORITHM      (1),
-      .PIPE_STAGE_AFTER_BOOTH(0),
-      .PIPE_STAGE_CSA_LR1 (0),
-      .PIPE_STAGE_CSA_LR2 (0),
-      .PIPE_STAGE_CSA_LR3 (0),
-      .PIPE_STAGE_CSA_LR4 (0),
-      .PIPE_STAGES_CPA    (1)
+      .WIDTH                 (XLEN),
+      .CPA_ALGORITHM         (2),
+      .PIPE_STAGE_AFTER_BOOTH(`MUL_PIPE_STAGE_AFTER_BOOTH),
+      .PIPE_STAGE_CSA_LR1    (`MUL_PIPE_STAGE_CSA_LR1),
+      .PIPE_STAGE_CSA_LR2    (`MUL_PIPE_STAGE_CSA_LR2),
+      .PIPE_STAGE_CSA_LR3    (`MUL_PIPE_STAGE_CSA_LR3),
+      .PIPE_STAGE_CSA_LR4    (`MUL_PIPE_STAGE_CSA_LR4),
+      .PIPE_STAGES_CPA       (`MUL_PIPE_STAGES_CPA)
   ) booth_mul_inst (
       .clk   (clk),
-      .a     (booth_a),
-      .b     (booth_b),
-      .unsign(booth_unsign),
+      .a     (a_ff_e2[XLEN-1:0]),
+      .a_sign(rs1_sign_e2),
+      .b     (b_ff_e2[XLEN-1:0]),
+      .b_sign(rs2_sign_e2),
       .lower (booth_lower),
       .upper (booth_upper)
   );
 
-  assign booth_prod = {booth_upper, booth_lower};
-  assign prod_e2[2*XLEN-1:0]   = booth_negate ? (~booth_prod + 1'b1) : booth_prod;
-  assign prod_e2[2*XLEN+1:2*XLEN] = prod_e2[2*XLEN-1] ? 2'b11 : 2'b00;
-
-  register_sync_rstn #(
-      .WIDTH(1)
-  ) low_e3_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (low_e2),
-      .dout(low_e3)
-  );
   register_sync_rstn #(
       .WIDTH(2 * XLEN + 1)
   ) prod_e3_ff (
       .clk (clk),
       .rstn(rstn),
-      .din (prod_e2[2*XLEN:0]),
+      .din ({booth_upper, booth_lower}),
       .dout(prod_e3[2*XLEN:0])
   );
 
-  register_sync_rstn #(
-      .WIDTH(5)
-  ) out_rd_addr_e3_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (out_rd_addr_e2),
-      .dout(out_rd_addr_e3)
-  );
-
-  register_sync_rstn #(
-      .WIDTH(1)
-  ) out_rd_wr_en_e3_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din (out_rd_wr_en_e2),
-      .dout(out_rd_wr_en_e3)
-  );
-
-  register_sync_rstn #(
-      .WIDTH(XLEN + 32)
-  ) instr_tag_e3_ff (
-      .clk (clk),
-      .rstn(rstn),
-      .din ({instr_tag_e2, instr_e2}),
-      .dout({instr_tag_e3, instr_e3})
-  );
   // ----------------------- E3 Logic Stage -------------------------
 
-  assign out[XLEN-1:0] = low_e3 ? prod_e3[XLEN-1:0] : prod_e3[2*XLEN-1:XLEN];
-  assign out_rd_wr_en = out_rd_wr_en_e3;
-  assign out_rd_addr = out_rd_addr_e3;
+  assign out[XLEN-1:0] = low_e[MUL_LAT] ? prod_e3[XLEN-1:0] : prod_e3[2*XLEN-1:XLEN];
+  assign out_rd_wr_en  = out_rd_wr_en_e[MUL_LAT];
+  assign out_rd_addr   = out_rd_addr_e[MUL_LAT];
 
-  assign instr_tag_out = instr_tag_e3;
-  assign instr_out = instr_e3;
-  assign mul_busy = out_rd_wr_en_e2 | out_rd_wr_en_e1;
+  assign mul_busy      = |out_rd_wr_en_e[MUL_LAT-1:1];
+
+  assign instr_tag_out = instr_tag_e[MUL_LAT];
+  assign instr_out     = instr_e[MUL_LAT];
 
 endmodule

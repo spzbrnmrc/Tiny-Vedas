@@ -1,0 +1,5 @@
+# Physical design generated artifacts
+pd/active.mk
+pd/include/global.svh
+pd/include/mul_pd_config.svh
+pd/work/

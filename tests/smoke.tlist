@@ -5,6 +5,7 @@ asm.basic_alu_i
 asm.basic_alu_r
 asm.basic_sub
 asm.basic_mul
+asm.mulh_srai_snippet
 asm.basic_mul_forwarding
 asm.basic_div
 asm.div_regression

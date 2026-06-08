@@ -1,0 +1,23 @@
+# OpenROAD-flow-scripts platform preset for Tiny-Vedas physical design.
+platform: asap7
+orfs_root: /tools/OpenROAD-flow-scripts
+sv2v: /tools/sv2v/bin/sv2v
+
+# Address widths for synthesis (memories are outside core_top).
+synth_iccm_depth_words: 1024
+synth_dccm_depth_words: 1024
+
+# Timing target — 3 GHz (ORFS ASAP7 SDC periods are in picoseconds).
+target_clock_ghz: 3.0
+clock_period_unit: ps
+clock_io_pct: 0.125
+core_utilization: 62
+core_margin: 5
+place_density_lb_addon: 0.10
+
+# Extra exports appended to pd/work/orfs_config.mk
+orfs_exports:
+  SYNTH_HIERARCHICAL: 1
+  SYNTH_MINIMUM_KEEP_SIZE: 10000
+  TNS_END_PERCENT: 100
+  # SWAP_ARITH_OPERATORS triggers abc_new (XAIGER2) which fails on this netlist.

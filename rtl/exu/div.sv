@@ -85,9 +85,14 @@ module div (
   logic [ 4:0] iter;
   logic signed [32:0] aq_shift_a;
   logic [31:0] aq_shift_q;
+  logic [32:0] divisor_ext;
+  logic [32:0] trial_addend;
+  logic        trial_cin;
+  logic [63:0] trial_rem_ext;
   logic signed [32:0] trial_rem;
   logic [31:0] next_quot;
   logic signed [32:0] next_rem;
+  logic [31:0] rem_iter_sum;
   logic [31:0] quot_iter;
   logic [31:0] rem_iter;
 
@@ -167,26 +172,40 @@ module div (
 
   assign result_fast = rem_op ? rem_signed : quot_signed;
 
-  assign aq_shift_a = {part_rem[31:0], part_quot[31]};
-  assign aq_shift_q = part_quot << 1;
+  assign aq_shift_a  = {part_rem[31:0], part_quot[31]};
+  assign aq_shift_q  = part_quot << 1;
+  assign divisor_ext = {1'b0, abs_divisor_ff};
 
-  always_comb begin
-    if (!part_rem[32]) begin
-      trial_rem = aq_shift_a - {1'b0, abs_divisor_ff};
-    end else begin
-      trial_rem = aq_shift_a + {1'b0, abs_divisor_ff};
-    end
-    next_quot = {aq_shift_q[31:1], ~trial_rem[32]};
-    next_rem  = trial_rem;
-  end
+  assign trial_addend = part_rem[32] ? divisor_ext : ~divisor_ext;
+  assign trial_cin    = ~part_rem[32];
 
-  always_comb begin
-    quot_iter = part_quot;
-    rem_iter  = part_rem[31:0];
-    if (part_rem[32]) begin
-      rem_iter = part_rem[31:0] + abs_divisor_ff;
-    end
-  end
+  kogge_stone_adder #(
+      .WIDTH(64)
+  ) trial_rem_adder (
+      .in0  ({31'b0, aq_shift_a}),
+      .in1  ({31'b0, trial_addend}),
+      .cin  (trial_cin),
+      .sum  (trial_rem_ext),
+      .cout ()
+  );
+
+  assign trial_rem = trial_rem_ext[32:0];
+
+  assign next_quot = {aq_shift_q[31:1], ~trial_rem[32]};
+  assign next_rem  = trial_rem;
+
+  kogge_stone_adder #(
+      .WIDTH(32)
+  ) rem_iter_adder (
+      .in0  (part_rem[31:0]),
+      .in1  (abs_divisor_ff),
+      .cin  (1'b0),
+      .sum  (rem_iter_sum),
+      .cout ()
+  );
+
+  assign quot_iter = part_quot;
+  assign rem_iter  = part_rem[32] ? rem_iter_sum : part_rem[31:0];
 
   assign quot_iter_signed = apply_neg32(quot_iter, signed_op_ff & (dividend_neg_ff ^ divisor_neg_ff));
   assign rem_iter_signed  = apply_neg32(rem_iter, signed_op_ff & dividend_neg_ff);

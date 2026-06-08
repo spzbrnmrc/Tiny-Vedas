@@ -1,0 +1,20 @@
+# OpenROAD-flow-scripts platform preset for Tiny-Vedas physical design.
+platform: sky130hd
+orfs_root: /tools/OpenROAD-flow-scripts
+sv2v: /tools/sv2v/bin/sv2v
+
+# Address widths for synthesis (memories are outside core_top).
+synth_iccm_depth_words: 1024
+synth_dccm_depth_words: 1024
+
+# Timing / floorplan (sky130 ORFS SDC periods are in nanoseconds)
+clock_period: 10.0
+clock_period_unit: ns
+clock_io_pct: 0.20
+core_utilization: 45
+place_density_lb_addon: 0.15
+
+orfs_exports:
+  SYNTH_HIERARCHICAL: 1
+  SYNTH_MINIMUM_KEEP_SIZE: 10000
+  TNS_END_PERCENT: 100

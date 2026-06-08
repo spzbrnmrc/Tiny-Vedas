@@ -1,3 +1,5 @@
+# Synthesizable SystemVerilog sources for Tiny-Vedas (no testbench).
+# Paths use $PROJ; expanded by pd/scripts/sv2v.sh.
 $PROJ/SVLib/src/registers_regfiles/register.sv
 $PROJ/SVLib/src/registers_regfiles/register_sync_rstn.sv
 $PROJ/SVLib/src/registers_regfiles/register_en_sync_rstn.sv
@@ -15,13 +17,10 @@ $PROJ/SVLib/src/arith/booth_encoder.sv
 $PROJ/SVLib/src/arith/adder_pipe.sv
 $PROJ/SVLib/src/arith/kogge_stone_adder.sv
 $PROJ/SVLib/src/arith/mul.sv
-$PROJ/rtl/include/global.svh
+$PROJ/pd/include/global.svh
 $PROJ/rtl/include/types.svh
-$PROJ/rtl/include/mul_pd_config.svh
 $PROJ/rtl/idu/decode_out_t.svh
-$PROJ/dv/sv/core_top_tb.sv
 $PROJ/rtl/core_top.sv
-$PROJ/rtl/soc_top.sv
 $PROJ/rtl/ifu/ifu.sv
 $PROJ/rtl/idu/rv32im_decoder.sv
 $PROJ/rtl/idu/idu0.sv
@@ -34,4 +33,3 @@ $PROJ/rtl/exu/small_div.sv
 $PROJ/rtl/exu/div.sv
 $PROJ/rtl/exu/lsu.sv
 $PROJ/rtl/idu/reg_file.sv
-$PROJ/rtl/lib/mem_lib.sv

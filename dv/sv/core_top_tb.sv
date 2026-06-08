@@ -58,11 +58,11 @@ module core_top_tb;
 
   logic            reset_last_retired = 0;
   /* DUT Instantiation */
-  core_top #(
+  soc_top #(
       .ICCM_INIT_FILE          (ICCM_INIT_FILE),
       .DCCM_INIT_FILE          (DCCM_INIT_FILE),
       .STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)
-  ) core_top_i (
+  ) soc_top_i (
       .*
   );
 
@@ -83,15 +83,15 @@ module core_top_tb;
   /* Finish Sequence Detector */
   logic finish_seq_detected;
   always_ff @(posedge clk) begin
-    if (core_top_i.dccm_wen & core_top_i.dccm_waddr == 32'h10000000) begin
+    if (soc_top_i.core_i.dccm_wen & soc_top_i.core_i.dccm_waddr == 32'h10000000) begin
       finish_seq_detected <= 1;
     end
   end
 
   /* Console output */
   always_ff @(posedge clk) begin
-    if (core_top_i.dccm_wen & core_top_i.dccm_waddr == 32'h00200000) begin
-      $fwrite(fd_console, "%c", core_top_i.dccm_wdata[7:0]);
+    if (soc_top_i.core_i.dccm_wen & soc_top_i.core_i.dccm_waddr == 32'h00200000) begin
+      $fwrite(fd_console, "%c", soc_top_i.core_i.dccm_wdata[7:0]);
     end
   end
 
@@ -120,55 +120,55 @@ module core_top_tb;
   always_ff @(posedge clk) begin
     reset_last_retired <= 'b0;
     /* Log everytime we touch the state of our core: Write to the register file, change the PC and store to memory */
-    if (core_top_i.exu_wb_rd_wr_en & ~core_top_i.ifu_inst.pc_load) begin  /* Hierarchical naming */
-      $fdisplay(fd, "%5d;0x%H;0x%H;x%0D=0x%H", cycle_count, core_top_i.exu_instr_tag_out,
-                core_top_i.exu_instr_out, core_top_i.exu_wb_rd_addr, core_top_i.exu_wb_data);
+    if (soc_top_i.core_i.exu_wb_rd_wr_en & ~soc_top_i.core_i.ifu_inst.pc_load) begin  /* Hierarchical naming */
+      $fdisplay(fd, "%5d;0x%H;0x%H;x%0D=0x%H", cycle_count, soc_top_i.core_i.exu_instr_tag_out,
+                soc_top_i.core_i.exu_instr_out, soc_top_i.core_i.exu_wb_rd_addr, soc_top_i.core_i.exu_wb_data);
       reset_last_retired <= 1'b1;
     end
-    if (core_top_i.exu_wb_rd_wr_en & core_top_i.ifu_inst.pc_load) begin  /* JAL/JALR */
-      $fdisplay(fd, "%5d;0x%H;0x%H;x%0D=0x%H;pc=0x%H", cycle_count, core_top_i.exu_instr_tag_out,
-                core_top_i.exu_instr_out, core_top_i.exu_wb_rd_addr, core_top_i.exu_wb_data,
-                core_top_i.ifu_inst.pc_exu);
+    if (soc_top_i.core_i.exu_wb_rd_wr_en & soc_top_i.core_i.ifu_inst.pc_load) begin  /* JAL/JALR */
+      $fdisplay(fd, "%5d;0x%H;0x%H;x%0D=0x%H;pc=0x%H", cycle_count, soc_top_i.core_i.exu_instr_tag_out,
+                soc_top_i.core_i.exu_instr_out, soc_top_i.core_i.exu_wb_rd_addr, soc_top_i.core_i.exu_wb_data,
+                soc_top_i.core_i.ifu_inst.pc_exu);
       reset_last_retired <= 1'b1;
     end
 
-    if (~core_top_i.exu_inst.alu_wb_rd_wr_en & core_top_i.ifu_inst.pc_load) begin  /* BEQ/BNE/BGE/BLT/BLTU/BGEU taken */
+    if (~soc_top_i.core_i.exu_inst.alu_wb_rd_wr_en & soc_top_i.core_i.ifu_inst.pc_load) begin  /* BEQ/BNE/BGE/BLT/BLTU/BGEU taken */
       $fdisplay(fd, "%5d;0x%H;0x%H;taken=true;pc=0x%H", cycle_count,
-                core_top_i.exu_inst.alu_instr_tag_out, core_top_i.exu_inst.alu_instr_out,
-                core_top_i.ifu_inst.pc_exu);
+                soc_top_i.core_i.exu_inst.alu_instr_tag_out, soc_top_i.core_i.exu_inst.alu_instr_out,
+                soc_top_i.core_i.ifu_inst.pc_exu);
       reset_last_retired <= 1'b1;
     end
 
-    if (core_top_i.exu_inst.alu_inst.alu_ctrl.condbr & ~core_top_i.exu_inst.alu_inst.brn_taken & core_top_i.exu_inst.alu_inst.alu_ctrl.legal) begin  /* BEQ/BNE/BGE/BLT/BLTU/BGEU not taken */
+    if (soc_top_i.core_i.exu_inst.alu_inst.alu_ctrl.condbr & ~soc_top_i.core_i.exu_inst.alu_inst.brn_taken & soc_top_i.core_i.exu_inst.alu_inst.alu_ctrl.legal) begin  /* BEQ/BNE/BGE/BLT/BLTU/BGEU not taken */
       $fdisplay(fd, "%5d;0x%H;0x%H;taken=false", cycle_count + 1,
-                core_top_i.exu_inst.alu_inst.alu_ctrl.instr_tag,
-                core_top_i.exu_inst.alu_inst.alu_ctrl.instr);
+                soc_top_i.core_i.exu_inst.alu_inst.alu_ctrl.instr_tag,
+                soc_top_i.core_i.exu_inst.alu_inst.alu_ctrl.instr);
       reset_last_retired <= 1'b1;
     end
 
-    if (core_top_i.exu_inst.lsu_inst.dc2_legal & core_top_i.exu_inst.lsu_inst.dc2_store) begin
+    if (soc_top_i.core_i.exu_inst.lsu_inst.dc2_legal & soc_top_i.core_i.exu_inst.lsu_inst.dc2_store) begin
       $fdisplay(
           fd, "%5d;0x%H;0x%H;mem[0x%8H]=0x%H", cycle_count,
-          core_top_i.exu_inst.lsu_inst.dc2_lsu_instr_tag_out,
-          core_top_i.exu_inst.lsu_inst.dc2_lsu_instr_out,
-          core_top_i.exu_inst.lsu_inst.dc2_computed_addr,
-          (core_top_i.exu_inst.lsu_inst.dc2_store_buffer[XLEN-1:0] >> {core_top_i.exu_inst.lsu_inst.dc2_computed_addr[1:0], 3'b000}) & core_top_i.exu_inst.lsu_inst.dc2_store_mask_base[XLEN-1:0]);
+          soc_top_i.core_i.exu_inst.lsu_inst.dc2_lsu_instr_tag_out,
+          soc_top_i.core_i.exu_inst.lsu_inst.dc2_lsu_instr_out,
+          soc_top_i.core_i.exu_inst.lsu_inst.dc2_computed_addr,
+          (soc_top_i.core_i.exu_inst.lsu_inst.dc2_store_buffer[XLEN-1:0] >> {soc_top_i.core_i.exu_inst.lsu_inst.dc2_computed_addr[1:0], 3'b000}) & soc_top_i.core_i.exu_inst.lsu_inst.dc2_store_mask_base[XLEN-1:0]);
       reset_last_retired <= 1'b1;
     end
 
-    if (core_top_i.exu_inst.lsu_inst.dc3_legal & core_top_i.exu_inst.lsu_inst.dc3_store & core_top_i.exu_inst.lsu_inst.dc3_unaligned_addr) begin
+    if (soc_top_i.core_i.exu_inst.lsu_inst.dc3_legal & soc_top_i.core_i.exu_inst.lsu_inst.dc3_store & soc_top_i.core_i.exu_inst.lsu_inst.dc3_unaligned_addr) begin
       $fdisplay(
           fd, "%5d;0x%H;0x%H;mem[0x%8H]=0x%H", cycle_count,
-          core_top_i.exu_inst.lsu_inst.dc3_lsu_instr_tag_out,
-          core_top_i.exu_inst.lsu_inst.dc3_lsu_instr_out,
-          core_top_i.exu_inst.lsu_inst.dc3_computed_addr,
-          core_top_i.exu_inst.lsu_inst.dc3_store_buffer[XLEN-1:0] & core_top_i.exu_inst.lsu_inst.dc3_wb_data_mask[XLEN-1:0]);
+          soc_top_i.core_i.exu_inst.lsu_inst.dc3_lsu_instr_tag_out,
+          soc_top_i.core_i.exu_inst.lsu_inst.dc3_lsu_instr_out,
+          soc_top_i.core_i.exu_inst.lsu_inst.dc3_computed_addr,
+          soc_top_i.core_i.exu_inst.lsu_inst.dc3_store_buffer[XLEN-1:0] & soc_top_i.core_i.exu_inst.lsu_inst.dc3_wb_data_mask[XLEN-1:0]);
       reset_last_retired <= 1'b1;
     end
 
-    if (core_top_i.exu_inst.ecall_exe) begin  /* Hierarchical naming */
-      $fdisplay(fd, "%5d;0x%H;0x%H;ecall", cycle_count, core_top_i.exu_instr_tag_out,
-                core_top_i.exu_instr_out);
+    if (soc_top_i.core_i.exu_inst.ecall_exe) begin  /* Hierarchical naming */
+      $fdisplay(fd, "%5d;0x%H;0x%H;ecall", cycle_count, soc_top_i.core_i.exu_instr_tag_out,
+                soc_top_i.core_i.exu_instr_out);
       reset_last_retired <= 1'b1;
     end
   end
