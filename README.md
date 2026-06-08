@@ -526,13 +526,9 @@ make deps   # if not already done
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes and add tests
-4. Run `make smoke-verilator` before submitting
-5. Submit a pull request
+This repository is developed and maintained by Siliscale. **We do not accept external contributions** — please do not open pull requests or submit patches.
 
-If you change instruction decode, update `open-decode-tables/tables/rv32im.yaml` in the submodule, push there, then bump the submodule pointer in this repo.
+The project is open source under the Apache License 2.0; you are free to use, study, and fork it for your own work. For collaboration, partnerships, or commercial engagement, see [Business inquiries](#business-inquiries).
 
 ## Business inquiries
 
