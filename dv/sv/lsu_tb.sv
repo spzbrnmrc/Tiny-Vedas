@@ -43,6 +43,8 @@ module lsu_tb;
       .engine_op        (engine_op),
       .ext_forward_valid(1'b0),
       .ext_forward_value('0),
+      .cam_lookup_valid (),
+      .cam_lookup_addr  (),
       .engine_stall     (engine_stall),
       .engine_busy      (),
       .wb_lane_id       (),

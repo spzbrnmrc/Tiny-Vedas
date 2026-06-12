@@ -54,6 +54,8 @@ module lsu_engine (
     input  lsu_mem_op_t engine_op,
     input  logic        ext_forward_valid,
     input  logic [XLEN-1:0] ext_forward_value,
+    output logic        cam_lookup_valid,
+    output logic [XLEN-1:0] cam_lookup_addr,
     output logic        engine_stall,
     output logic        engine_busy,
 
@@ -213,9 +215,16 @@ module lsu_engine (
       (|dc1_computed_addr[1:0] & dc1_word) | (&dc1_computed_addr[1:0] & dc1_half);
   assign dc1_store_needs_load = dc1_store & (dc1_by | dc1_half | dc1_word & dc1_unaligned_addr);
 
-  assign dc1_pipeline_forward = ((dc1_store | dc1_load) & dc1_legal) & (dc2_store & dc2_legal) &
-      (dccm_waddr[XLEN-1:0] == {dc1_computed_addr[XLEN-1:2], 2'b00});
-  assign dc1_cam_forward = ext_forward_valid & ((dc1_store | dc1_load) & dc1_legal);
+  /* Compare registered stage addresses directly; do not reuse dccm_waddr (store-merge cone). */
+  assign dc1_pipeline_forward = ((dc1_store | dc1_load) & dc1_legal) & (
+      ((dc2_store & dc2_legal) &
+       ({dc2_computed_addr[XLEN-1:2], 2'b00} == {dc1_computed_addr[XLEN-1:2], 2'b00})) |
+      ((dc3_store & dc3_legal & dc3_unaligned_addr) &
+       ({dc3_computed_addr[XLEN-1:2] + 30'd1, 2'b00} == {dc1_computed_addr[XLEN-1:2], 2'b00}))
+  );
+  assign dc1_cam_forward = ext_forward_valid & dc1_load & dc1_lsu_valid;
+  assign cam_lookup_valid = dc1_load & dc1_lsu_valid;
+  assign cam_lookup_addr  = dc1_computed_addr;
   assign dc1_any_forward = dc1_pipeline_forward | dc1_cam_forward;
   assign dc1_forward_value = dc1_pipeline_forward ? dccm_wdata : ext_forward_value;
 
@@ -319,8 +328,9 @@ module lsu_engine (
       ({{XLEN{1'b0}}, dccm_rdata} & ~dc2_store_mask);
 
   assign dc2_store_forward_next = ((dc2_store | dc2_load) & dc2_legal & dc2_unaligned_addr) &
-      (dc3_store & dc3_legal) &
-      (dccm_waddr[XLEN-1:0] == {dc2_computed_addr[XLEN-1:2] + 30'd1, 2'b00});
+      (dc3_store & dc3_legal & dc3_unaligned_addr) &
+      ({dc3_computed_addr[XLEN-1:2] + 30'd1, 2'b00} ==
+       {dc2_computed_addr[XLEN-1:2] + 30'd1, 2'b00});
   assign dc2_forward_value_next = dccm_wdata;
 
   assign dc2_load_buffer = (dc2_store_forward) ? dc2_forward_value >> {dc2_computed_addr[1:0], 3'b000} :

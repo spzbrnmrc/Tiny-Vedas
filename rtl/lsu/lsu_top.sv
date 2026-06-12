@@ -133,7 +133,8 @@ module lsu_top #(
 
   lsu_mem_op_t engine_op;
   logic        stream_valid;
-  logic [XLEN-1:0] stream_load_addr;
+  logic        cam_lookup_valid;
+  logic [XLEN-1:0] cam_lookup_addr;
   logic        ext_forward_valid;
   logic [XLEN-1:0] ext_forward_value;
   logic engine_stall;
@@ -231,6 +232,8 @@ module lsu_top #(
       .engine_op        (engine_op),
       .ext_forward_valid(ext_forward_valid),
       .ext_forward_value(ext_forward_value),
+      .cam_lookup_valid (cam_lookup_valid),
+      .cam_lookup_addr  (cam_lookup_addr),
       .engine_stall     (engine_stall),
       .engine_busy      (),
       .wb_lane_id       (wb_lane_id),
@@ -286,11 +289,10 @@ module lsu_top #(
   assign stream_valid = req_valid[0] & req_ctrl[0].legal;
   assign engine_op    = stream_valid ? lsu_pack_req(req_ctrl[0], '0) : '0;
 
-  assign stream_load_addr   = lsu_effective_addr(engine_op);
-  assign cam_lookup_index   = stream_load_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
-  assign cam_lookup_tag     = stream_load_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
-  /* CAM forwards in-flight stores (queued or streaming); entry cleared on retire. */
-  assign ext_forward_valid  = stream_valid & engine_op.load & cam_lookup_hit;
+  assign cam_lookup_index   = cam_lookup_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
+  assign cam_lookup_tag     = cam_lookup_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
+  /* CAM lookup uses DC1 registered address, not combo IDU stream. */
+  assign ext_forward_valid  = cam_lookup_valid & cam_lookup_hit;
   assign ext_forward_value  = cam_lookup_data;
 
   assign req_ready = '{default: 1'b1};
