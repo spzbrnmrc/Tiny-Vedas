@@ -62,23 +62,32 @@ module exu #(
     output logic                           exu_wb_rd_wr_en,
     output logic                           exu_mul_busy,
     output logic                           exu_div_busy,
-    output logic                           exu_lsu_busy,
-    output logic                           exu_lsu_stall,
 
-    /* DCCM Interface */
-    output logic [XLEN-1:0] dccm_raddr,
-    output logic            dccm_rvalid_in,
-    input  logic [XLEN-1:0] dccm_rdata,
-    input  logic            dccm_rvalid_out,
-    output logic [XLEN-1:0] dccm_waddr,
-    output logic            dccm_wen,
-    output logic [XLEN-1:0] dccm_wdata,
+    /* Central LSU request / response (WB mux stays in EXU) */
+    output logic                           lsu_req_valid,
+    output idu1_out_t                      lsu_req_ctrl,
+    input  logic                           lsu_req_ready,
+    input  logic                           lsu_resp_valid,
+    input  logic [               XLEN-1:0] lsu_resp_data,
+    input  logic [REG_FILE_ADDR_WIDTH-1:0] lsu_resp_rd_addr,
 
     /* PC Interface */
     output logic [XLEN-1:0] pc_out,
     output logic            pc_load
 `ifndef SYNTHESIS
     ,
+    input  logic                           lsu_debug_store_dc2_valid,
+    input  logic [               XLEN-1:0] lsu_debug_store_dc2_instr_tag,
+    input  logic [          INSTR_LEN-1:0] lsu_debug_store_dc2_instr,
+    input  logic [               XLEN-1:0] lsu_debug_store_dc2_addr,
+    input  logic [               XLEN-1:0] lsu_debug_store_dc2_wdata,
+    input  logic                           lsu_debug_store_dc3_valid,
+    input  logic [               XLEN-1:0] lsu_debug_store_dc3_instr_tag,
+    input  logic [          INSTR_LEN-1:0] lsu_debug_store_dc3_instr,
+    input  logic [               XLEN-1:0] lsu_debug_store_dc3_addr,
+    input  logic [               XLEN-1:0] lsu_debug_store_dc3_wdata,
+    input  logic [               XLEN-1:0] lsu_instr_tag_out,
+    input  logic [          INSTR_LEN-1:0] lsu_instr_out,
     output logic [     XLEN-1:0] instr_tag_out,
     output logic [INSTR_LEN-1:0] instr_out,
     output core_debug_lane_t     debug
@@ -109,23 +118,11 @@ module exu #(
   logic [          INSTR_LEN-1:0] mul_instr_out;
   logic [               XLEN-1:0] div_instr_tag_out;
   logic [          INSTR_LEN-1:0] div_instr_out;
-  logic [               XLEN-1:0] lsu_instr_tag_out;
-  logic [          INSTR_LEN-1:0] lsu_instr_out;
   logic [               XLEN-1:0] ecall_instr_tag_out;
   logic [          INSTR_LEN-1:0] ecall_instr_out;
   logic                           alu_debug_br_not_taken;
   logic [               XLEN-1:0] alu_debug_br_not_taken_instr_tag;
   logic [          INSTR_LEN-1:0] alu_debug_br_not_taken_instr;
-  logic                           lsu_debug_store_dc2_valid;
-  logic [               XLEN-1:0] lsu_debug_store_dc2_instr_tag;
-  logic [          INSTR_LEN-1:0] lsu_debug_store_dc2_instr;
-  logic [               XLEN-1:0] lsu_debug_store_dc2_addr;
-  logic [               XLEN-1:0] lsu_debug_store_dc2_wdata;
-  logic                           lsu_debug_store_dc3_valid;
-  logic [               XLEN-1:0] lsu_debug_store_dc3_instr_tag;
-  logic [          INSTR_LEN-1:0] lsu_debug_store_dc3_instr;
-  logic [               XLEN-1:0] lsu_debug_store_dc3_addr;
-  logic [               XLEN-1:0] lsu_debug_store_dc3_wdata;
 `endif
 
   generate
@@ -222,63 +219,17 @@ module exu #(
     end
 
     if (HAS_LSU != 0) begin
-      lsu lsu_inst (
-          .clk                (clk),
-          .rstn               (rstn),
-          .lsu_ctrl           (idu1_out),
-          .lsu_wb_data        (lsu_wb_data),
-          .lsu_wb_rd_addr     (lsu_wb_rd_addr),
-          .lsu_wb_rd_wr_en    (lsu_wb_rd_wr_en),
-          .lsu_busy           (exu_lsu_busy),
-          .lsu_stall          (exu_lsu_stall),
-          .lsu_dccm_raddr     (dccm_raddr),
-          .lsu_dccm_rvalid_in (dccm_rvalid_in),
-          .lsu_dccm_rdata     (dccm_rdata),
-          .lsu_dccm_rvalid_out(dccm_rvalid_out),
-          .lsu_dccm_waddr     (dccm_waddr),
-          .lsu_dccm_wen       (dccm_wen),
-          .lsu_dccm_wdata     (dccm_wdata)
-`ifndef SYNTHESIS
-          ,
-          .instr_tag_out            (lsu_instr_tag_out),
-          .instr_out                (lsu_instr_out),
-          .debug_store_dc2_valid    (lsu_debug_store_dc2_valid),
-          .debug_store_dc2_instr_tag(lsu_debug_store_dc2_instr_tag),
-          .debug_store_dc2_instr    (lsu_debug_store_dc2_instr),
-          .debug_store_dc2_addr     (lsu_debug_store_dc2_addr),
-          .debug_store_dc2_wdata    (lsu_debug_store_dc2_wdata),
-          .debug_store_dc3_valid    (lsu_debug_store_dc3_valid),
-          .debug_store_dc3_instr_tag(lsu_debug_store_dc3_instr_tag),
-          .debug_store_dc3_instr    (lsu_debug_store_dc3_instr),
-          .debug_store_dc3_addr     (lsu_debug_store_dc3_addr),
-          .debug_store_dc3_wdata    (lsu_debug_store_dc3_wdata)
-`endif
-      );
+      assign lsu_req_valid = idu1_out.legal & (idu1_out.load | idu1_out.store);
+      assign lsu_req_ctrl  = idu1_out;
+      assign lsu_wb_data    = lsu_resp_data;
+      assign lsu_wb_rd_addr = lsu_resp_rd_addr;
+      assign lsu_wb_rd_wr_en = lsu_resp_valid;
     end else begin
+      assign lsu_req_valid   = 1'b0;
+      assign lsu_req_ctrl    = '0;
       assign lsu_wb_data     = '0;
       assign lsu_wb_rd_addr  = '0;
       assign lsu_wb_rd_wr_en = 1'b0;
-      assign exu_lsu_busy    = 1'b0;
-      assign exu_lsu_stall   = 1'b0;
-      assign dccm_raddr      = '0;
-      assign dccm_rvalid_in  = 1'b0;
-      assign dccm_waddr      = '0;
-      assign dccm_wen        = 1'b0;
-      assign dccm_wdata      = '0;
-`ifndef SYNTHESIS
-      assign lsu_instr_tag_out             = '0;
-      assign lsu_instr_out                 = '0;
-      assign lsu_debug_store_dc2_valid     = 1'b0;
-      assign lsu_debug_store_dc2_instr_tag = '0;
-      assign lsu_debug_store_dc2_instr     = '0;
-      assign lsu_debug_store_dc2_addr      = '0;
-      assign lsu_debug_store_dc2_wdata     = '0;
-      assign lsu_debug_store_dc3_valid     = 1'b0;
-      assign lsu_debug_store_dc3_instr_tag = '0;
-      assign lsu_debug_store_dc3_instr     = '0;
-      assign lsu_debug_store_dc3_addr      = '0;
-      assign lsu_debug_store_dc3_wdata     = '0;
-`endif
     end
   endgenerate
 

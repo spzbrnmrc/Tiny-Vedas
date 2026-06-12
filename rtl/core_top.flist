@@ -33,6 +33,9 @@ $PROJ/rtl/exu/alu.sv
 $PROJ/rtl/exu/exu_mul.sv
 $PROJ/rtl/exu/small_div.sv
 $PROJ/rtl/exu/div.sv
-$PROJ/rtl/exu/lsu.sv
+$PROJ/rtl/lsu/lsu_engine.sv
+$PROJ/rtl/lsu/lsu_load_queue.sv
+$PROJ/rtl/lsu/lsu_store_queue.sv
+$PROJ/rtl/lsu/lsu_top.sv
 $PROJ/rtl/idu/reg_file.sv
 $PROJ/rtl/lib/mem_lib.sv

@@ -167,6 +167,28 @@ typedef enum logic [2:0] {
   LSU_DONE
 } lsu_state_t;
 
+localparam int LSU_LANE_ID_WIDTH = ISSUE_WIDTH > 1 ? $clog2(ISSUE_WIDTH) : 1;
+localparam int LSU_STORE_CAM_INDEX_WIDTH = $clog2(LSU_STORE_QUEUE_DEPTH);
+localparam int LSU_STORE_CAM_TAG_WIDTH = XLEN - LSU_STORE_CAM_INDEX_WIDTH;
+
+/* Memory operation queued between EXU request ports and the LSU engine. */
+typedef struct packed {
+  logic [LSU_LANE_ID_WIDTH-1:0] lane_id;
+  logic [                31:0] instr;
+  logic [              XLEN-1:0] instr_tag;
+  logic [              XLEN-1:0] rs1_data;
+  logic [              XLEN-1:0] rs2_data;
+  logic [                 4:0] rd_addr;
+  logic [              XLEN-1:0] imm;
+  logic by;
+  logic half;
+  logic word;
+  logic load;
+  logic store;
+  logic unsign;
+  logic legal;
+} lsu_mem_op_t;
+
 `ifndef SYNTHESIS
 /* Simulation retire events exported from core_top (one struct per issue lane). */
 typedef struct packed {

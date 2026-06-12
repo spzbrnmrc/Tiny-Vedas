@@ -97,7 +97,8 @@ module idu1 #(
   assign rs2_rd_en = idu0_out.rs2 & idu0_out.legal;
 
   assign rsb_set_rd_addr  = idu0_out.rd_addr;
-  assign rsb_set_rd_wr_en = idu0_out.legal & (idu0_out.mul | idu0_out.load) & ~(pipe_stall | idu0_rsb_hit_stall);
+  assign rsb_set_rd_wr_en = idu0_out.legal & (idu0_out.mul | idu0_out.load) &
+      ~(pipe_stall | idu0_rsb_hit_stall);
 
   assign idu1_out_i.instr = idu0_out.instr;
   assign idu1_out_i.instr_tag = idu0_out.instr_tag;

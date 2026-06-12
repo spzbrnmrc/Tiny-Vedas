@@ -13,41 +13,74 @@ module lsu_tb;
   logic clk = 0;
   logic rstn = 0;
 
-  /* LSU Control */
   idu1_out_t lsu_ctrl, lsu_ctrl_d;
-  logic            lsu_busy;
+  lsu_mem_op_t engine_op;
 
-  /* LSU WB Data */
-  logic [XLEN-1:0] lsu_wb_data;
-  logic [     4:0] lsu_wb_rd_addr;
-  logic            lsu_wb_rd_wr_en;
+  logic engine_busy;
+  logic engine_stall;
+  logic [XLEN-1:0] wb_data;
+  logic [4:0] wb_rd_addr;
+  logic wb_rd_wr_en;
 
-  /* LSU DCCM Interface */
-  logic [XLEN-1:0] lsu_dccm_raddr;
-  logic            lsu_dccm_rvalid_in;
-  logic [XLEN-1:0] lsu_dccm_rdata;
-  logic            lsu_dccm_rvalid_out;
-  logic [XLEN-1:0] lsu_dccm_waddr;
-  logic            lsu_dccm_wen;
-  logic [XLEN-1:0] lsu_dccm_wdata;
+  logic [XLEN-1:0] dccm_raddr;
+  logic            dccm_rvalid_in;
+  logic [XLEN-1:0] dccm_rdata;
+  logic            dccm_rvalid_out;
+  logic [XLEN-1:0] dccm_waddr;
+  logic            dccm_wen;
+  logic [XLEN-1:0] dccm_wdata;
 
-  always #5 clk = ~clk;  // 100 MHz clock
+  function automatic lsu_mem_op_t pack_ctrl(input idu1_out_t ctrl);
+    lsu_mem_op_t op;
+    op.lane_id   = '0;
+    op.instr     = ctrl.instr;
+    op.instr_tag = ctrl.instr_tag;
+    op.rs1_data  = ctrl.rs1_data;
+    op.rs2_data  = ctrl.rs2_data;
+    op.rd_addr   = ctrl.rd_addr;
+    op.imm       = ctrl.imm;
+    op.by        = ctrl.by;
+    op.half      = ctrl.half;
+    op.word      = ctrl.word;
+    op.load      = ctrl.load;
+    op.store     = ctrl.store;
+    op.unsign    = ctrl.unsign;
+    op.legal     = ctrl.legal;
+    return op;
+  endfunction
 
-  lsu DUT (
-      .clk                (clk),
-      .rstn              (rstn),
-      .lsu_ctrl           (lsu_ctrl),
-      .lsu_busy           (lsu_busy),
-      .lsu_wb_data        (lsu_wb_data),
-      .lsu_wb_rd_addr     (lsu_wb_rd_addr),
-      .lsu_wb_rd_wr_en    (lsu_wb_rd_wr_en),
-      .lsu_dccm_raddr     (lsu_dccm_raddr),
-      .lsu_dccm_rvalid_in (lsu_dccm_rvalid_in),
-      .lsu_dccm_rdata     (lsu_dccm_rdata),
-      .lsu_dccm_rvalid_out(lsu_dccm_rvalid_out),
-      .lsu_dccm_waddr     (lsu_dccm_waddr),
-      .lsu_dccm_wen       (lsu_dccm_wen),
-      .lsu_dccm_wdata     (lsu_dccm_wdata)
+  assign engine_op = pack_ctrl(lsu_ctrl);
+
+  always #5 clk = ~clk;
+
+  lsu_engine DUT (
+      .clk              (clk),
+      .rstn             (rstn),
+      .engine_op        (engine_op),
+      .ext_forward_valid(1'b0),
+      .ext_forward_value('0),
+      .engine_stall     (engine_stall),
+      .engine_busy      (engine_busy),
+      .wb_lane_id       (),
+      .wb_data          (wb_data),
+      .wb_rd_addr       (wb_rd_addr),
+      .wb_rd_wr_en      (wb_rd_wr_en),
+      .dc1_lane_id      (),
+      .dc1_lane_valid   (),
+      .dc2_lane_id      (),
+      .dc2_lane_valid   (),
+      .store_retire_valid(),
+      .store_retire_addr (),
+      .store_cam_fill_valid(),
+      .store_cam_fill_addr(),
+      .store_cam_fill_data(),
+      .dccm_raddr       (dccm_raddr),
+      .dccm_rvalid_in   (dccm_rvalid_in),
+      .dccm_rdata       (dccm_rdata),
+      .dccm_rvalid_out  (dccm_rvalid_out),
+      .dccm_waddr       (dccm_waddr),
+      .dccm_wen         (dccm_wen),
+      .dccm_wdata       (dccm_wdata)
   );
 
   always_ff @(posedge clk) begin
@@ -64,14 +97,12 @@ module lsu_tb;
     for (int i = 0; i < 10; i++) begin
       @(negedge clk);
     end
-    /* Aligned Byte Load (byte loads are always aligned) */
     lsu_ctrl_d.rd_addr = 5;
     lsu_ctrl_d.by = 1;
     lsu_ctrl_d.load = 1;
     lsu_ctrl_d.legal = 1;
     lsu_ctrl_d.rs1_data = 32'h00000FF0;
     @(negedge clk);
-    /* Aligned Halfword Load */
     lsu_ctrl_d.rd_addr = 3;
     lsu_ctrl_d.by = 0;
     lsu_ctrl_d.half = 1;
@@ -79,7 +110,6 @@ module lsu_tb;
     lsu_ctrl_d.legal = 1;
     lsu_ctrl_d.rs1_data = 32'h00001FF0;
     @(negedge clk);
-    /* Aligned Word Load */
     lsu_ctrl_d.rd_addr = 7;
     lsu_ctrl_d.half = 0;
     lsu_ctrl_d.word = 1;
@@ -89,14 +119,12 @@ module lsu_tb;
     @(negedge clk);
     lsu_ctrl_d = 0;
     @(negedge clk);
-    /* Aligned byte load, but at a base address =! 0 */
     lsu_ctrl_d.rd_addr = 5;
     lsu_ctrl_d.by = 1;
     lsu_ctrl_d.load = 1;
     lsu_ctrl_d.legal = 1;
     lsu_ctrl_d.rs1_data = 32'h00003FF1;
     @(negedge clk);
-    /* Aligned halfword load, but at a base address =! 0 */
     lsu_ctrl_d = 0;
     lsu_ctrl_d.rd_addr = 3;
     lsu_ctrl_d.half = 1;
@@ -104,7 +132,6 @@ module lsu_tb;
     lsu_ctrl_d.legal = 1;
     lsu_ctrl_d.rs1_data = 32'h00004F2;
     @(negedge clk);
-    /* Unaligned halfword load */
     lsu_ctrl_d = 0;
     lsu_ctrl_d.rd_addr = 10;
     lsu_ctrl_d.half = 1;
@@ -114,8 +141,6 @@ module lsu_tb;
     @(negedge clk);
     lsu_ctrl_d = 0;
     @(negedge clk);
-    /* Unaligned halfword load */
-    lsu_ctrl_d = 0;
     lsu_ctrl_d.rd_addr = 12;
     lsu_ctrl_d.half = 1;
     lsu_ctrl_d.load = 1;
@@ -129,13 +154,12 @@ module lsu_tb;
     $finish;
   end
 
-  /* Memory Stub */
   always_ff @(posedge clk) begin
-    lsu_dccm_rdata <= 0;
-    lsu_dccm_rvalid_out <= 0;
-    if (lsu_dccm_rvalid_in) begin
-      lsu_dccm_rdata <= $urandom;
-      lsu_dccm_rvalid_out <= 1;
+    dccm_rdata <= 0;
+    dccm_rvalid_out <= 0;
+    if (dccm_rvalid_in) begin
+      dccm_rdata <= $urandom;
+      dccm_rvalid_out <= 1;
     end
   end
 
