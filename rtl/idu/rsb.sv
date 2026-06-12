@@ -105,7 +105,7 @@ module rsb #(
   endgenerate
 
 `ifndef SYNTHESIS
-  always_ff @(posedge clk) begin
+  always_comb begin
     if (rstn) begin
       for (int addr = 0; addr < N_REG; addr++) begin
         automatic int set_active   = 0;

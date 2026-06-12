@@ -64,6 +64,7 @@ module iccm #(
   logic [$clog2(DEPTH)-1:0] line_idx;
 
   logic [WIDTH*2-1:0] line_data, line_data_shift;
+  logic [WIDTH*2-1:0] line_data_din;
 
   assign line_idx = raddr[$clog2(DEPTH*WIDTH/8)-1:$clog2(WIDTH/8)];
 
@@ -72,30 +73,34 @@ module iccm #(
     $readmemh(INIT_FILE, mem);
   end
 
-  /*
+  assign line_data_din = rvalid_in ? {mem[line_idx+1], mem[line_idx]} : {2*WIDTH{1'b0}};
 
-  | B3 | B2 | B1 | B0 | 0x000
-  | B7 | B6 | B5 | B4 | 0x004
+  register_sync_rstn #(
+      .WIDTH(1)
+  ) rvalid_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .din (rvalid_in),
+      .dout(rvalid_out)
+  );
 
-  32 bits from address 0x002
+  register_sync_rstn #(
+      .WIDTH(WIDTH * 2)
+  ) line_data_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .din (line_data_din),
+      .dout(line_data)
+  );
 
-  Output should be | B5 | B4 | B3 | B2 |
-
-  */
-
-
-  /* Read Port */
-  always_ff @(posedge clk) begin
-    if (!rstn) begin
-      rvalid_out <= 0;
-      line_data  <= 0;
-      rtag_out   <= 0;
-    end else begin
-      rvalid_out <= rvalid_in;
-      line_data  <= rvalid_in ? {mem[line_idx+1], mem[line_idx]} : 0;
-      rtag_out   <= rvalid_in ? rtag_in : 0;
-    end
-  end
+  register_sync_rstn #(
+      .WIDTH(INSTR_MEM_TAG_WIDTH)
+  ) rtag_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .din (rvalid_in ? rtag_in : {INSTR_MEM_TAG_WIDTH{1'b0}}),
+      .dout(rtag_out)
+  );
 
   assign line_data_shift = line_data >> (raddr[$clog2(WIDTH/8)-1:0]);
   assign rdata = line_data_shift[WIDTH-1:0];
@@ -125,28 +130,20 @@ module dccm #(
     input logic [        WIDTH-1:0] wdata
 );
 
-  logic [WIDTH-1:0] mem[DEPTH];
+  sync_rw_mem_rstn #(
+      .DEPTH    (DEPTH),
+      .WIDTH    (WIDTH),
+      .INIT_FILE(INIT_FILE)
+  ) mem_core (
+      .clk        (clk),
+      .rstn       (rstn),
+      .raddr      (raddr),
+      .rvalid_in  (rvalid_in),
+      .rdata      (rdata),
+      .rvalid_out (rvalid_out),
+      .waddr      (waddr),
+      .wen        (wen),
+      .wdata      (wdata)
+  );
 
-  /* Initialize memory */
-  initial begin
-    $readmemh(INIT_FILE, mem);
-  end
-
-  /* Read Port */
-  always_ff @(posedge clk) begin
-    if (!rstn) begin
-      rvalid_out <= 0;
-      rdata <= 0;
-    end else begin
-      rvalid_out <= rvalid_in;
-      rdata <= mem[raddr];
-    end
-  end
-
-  /* Write Port */
-  always_ff @(posedge clk) begin
-    if (wen) begin
-      mem[waddr] <= wdata;
-    end
-  end
 endmodule

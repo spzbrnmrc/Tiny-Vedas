@@ -104,7 +104,7 @@ module reg_file #(
   endgenerate
 
 `ifndef SYNTHESIS
-  always_ff @(posedge clk) begin
+  always_comb begin
     if (rstn) begin
       for (int addr = 0; addr < REG_FILE_DEPTH; addr++) begin
         automatic int active = 0;

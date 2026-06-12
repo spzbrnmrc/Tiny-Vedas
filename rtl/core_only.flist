@@ -3,6 +3,7 @@ $PROJ/SVLib/src/registers_regfiles/register_sync_rstn.sv
 $PROJ/SVLib/src/registers_regfiles/register_en_sync_rstn.sv
 $PROJ/SVLib/src/registers_regfiles/register_en_flush_sync_rstn.sv
 $PROJ/SVLib/src/registers_regfiles/register_en_sync_rstn_vector.sv
+$PROJ/SVLib/src/memories/sync_rw_mem_rstn.sv
 $PROJ/SVLib/src/registers_regfiles/program_counter.sv
 $PROJ/SVLib/src/arith/twoscomp.sv
 $PROJ/SVLib/src/arith/ha.sv

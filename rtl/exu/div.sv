@@ -263,61 +263,231 @@ module div (
       .dout(out_valid)
   );
 
-  always_ff @(posedge clk) begin
-    if (!rstn) begin
-      state           <= DIV_S_IDLE;
-      iter            <= '0;
-      part_rem        <= '0;
-      part_quot       <= '0;
-      abs_divisor_ff  <= '0;
-      result_latched  <= '0;
-      fast_path_ff    <= 1'b0;
-      rem_op_ff       <= 1'b0;
-      signed_op_ff    <= 1'b0;
-      dividend_neg_ff <= 1'b0;
-      divisor_neg_ff  <= 1'b0;
-    end else if (flush_lower || flush_lower_ff) begin
-      state <= DIV_S_IDLE;
-    end else begin
-      case (state)
-        DIV_S_IDLE: begin
-          if (dp.legal & dp.div) begin
-            fast_path_ff    <= fast_path;
-            rem_op_ff       <= rem_op;
-            signed_op_ff    <= signed_op;
-            dividend_neg_ff <= dividend_neg;
-            divisor_neg_ff  <= divisor_neg;
-            abs_divisor_ff  <= abs_divisor;
-            result_latched  <= result_fast;
+  logic flush_fire;
+  logic issue_fire;
+  logic run_fire;
+  logic done_fire;
 
-            if (fast_path) begin
-              state <= DIV_S_DONE;
-            end else begin
-              state     <= DIV_S_RUN;
-              iter      <= '0;
-              part_rem  <= 33'sd0;
-              part_quot <= abs_dividend;
-            end
-          end
-        end
+  logic [1:0] state_din;
+  logic       state_en;
 
-        DIV_S_RUN: begin
-          part_rem  <= next_rem;
-          part_quot <= next_quot;
-          if (iter == 5'd31) begin
-            state <= DIV_S_DONE;
-          end else begin
-            iter <= iter + 5'd1;
-          end
-        end
+  logic [4:0] iter_din;
+  logic       iter_en;
 
-        DIV_S_DONE: begin
-          state <= DIV_S_IDLE;
-        end
+  logic signed [32:0] part_rem_din;
+  logic               part_rem_en;
 
-        default: state <= DIV_S_IDLE;
-      endcase
+  logic [31:0] part_quot_din;
+  logic        part_quot_en;
+
+  logic [31:0] abs_divisor_din;
+  logic        abs_divisor_en;
+
+  logic [31:0] result_latched_din;
+  logic        result_latched_en;
+
+  logic fast_path_din;
+  logic fast_path_en;
+
+  logic rem_op_din;
+  logic rem_op_en;
+
+  logic signed_op_din;
+  logic signed_op_en;
+
+  logic dividend_neg_din;
+  logic dividend_neg_en;
+
+  logic divisor_neg_din;
+  logic divisor_neg_en;
+
+  assign flush_fire = flush_lower | flush_lower_ff;
+  assign issue_fire = dp.legal & dp.div & (state == DIV_S_IDLE) & ~flush_fire;
+  assign run_fire   = (state == DIV_S_RUN) & ~flush_fire;
+  assign done_fire  = (state == DIV_S_DONE) & ~flush_fire;
+
+  always_comb begin
+    state_din = state;
+    unique case (state)
+      DIV_S_IDLE:  state_en = flush_fire | issue_fire;
+      DIV_S_RUN:   state_en = flush_fire | run_fire;
+      DIV_S_DONE:  state_en = flush_fire | done_fire;
+      default:     state_en = 1'b1;
+    endcase
+
+    iter_din = iter;
+    iter_en  = issue_fire | run_fire;
+
+    part_rem_din = part_rem;
+    part_rem_en  = issue_fire | run_fire;
+
+    part_quot_din = part_quot;
+    part_quot_en  = issue_fire | run_fire;
+
+    abs_divisor_din = abs_divisor_ff;
+    abs_divisor_en  = issue_fire;
+
+    result_latched_din = result_latched;
+    result_latched_en  = issue_fire;
+
+    fast_path_din = fast_path_ff;
+    fast_path_en  = issue_fire;
+
+    rem_op_din = rem_op_ff;
+    rem_op_en  = issue_fire;
+
+    signed_op_din = signed_op_ff;
+    signed_op_en  = issue_fire;
+
+    dividend_neg_din = dividend_neg_ff;
+    dividend_neg_en  = issue_fire;
+
+    divisor_neg_din = divisor_neg_ff;
+    divisor_neg_en  = issue_fire;
+
+    if (flush_fire) begin
+      state_din = DIV_S_IDLE;
+    end else if (issue_fire) begin
+      fast_path_din    = fast_path;
+      rem_op_din       = rem_op;
+      signed_op_din    = signed_op;
+      dividend_neg_din = dividend_neg;
+      divisor_neg_din  = divisor_neg;
+      abs_divisor_din  = abs_divisor;
+      result_latched_din = result_fast;
+
+      if (fast_path) begin
+        state_din = DIV_S_DONE;
+      end else begin
+        state_din   = DIV_S_RUN;
+        iter_din    = 5'd0;
+        part_rem_din  = 33'sd0;
+        part_quot_din = abs_dividend;
+      end
+    end else if (run_fire) begin
+      part_rem_din  = next_rem;
+      part_quot_din = next_quot;
+      if (iter == 5'd31) begin
+        state_din = DIV_S_DONE;
+      end else begin
+        iter_din = iter + 5'd1;
+      end
+    end else if (done_fire) begin
+      state_din = DIV_S_IDLE;
+    end else if (state_en) begin
+      state_din = DIV_S_IDLE;
     end
   end
+
+  register_en_sync_rstn #(
+      .WIDTH(2),
+      .RESET_VAL(2'(DIV_S_IDLE))
+  ) state_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (state_en),
+      .din (state_din),
+      .dout(state)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(5)
+  ) iter_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (iter_en),
+      .din (iter_din),
+      .dout(iter)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(33)
+  ) part_rem_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (part_rem_en),
+      .din (part_rem_din),
+      .dout(part_rem)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(32)
+  ) part_quot_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (part_quot_en),
+      .din (part_quot_din),
+      .dout(part_quot)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(32)
+  ) abs_divisor_ff_inst (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (abs_divisor_en),
+      .din (abs_divisor_din),
+      .dout(abs_divisor_ff)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(32)
+  ) result_latched_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (result_latched_en),
+      .din (result_latched_din),
+      .dout(result_latched)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(1)
+  ) fast_path_ff_inst (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (fast_path_en),
+      .din (fast_path_din),
+      .dout(fast_path_ff)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(1)
+  ) rem_op_ff_inst (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (rem_op_en),
+      .din (rem_op_din),
+      .dout(rem_op_ff)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(1)
+  ) signed_op_ff_inst (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (signed_op_en),
+      .din (signed_op_din),
+      .dout(signed_op_ff)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(1)
+  ) dividend_neg_ff_inst (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (dividend_neg_en),
+      .din (dividend_neg_din),
+      .dout(dividend_neg_ff)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(1)
+  ) divisor_neg_ff_inst (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (divisor_neg_en),
+      .din (divisor_neg_din),
+      .dout(divisor_neg_ff)
+  );
 
 endmodule

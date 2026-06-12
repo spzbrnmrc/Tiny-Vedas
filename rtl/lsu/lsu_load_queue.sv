@@ -50,10 +50,76 @@ module lsu_load_queue #(
   logic [PTR_WIDTH-1:0] rd_ptr;
   logic [OCC_WIDTH-1:0] count;
 
+  logic push_fire;
+  logic pop_fire;
+  logic [PTR_WIDTH-1:0] wr_ptr_next;
+  logic [PTR_WIDTH-1:0] rd_ptr_next;
+  logic [OCC_WIDTH-1:0] count_next;
+
+  assign push_fire = push_valid & push_ready;
+  assign pop_fire  = pop_valid & pop_ready;
+
+  assign wr_ptr_next = (wr_ptr == PTR_WIDTH'(DEPTH - 1)) ? PTR_WIDTH'(0) : (wr_ptr + PTR_WIDTH'(1));
+  assign rd_ptr_next = (rd_ptr == PTR_WIDTH'(DEPTH - 1)) ? PTR_WIDTH'(0) : (rd_ptr + PTR_WIDTH'(1));
+
+  always_comb begin
+    count_next = count;
+    unique case ({push_fire, pop_fire})
+      2'b10: count_next = count + OCC_WIDTH'(1);
+      2'b01: count_next = count - OCC_WIDTH'(1);
+      default: ;
+    endcase
+  end
+
   assign occupancy = count;
   assign push_ready = (count != OCC_WIDTH'(DEPTH));
   assign pop_valid  = (count != 0);
   assign pop_data   = entries[rd_ptr];
+
+  register_en_sync_rstn #(
+      .WIDTH(PTR_WIDTH)
+  ) wr_ptr_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (push_fire),
+      .din (wr_ptr_next),
+      .dout(wr_ptr)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(PTR_WIDTH)
+  ) rd_ptr_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (pop_fire),
+      .din (rd_ptr_next),
+      .dout(rd_ptr)
+  );
+
+  register_en_sync_rstn #(
+      .WIDTH(OCC_WIDTH)
+  ) count_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (push_fire | pop_fire),
+      .din (count_next),
+      .dout(count)
+  );
+
+  genvar entry;
+  generate
+    for (entry = 0; entry < DEPTH; entry++) begin : g_entries
+      register_en_sync_rstn #(
+          .WIDTH($bits(lsu_mem_op_t))
+      ) entry_ff (
+          .clk (clk),
+          .rstn(rstn),
+          .en  (push_fire & (wr_ptr == PTR_WIDTH'(entry))),
+          .din (push_data),
+          .dout(entries[entry])
+      );
+    end
+  endgenerate
 
   always_comb begin
     lane_pending = '0;
@@ -63,29 +129,6 @@ module lsu_load_queue #(
         automatic int lane = int'(entries[slot].lane_id);
         lane_pending[lane] = 1'b1;
       end
-    end
-  end
-
-  always_ff @(posedge clk) begin
-    if (!rstn) begin
-      wr_ptr <= '0;
-      rd_ptr <= '0;
-      count  <= '0;
-    end else begin
-      if (push_valid & push_ready) begin
-        entries[wr_ptr] <= push_data;
-        wr_ptr <= (wr_ptr == PTR_WIDTH'(DEPTH - 1)) ? '0 : wr_ptr + PTR_WIDTH'(1);
-      end
-
-      if (pop_valid & pop_ready) begin
-        rd_ptr <= (rd_ptr == PTR_WIDTH'(DEPTH - 1)) ? '0 : rd_ptr + PTR_WIDTH'(1);
-      end
-
-      unique case ({push_valid & push_ready, pop_valid & pop_ready})
-        2'b10: count <= count + 1'b1;
-        2'b01: count <= count - 1'b1;
-        default: ;
-      endcase
     end
   end
 
