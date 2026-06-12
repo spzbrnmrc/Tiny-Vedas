@@ -46,6 +46,10 @@
 `include "types.svh"
 `endif
 
+`ifndef LSU_ADDR_SVH
+`include "lsu_addr.svh"
+`endif
+
 module lsu_top #(
     parameter int REQ_PORT_COUNT  = ISSUE_WIDTH,
     parameter int DCCM_PORT_COUNT = LSU_DCCM_PORT_COUNT,
@@ -92,31 +96,6 @@ module lsu_top #(
 `endif
 );
 
-  function automatic logic [XLEN-1:0] lsu_effective_addr(input lsu_mem_op_t op);
-    logic [XLEN-1:0] imm_se;
-    imm_se = {{XLEN - 12{op.imm[11]}}, op.imm[11:0]};
-    return op.rs1_data + imm_se;
-  endfunction
-
-  function automatic lsu_mem_op_t lsu_pack_req(input idu1_out_t ctrl, input logic [LSU_LANE_ID_WIDTH-1:0] lane);
-    lsu_mem_op_t op;
-    op.lane_id  = lane;
-    op.instr    = ctrl.instr;
-    op.instr_tag = ctrl.instr_tag;
-    op.rs1_data = ctrl.rs1_data;
-    op.rs2_data = ctrl.rs2_data;
-    op.rd_addr  = ctrl.rd_addr;
-    op.imm      = ctrl.imm;
-    op.by       = ctrl.by;
-    op.half     = ctrl.half;
-    op.word     = ctrl.word;
-    op.load     = ctrl.load;
-    op.store    = ctrl.store;
-    op.unsign   = ctrl.unsign;
-    op.legal    = ctrl.legal;
-    return op;
-  endfunction
-
   lsu_mem_op_t load_push_data;
   logic        load_push_valid;
   logic        load_push_ready;
@@ -158,7 +137,6 @@ module lsu_top #(
   logic        ext_forward_valid;
   logic [XLEN-1:0] ext_forward_value;
   logic engine_stall;
-  logic engine_busy;
   logic [LSU_LANE_ID_WIDTH-1:0] wb_lane_id;
   logic [XLEN-1:0] wb_data;
   logic [4:0] wb_rd_addr;
@@ -254,7 +232,7 @@ module lsu_top #(
       .ext_forward_valid(ext_forward_valid),
       .ext_forward_value(ext_forward_value),
       .engine_stall     (engine_stall),
-      .engine_busy      (engine_busy),
+      .engine_busy      (),
       .wb_lane_id       (wb_lane_id),
       .wb_data          (wb_data),
       .wb_rd_addr       (wb_rd_addr),
@@ -315,11 +293,7 @@ module lsu_top #(
   assign ext_forward_valid  = stream_valid & engine_op.load & cam_lookup_hit;
   assign ext_forward_value  = cam_lookup_data;
 
-  always_comb begin
-    for (int i = 0; i < REQ_PORT_COUNT; i++) begin
-      req_ready[i] = 1'b1;
-    end
-  end
+  assign req_ready = '{default: 1'b1};
 
   /* Update store CAM when the engine commits merged write data. */
   assign cam_update_valid = store_cam_fill_valid;

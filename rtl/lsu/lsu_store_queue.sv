@@ -24,6 +24,10 @@
 `include "types.svh"
 `endif
 
+`ifndef LSU_ADDR_SVH
+`include "lsu_addr.svh"
+`endif
+
 module lsu_store_queue #(
     parameter int DEPTH = LSU_STORE_QUEUE_DEPTH
 ) (
@@ -81,14 +85,11 @@ module lsu_store_queue #(
   logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] push_index;
   logic [LSU_STORE_CAM_TAG_WIDTH-1:0] push_tag;
 
-  function automatic logic [XLEN-1:0] lsu_effective_addr(input lsu_mem_op_t op);
-    logic [XLEN-1:0] imm_se;
-    imm_se = {{XLEN - 12{op.imm[11]}}, op.imm[11:0]};
-    return op.rs1_data + imm_se;
-  endfunction
+  logic [XLEN-1:0] push_addr;
 
-  assign push_index = lsu_effective_addr(push_data)[LSU_STORE_CAM_INDEX_WIDTH-1:0];
-  assign push_tag   = lsu_effective_addr(push_data)[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
+  assign push_addr  = lsu_effective_addr(push_data);
+  assign push_index = push_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
+  assign push_tag   = push_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
 
   assign occupancy = count;
   assign push_ready = (count != OCC_WIDTH'(DEPTH));

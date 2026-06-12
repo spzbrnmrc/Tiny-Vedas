@@ -160,13 +160,6 @@ typedef struct packed {
   logic store;
 } last_issued_instr_t;
 
-typedef enum logic [2:0] {
-  LSU_IDLE,
-  LSU_LOAD_1,
-  LSU_LOAD_2,
-  LSU_DONE
-} lsu_state_t;
-
 localparam int LSU_LANE_ID_WIDTH = ISSUE_WIDTH > 1 ? $clog2(ISSUE_WIDTH) : 1;
 localparam int LSU_STORE_CAM_INDEX_WIDTH = $clog2(LSU_STORE_QUEUE_DEPTH);
 localparam int LSU_STORE_CAM_TAG_WIDTH = XLEN - LSU_STORE_CAM_INDEX_WIDTH;

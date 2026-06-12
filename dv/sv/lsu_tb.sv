@@ -8,6 +8,10 @@
 `include "types.svh"
 `endif
 
+`ifndef LSU_ADDR_SVH
+`include "lsu_addr.svh"
+`endif
+
 module lsu_tb;
 
   logic clk = 0;
@@ -16,7 +20,6 @@ module lsu_tb;
   idu1_out_t lsu_ctrl, lsu_ctrl_d;
   lsu_mem_op_t engine_op;
 
-  logic engine_busy;
   logic engine_stall;
   logic [XLEN-1:0] wb_data;
   logic [4:0] wb_rd_addr;
@@ -30,26 +33,7 @@ module lsu_tb;
   logic            dccm_wen;
   logic [XLEN-1:0] dccm_wdata;
 
-  function automatic lsu_mem_op_t pack_ctrl(input idu1_out_t ctrl);
-    lsu_mem_op_t op;
-    op.lane_id   = '0;
-    op.instr     = ctrl.instr;
-    op.instr_tag = ctrl.instr_tag;
-    op.rs1_data  = ctrl.rs1_data;
-    op.rs2_data  = ctrl.rs2_data;
-    op.rd_addr   = ctrl.rd_addr;
-    op.imm       = ctrl.imm;
-    op.by        = ctrl.by;
-    op.half      = ctrl.half;
-    op.word      = ctrl.word;
-    op.load      = ctrl.load;
-    op.store     = ctrl.store;
-    op.unsign    = ctrl.unsign;
-    op.legal     = ctrl.legal;
-    return op;
-  endfunction
-
-  assign engine_op = pack_ctrl(lsu_ctrl);
+  assign engine_op = lsu_pack_req(lsu_ctrl, '0);
 
   always #5 clk = ~clk;
 
@@ -60,7 +44,7 @@ module lsu_tb;
       .ext_forward_valid(1'b0),
       .ext_forward_value('0),
       .engine_stall     (engine_stall),
-      .engine_busy      (engine_busy),
+      .engine_busy      (),
       .wb_lane_id       (),
       .wb_data          (wb_data),
       .wb_rd_addr       (wb_rd_addr),
