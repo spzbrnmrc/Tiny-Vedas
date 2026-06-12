@@ -145,6 +145,12 @@ module lsu_top #(
   logic cam_clear_valid;
   logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_clear_index;
   logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_clear_tag;
+  logic cam_clear_b_valid;
+  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_clear_b_index;
+  logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_clear_b_tag;
+  logic cam_clear_c_valid;
+  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_clear_c_index;
+  logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_clear_c_tag;
 
   lsu_mem_op_t engine_op;
   logic        stream_valid;
@@ -163,6 +169,10 @@ module lsu_top #(
   logic dc2_lane_valid;
   logic store_retire_valid;
   logic [XLEN-1:0] store_retire_addr;
+  logic store_retire_line_clear_valid;
+  logic [XLEN-1:0] store_retire_line_clear_addr;
+  logic store_retire_line_clear_b_valid;
+  logic [XLEN-1:0] store_retire_line_clear_b_addr;
   logic store_cam_fill_valid;
   logic [XLEN-1:0] store_cam_fill_addr;
   logic [XLEN-1:0] store_cam_fill_data;
@@ -228,7 +238,13 @@ module lsu_top #(
       .cam_update_data  (cam_update_data),
       .cam_clear_valid  (cam_clear_valid),
       .cam_clear_index  (cam_clear_index),
-      .cam_clear_tag    (cam_clear_tag)
+      .cam_clear_tag    (cam_clear_tag),
+      .cam_clear_b_valid(cam_clear_b_valid),
+      .cam_clear_b_index(cam_clear_b_index),
+      .cam_clear_b_tag  (cam_clear_b_tag),
+      .cam_clear_c_valid(cam_clear_c_valid),
+      .cam_clear_c_index(cam_clear_c_index),
+      .cam_clear_c_tag  (cam_clear_c_tag)
   );
 
   lsu_engine engine (
@@ -249,6 +265,10 @@ module lsu_top #(
       .dc2_lane_valid   (dc2_lane_valid),
       .store_retire_valid(store_retire_valid),
       .store_retire_addr (store_retire_addr),
+      .store_retire_line_clear_valid(store_retire_line_clear_valid),
+      .store_retire_line_clear_addr (store_retire_line_clear_addr),
+      .store_retire_line_clear_b_valid(store_retire_line_clear_b_valid),
+      .store_retire_line_clear_b_addr (store_retire_line_clear_b_addr),
       .store_cam_fill_valid(store_cam_fill_valid),
       .store_cam_fill_addr (store_cam_fill_addr),
       .store_cam_fill_data (store_cam_fill_data),
@@ -291,10 +311,8 @@ module lsu_top #(
   assign stream_load_addr   = lsu_effective_addr(engine_op);
   assign cam_lookup_index   = stream_load_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
   assign cam_lookup_tag     = stream_load_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
-  /* CAM forwards queued stores only; scalar streams bypass the queues and rely on
-   * in-engine pipeline forwarding (same as legacy lsu.sv). */
-  assign ext_forward_valid  = stream_valid & engine_op.load & cam_lookup_hit &
-                              (store_occupancy != 0);
+  /* CAM forwards in-flight stores (queued or streaming); entry cleared on retire. */
+  assign ext_forward_valid  = stream_valid & engine_op.load & cam_lookup_hit;
   assign ext_forward_value  = cam_lookup_data;
 
   always_comb begin
@@ -312,6 +330,14 @@ module lsu_top #(
   assign cam_clear_valid = store_retire_valid;
   assign cam_clear_index = store_retire_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
   assign cam_clear_tag   = store_retire_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
+
+  assign cam_clear_b_valid = store_retire_line_clear_valid;
+  assign cam_clear_b_index = store_retire_line_clear_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
+  assign cam_clear_b_tag   = store_retire_line_clear_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
+
+  assign cam_clear_c_valid = store_retire_line_clear_b_valid;
+  assign cam_clear_c_index = store_retire_line_clear_b_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
+  assign cam_clear_c_tag   = store_retire_line_clear_b_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
 
   /* DCCM port 0 is the scalar SoC attachment point. */
   generate

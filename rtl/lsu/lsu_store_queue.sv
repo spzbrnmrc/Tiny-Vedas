@@ -54,7 +54,15 @@ module lsu_store_queue #(
 
     input  logic                                  cam_clear_valid,
     input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_clear_index,
-    input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]    cam_clear_tag
+    input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]    cam_clear_tag,
+
+    input  logic                                  cam_clear_b_valid,
+    input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_clear_b_index,
+    input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]    cam_clear_b_tag,
+
+    input  logic                                  cam_clear_c_valid,
+    input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_clear_c_index,
+    input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]    cam_clear_c_tag
 );
 
   localparam int PTR_WIDTH = $clog2(DEPTH);
@@ -90,6 +98,28 @@ module lsu_store_queue #(
   assign lookup_hit  = cam_valid[lookup_index] & cam_data_valid[lookup_index] &
                        (cam_tag[lookup_index] == lookup_tag);
   assign lookup_data = cam_data[lookup_index];
+
+  logic cam_clear_fire;
+  logic cam_clear_b_fire;
+  logic cam_clear_c_fire;
+  logic cam_update_fire;
+
+  assign cam_clear_fire = cam_clear_valid &
+      ((cam_tag[cam_clear_index] == cam_clear_tag) |
+       (cam_update_valid & (cam_update_index == cam_clear_index) &
+        (cam_update_tag == cam_clear_tag)));
+  assign cam_clear_b_fire = cam_clear_b_valid &
+      ((cam_tag[cam_clear_b_index] == cam_clear_b_tag) |
+       (cam_update_valid & (cam_update_index == cam_clear_b_index) &
+        (cam_update_tag == cam_clear_b_tag)));
+  assign cam_clear_c_fire = cam_clear_c_valid &
+      ((cam_tag[cam_clear_c_index] == cam_clear_c_tag) |
+       (cam_update_valid & (cam_update_index == cam_clear_c_index) &
+        (cam_update_tag == cam_clear_c_tag)));
+  assign cam_update_fire = cam_update_valid &
+      ~((cam_clear_fire & (cam_update_index == cam_clear_index)) |
+        (cam_clear_b_fire & (cam_update_index == cam_clear_b_index)) |
+        (cam_clear_c_fire & (cam_update_index == cam_clear_c_index)));
 
   always_comb begin
     lane_pending = '0;
@@ -128,16 +158,27 @@ module lsu_store_queue #(
         default: ;
       endcase
 
-      if (cam_update_valid) begin
+      /* Retire clears win over fill: completed stores must not leave stale CAM entries. */
+      if (cam_clear_fire) begin
+        cam_valid[cam_clear_index]      <= 1'b0;
+        cam_data_valid[cam_clear_index] <= 1'b0;
+      end
+
+      if (cam_clear_b_fire) begin
+        cam_valid[cam_clear_b_index]      <= 1'b0;
+        cam_data_valid[cam_clear_b_index] <= 1'b0;
+      end
+
+      if (cam_clear_c_fire) begin
+        cam_valid[cam_clear_c_index]      <= 1'b0;
+        cam_data_valid[cam_clear_c_index] <= 1'b0;
+      end
+
+      if (cam_update_fire) begin
         cam_valid[cam_update_index]      <= 1'b1;
         cam_data_valid[cam_update_index] <= 1'b1;
         cam_tag[cam_update_index]        <= cam_update_tag;
         cam_data[cam_update_index]       <= cam_update_data;
-      end
-
-      if (cam_clear_valid & (cam_tag[cam_clear_index] == cam_clear_tag)) begin
-        cam_valid[cam_clear_index]      <= 1'b0;
-        cam_data_valid[cam_clear_index] <= 1'b0;
       end
     end
   end

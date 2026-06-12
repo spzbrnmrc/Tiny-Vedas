@@ -72,6 +72,10 @@ module lsu_engine (
     /* Store retire (for store-queue CAM maintenance) */
     output logic            store_retire_valid,
     output logic [XLEN-1:0] store_retire_addr,
+    output logic            store_retire_line_clear_valid,
+    output logic [XLEN-1:0] store_retire_line_clear_addr,
+    output logic            store_retire_line_clear_b_valid,
+    output logic [XLEN-1:0] store_retire_line_clear_b_addr,
     output logic            store_cam_fill_valid,
     output logic [XLEN-1:0] store_cam_fill_addr,
     output logic [XLEN-1:0] store_cam_fill_data,
@@ -463,10 +467,18 @@ module lsu_engine (
   assign dc2_lane_id    = dc2_lane_id_q;
   assign dc2_lane_valid = dc2_lsu_valid;
 
-  assign store_retire_valid = (dc2_legal & dc2_store & ~dc2_unaligned_addr) |
-                              (dc3_legal & dc3_store & dc3_unaligned_addr);
+  logic store_retire_unaligned;
+
+  assign store_retire_unaligned = dc3_legal & dc3_store & dc3_unaligned_addr;
+  assign store_retire_valid = (dc2_legal & dc2_store & ~dc2_unaligned_addr) | store_retire_unaligned;
   assign store_retire_addr  = ({XLEN{dc2_legal & dc2_store & ~dc2_unaligned_addr}} & dc2_computed_addr) |
-                              ({XLEN{dc3_legal & dc3_store & dc3_unaligned_addr}} & dc3_computed_addr);
+                              ({XLEN{store_retire_unaligned}} & dc3_computed_addr);
+
+  /* Unaligned stores touch two aligned lines; clear both CAM slots on retire. */
+  assign store_retire_line_clear_valid = store_retire_unaligned;
+  assign store_retire_line_clear_addr  = {dc3_computed_addr[XLEN-1:2], 2'b00};
+  assign store_retire_line_clear_b_valid = store_retire_unaligned;
+  assign store_retire_line_clear_b_addr  = {dc3_computed_addr[XLEN-1:2] + 30'd1, 2'b00};
 
   assign store_cam_fill_valid = dc2_legal & dc2_store;
   assign store_cam_fill_addr  = dc2_computed_addr;
