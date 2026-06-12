@@ -268,7 +268,8 @@ module div (
   logic run_fire;
   logic done_fire;
 
-  logic [1:0] state_din;
+  div_state_e state_din;
+  logic [1:0] state_q;
   logic       state_en;
 
   logic [4:0] iter_din;
@@ -379,6 +380,8 @@ module div (
     end
   end
 
+  assign state = div_state_e'(state_q);
+
   register_en_sync_rstn #(
       .WIDTH(2),
       .RESET_VAL(2'(DIV_S_IDLE))
@@ -386,8 +389,8 @@ module div (
       .clk (clk),
       .rstn(rstn),
       .en  (state_en),
-      .din (state_din),
-      .dout(state)
+      .din (2'(state_din)),
+      .dout(state_q)
   );
 
   register_en_sync_rstn #(
