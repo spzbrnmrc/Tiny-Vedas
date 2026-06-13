@@ -220,7 +220,6 @@ module div (
   assign finish       = (state == DIV_S_DONE);
   assign finish_early = finish & fast_path_ff;
   assign div_stall    = (state != DIV_S_IDLE);
-  assign out          = result_done;
 
   assign valid_ff_e1 = (state != DIV_S_IDLE) | (dp.legal & dp.div & ~flush_lower_ff);
 
@@ -254,14 +253,6 @@ module div (
       .dout({instr_tag_out, instr_out})
   );
 `endif
-
-  register #(
-      .WIDTH(1)
-  ) out_valid_ff (
-      .clk (clk),
-      .din (finish),
-      .dout(out_valid)
-  );
 
   logic flush_fire;
   logic issue_fire;
@@ -306,6 +297,41 @@ module div (
   assign issue_fire = dp.legal & dp.div & (state == DIV_S_IDLE) & ~flush_fire;
   assign run_fire   = (state == DIV_S_RUN) & ~flush_fire;
   assign done_fire  = (state == DIV_S_DONE) & ~flush_fire;
+
+  logic [31:0] out_q;
+  logic        out_valid_q;
+  logic        div_wb_en;
+  logic [31:0] div_wb_data_din;
+  logic        div_wb_valid_din;
+
+  /* Latch quotient/remainder and valid together; drop valid after DONE retires. */
+  always_comb begin
+    div_wb_data_din  = out_q;
+    div_wb_valid_din = out_valid_q;
+    div_wb_en        = 1'b0;
+
+    if (finish) begin
+      div_wb_data_din  = result_done;
+      div_wb_valid_din = 1'b1;
+      div_wb_en        = 1'b1;
+    end else if (out_valid_q) begin
+      div_wb_valid_din = 1'b0;
+      div_wb_en        = 1'b1;
+    end
+  end
+
+  register_en_sync_rstn #(
+      .WIDTH(33)
+  ) div_wb_ff (
+      .clk (clk),
+      .rstn(rstn),
+      .en  (div_wb_en),
+      .din ({div_wb_data_din, div_wb_valid_din}),
+      .dout({out_q, out_valid_q})
+  );
+
+  assign out       = out_q;
+  assign out_valid = out_valid_q;
 
   always_comb begin
     state_din = state;

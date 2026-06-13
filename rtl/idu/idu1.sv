@@ -191,15 +191,15 @@ module idu1 #(
       .flush(pipe_flush)
   );
 
-  /* WB to EXU forwarding */
+  /* WB to EXU forwarding (registered WB beat breaks div/ALU bypass timing) */
   always_comb begin : operand_forwarding
     idu1_out_gated = idu1_out_before_fwd;
     /* RS1 */
-    if (idu1_out_before_fwd.rs1 & (exu_wb_rd_addr == idu1_out_before_fwd.rs1_addr)) begin
+    if (idu1_out_before_fwd.rs1 & (exu_wb_rd_addr == idu1_out_before_fwd.rs1_addr) & exu_wb_rd_wr_en) begin
       idu1_out_gated.rs1_data = exu_wb_data;
     end
     /* RS2 */
-    if (idu1_out_before_fwd.rs2 & (exu_wb_rd_addr == idu1_out_before_fwd.rs2_addr)) begin
+    if (idu1_out_before_fwd.rs2 & (exu_wb_rd_addr == idu1_out_before_fwd.rs2_addr) & exu_wb_rd_wr_en) begin
       idu1_out_gated.rs2_data = exu_wb_data;
     end
   end
