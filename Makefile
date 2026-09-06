@@ -1,4 +1,4 @@
-.PHONY: deps smoke smoke-verilator decodes clean clean-sim clean-pd clean-pyvedas config sv2v rtl2gds pd-report timing mul-sweep pd-synth
+.PHONY: deps smoke smoke-verilator decodes clean clean-sim clean-pd clean-pyvedas clean-fpga config sv2v rtl2gds pd-report timing mul-sweep pd-synth fpga
 
 RUN = ./scripts/with_env.sh
 
@@ -8,6 +8,16 @@ ORFS_TARGET ?= all
 ORFS_IMAGE ?= openroad/orfs:26Q2-446-g85d92b593
 SV2V_TAG ?= v0.0.13
 export ORFS_TARGET ORFS_IMAGE SV2V_TAG
+
+# `make fpga alveo_u280` — second word is the board folder under fpga/
+ifeq ($(firstword $(MAKECMDGOALS)),fpga)
+  FPGA_NAME := $(word 2,$(MAKECMDGOALS))
+  ifneq ($(FPGA_NAME),)
+    .PHONY: $(FPGA_NAME)
+    $(FPGA_NAME):
+	@:
+  endif
+endif
 
 deps:
 	./scripts/install_deps.sh
@@ -42,7 +52,12 @@ pd-synth:
 mul-sweep:
 	python3 pd/scripts/sweep_mul_pipeline.py -j $(shell nproc)
 
-clean: clean-sim clean-pd clean-pyvedas
+fpga:
+	@test -n "$(FPGA_NAME)" || { echo "Usage: make fpga <board>   e.g. make fpga alveo_u280"; exit 1; }
+	@test -d fpga/$(FPGA_NAME) || { echo "error: unknown FPGA board '$(FPGA_NAME)' (expected fpga/$(FPGA_NAME)/)"; exit 1; }
+	$(MAKE) -C fpga/$(FPGA_NAME) bitstream
+
+clean: clean-sim clean-pd clean-pyvedas clean-fpga
 
 clean-sim:
 	rm -rf work obj_dir .Xil xsim.dir xcelium.d
@@ -54,4 +69,7 @@ clean-pd:
 
 clean-pyvedas:
 	$(MAKE) -C pyvedas clean
+
+clean-fpga:
+	rm -rf fpga/*/work
 

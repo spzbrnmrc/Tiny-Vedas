@@ -1,0 +1,49 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+#
+# Synthesizable Tiny-Vedas sources for the Alveo U280 FPGA shell (Slice B).
+# $PROJ, $FPGA_INC, $BOARD_DIR expanded by Vivado build TCL.
+
+$PROJ/SVLib/src/registers_regfiles/register.sv
+$PROJ/SVLib/src/registers_regfiles/register_sync_rstn.sv
+$PROJ/SVLib/src/registers_regfiles/register_en_sync_rstn.sv
+$PROJ/SVLib/src/registers_regfiles/register_en_flush_sync_rstn.sv
+$PROJ/SVLib/src/registers_regfiles/register_en_sync_rstn_vector.sv
+$PROJ/SVLib/src/memories/sync_rw_mem_rstn.sv
+$PROJ/SVLib/src/registers_regfiles/program_counter.sv
+$PROJ/SVLib/src/cdc/cdc_sync.sv
+$PROJ/SVLib/src/arith/twoscomp.sv
+$PROJ/SVLib/src/arith/ha.sv
+$PROJ/SVLib/src/arith/fa.sv
+$PROJ/SVLib/src/arith/cla_4.sv
+$PROJ/SVLib/src/arith/adder.sv
+$PROJ/SVLib/src/arith/csa_3_2.sv
+$PROJ/SVLib/src/arith/csa_4_2.sv
+$PROJ/SVLib/src/arith/booth_encoder.sv
+$PROJ/SVLib/src/arith/adder_pipe.sv
+$PROJ/SVLib/src/arith/kogge_stone_adder.sv
+$PROJ/SVLib/src/arith/mul.sv
+$FPGA_INC/global.svh
+$FPGA_INC/hw_config.svh
+$FPGA_INC/types.svh
+$FPGA_INC/mul_pd_config.svh
+$PROJ/rtl/idu/decode_out_t.svh
+$PROJ/rtl/core_top.sv
+$PROJ/rtl/ifu/ifu.sv
+$PROJ/rtl/idu/rv32im_decoder.sv
+$PROJ/rtl/idu/idu0.sv
+$PROJ/rtl/idu/idu1.sv
+$PROJ/rtl/idu/rsb.sv
+$PROJ/rtl/exu/exu.sv
+$PROJ/rtl/exu/alu.sv
+$PROJ/rtl/exu/exu_mul.sv
+$PROJ/rtl/exu/small_div.sv
+$PROJ/rtl/exu/div.sv
+$PROJ/rtl/lsu/lsu_engine.sv
+$PROJ/rtl/lsu/lsu_load_queue.sv
+$PROJ/rtl/lsu/lsu_store_queue.sv
+$PROJ/rtl/lsu/lsu_top.sv
+$PROJ/rtl/idu/reg_file.sv
+$PROJ/rtl/lib/mem_lib.sv
+$BOARD_DIR/rtl/vedas_fpga_soc.sv
+$BOARD_DIR/rtl/vedas_fpga_soc_bd.v

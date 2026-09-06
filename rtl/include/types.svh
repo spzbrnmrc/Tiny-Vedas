@@ -39,6 +39,10 @@
 `ifndef TYPES_SVH
 `define TYPES_SVH
 
+`ifndef DECODE_OUT_T_SVH
+`include "decode_out_t.svh"
+`endif
+
 typedef struct packed {
 
   logic [31:0]             instr;

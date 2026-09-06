@@ -1,8 +1,11 @@
 # Simulation and synthesis artifacts
 obj_dir/
 work/
+fpga/*/work/
 x*/
 .Xil/
+*.srcs/
+*.gen/
 *.vcd
 *.wdb
 *.pb

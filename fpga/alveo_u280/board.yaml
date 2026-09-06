@@ -1,0 +1,32 @@
+# Alveo U280 FPGA board / platform overlay for Tiny-Vedas.
+board: alveo_u280
+part: xcu280-fsvh2892-2L-e
+vivado_version: "2023.2"
+
+synth_iccm_depth_words: 4096
+synth_dccm_depth_words: 4096
+
+qdma:
+  link_width: x16
+  link_speed_gts: 8.0
+  axi_clock_mhz: 250
+  core_clock_mhz: 100
+  axil_bar: 2
+  axil_bar_size: 0x10000
+  ctrl_offset: 0x0000
+  ctrl_size: 0x1000
+  iccm_offset: 0x4000
+  iccm_size: 0x4000
+  dccm_offset: 0x8000
+  dccm_size: 0x4000
+
+# Clocks:
+#   QDMA axi_aclk ~250 MHz — AXI-Lite, host ICCM/DCCM port, CTRL
+#   MMCM → core_clk 100 MHz — Tiny-Vedas core + core mem port
+# CDC: SVLib cdc_sync (levels + UART req/ack toggles)
+#
+# CTRL (BAR2):
+#   0x00 VERSION (0x000B0005), 0x04 SCRATCH, 0x08 HEARTBEAT
+#   0x0C CORE_CTRL [0]=core_run [1]=mmcm_locked
+#   0x10 RESET_VECTOR, 0x14 STATUS eot_done, 0x18 EOT_CLEAR
+#   0x1C UART_STATUS, 0x20 UART_POP, 0x24 UART_CLEAR

@@ -1,0 +1,28 @@
+
+/opt/PROJECTS/SILISCALE/Tiny-Vedas/fpga/alveo_u280/sw/prebuilt/uart_eot_smoke.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00100000 <_start>:
+  100000:	00200fb7          	lui	t6,0x200
+  100004:	04f00f13          	li	t5,79
+  100008:	01efa023          	sw	t5,0(t6) # 200000 <__global_pointer$+0xfe7ac>
+  10000c:	04000293          	li	t0,64
+  100010:	fff28293          	addi	t0,t0,-1
+  100014:	fe029ee3          	bnez	t0,100010 <_start+0x10>
+  100018:	04b00f13          	li	t5,75
+  10001c:	01efa023          	sw	t5,0(t6)
+  100020:	04000293          	li	t0,64
+  100024:	fff28293          	addi	t0,t0,-1
+  100028:	fe029ee3          	bnez	t0,100024 <_start+0x24>
+  10002c:	00a00f13          	li	t5,10
+  100030:	01efa023          	sw	t5,0(t6)
+  100034:	04000293          	li	t0,64
+  100038:	fff28293          	addi	t0,t0,-1
+  10003c:	fe029ee3          	bnez	t0,100038 <_start+0x38>
+  100040:	10000fb7          	lui	t6,0x10000
+  100044:	deadcf37          	lui	t5,0xdeadc
+  100048:	eeff0f13          	addi	t5,t5,-273 # deadbeef <__global_pointer$+0xde9da69b>
+  10004c:	01efa023          	sw	t5,0(t6) # 10000000 <__global_pointer$+0xfefe7ac>
+  100050:	0000006f          	j	100050 <_start+0x50>
