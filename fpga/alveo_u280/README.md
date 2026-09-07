@@ -32,15 +32,18 @@ What it does: JTAG-program `work/tiny_vedas_u280.bit` → unload `qdma-pf` → P
 
 Manual fallback: Vivado HW Manager, then remove/rescan + `sudo modprobe qdma-pf` (patched 2023.2.1 — see `scripts/patch_qdma_driver.sh`).
 
-Expect **BAR2 = 64 KiB**, VERSION `0x000B0005`.
+Expect **BAR2 = 64 KiB**, VERSION `0x000B0009`.
 
-## Automated smoke (load ICCM + run)
+## Automated smoke / ELF runner
 
 ```bash
-# root needed to mmap BAR2
-sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py           # EOT only
+# Slice B builtins
+sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py
 sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --prog uart
-sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --bin fpga/alveo_u280/sw/prebuilt/eot_smoke.bin
+
+# Slice C — same tests as sim (16 KiB ICCM/DCCM; oversized skipped with --skip-oversized)
+sudo ./venv/bin/python fpga/alveo_u280/scripts/fpga_runner.py -n c.helloworld
+sudo ./venv/bin/python fpga/alveo_u280/scripts/fpga_runner.py -t tests/smoke.tlist --skip-oversized
 ```
 
 What it does: check VERSION / HEARTBEAT / SCRATCH / MMCM locked → halt → load RV32 image into ICCM @ BAR2 `0x4000` → set reset vector `0x00100000` → run → wait EOT → print UART.
@@ -64,5 +67,5 @@ CTRL: `0x00` VERSION, `0x04` SCRATCH, `0x08` HEARTBEAT, `0x0C` CORE_CTRL `[0]=ru
 ## Notes
 
 - Card still on Slice A shows VERSION `0x000A0001` and BAR2 8 KiB — smoke will refuse; program the Slice B bit first.
-- ICCM is shared [`rtl/lib/mem_lib.sv`](../../rtl/lib/mem_lib.sv) (aligned word fetch, 1-cycle, BRAM). FPGA halt-and-loads via the write port; sim uses `$readmemh`.
-- Slice C: full ELF/`smoke.tlist` runner after the next bit proves UART+bne.
+- ICCM/DCCM are shared [`rtl/lib/mem_lib.sv`](../../rtl/lib/mem_lib.sv) (`ram_style=block`). URAM DCCM dropped load data on FPGA.
+- Slice C: `fpga_runner.py` loads ELF `.text`→ICCM / data→DCCM (16 KiB windows).

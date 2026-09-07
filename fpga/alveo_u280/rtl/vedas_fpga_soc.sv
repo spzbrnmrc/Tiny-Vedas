@@ -7,11 +7,9 @@
 //   AXI + CTRL + UART mailbox @ s_axi_aclk (~250 MHz)
 //   core + ICCM/DCCM @ core_clk (100 MHz)
 //
-//   Memories are single-clock on core_clk (Vivado BRAM inference). Host
-//   ICCM/DCCM uses req/ack CDC (halt-and-load). DCCM: SVLib sync_rw_mem_rstn.
-//   ICCM: shared rtl/lib/mem_lib.sv (aligned word fetch, optional write port).
-//
-//   CDC: SVLib cdc_sync. BAR2: CTRL@0, ICCM@0x4000, DCCM@0x8000.
+//   Memories are single-clock on core_clk. Host ICCM/DCCM: req/ack CDC
+//   (halt-and-load). ICCM: mem_lib iccm. DCCM: mem_lib sync_tdp_mem (bus
+//   outside the RAM). CDC: SVLib cdc_sync. BAR2: CTRL@0, ICCM@0x4000, DCCM@0x8000.
 ///////////////////////////////////////////////////////////////////////////////
 
 `timescale 1ns / 1ps
@@ -25,7 +23,7 @@
 `endif
 
 module vedas_fpga_soc #(
-    parameter logic [31:0] VERSION = 32'h000B_0005,
+    parameter logic [31:0] VERSION = 32'h000B_0009,
     parameter int UART_FIFO_DEPTH = 256,
     parameter logic [31:0] UART_ADDRESS = 32'h0020_0000,
     parameter logic [31:0] EOT_ADDRESS = 32'h1000_0000,
@@ -185,7 +183,7 @@ module vedas_fpga_soc #(
   wire [DCCM_AW-1:0] host_dccm_idx = host_addr_c[DCCM_AW-1:0];
 
   wire host_iccm_we = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                      host_wr_c && host_iccm_c;
+                      host_wr_c && host_iccm_c && (host_wstrb_c == 4'hF);
   wire host_iccm_re = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
                       !host_wr_c && host_iccm_c;
 
@@ -207,7 +205,7 @@ module vedas_fpga_soc #(
 
   assign instr_mem_rdata       = iccm_rdata;
   assign instr_mem_rdata_valid = iccm_rvalid_out & core_rstn & core_run_c;
-  assign instr_mem_tag_in      = (instr_mem_rdata_valid) ? iccm_rtag_out : '0;
+  assign instr_mem_tag_in      = iccm_rtag_out;  // IFU ignores when !rvalid
 
   iccm #(
       .DEPTH(INSTR_MEM_DEPTH),
@@ -225,13 +223,16 @@ module vedas_fpga_soc #(
       .wen       (host_iccm_we),
       .waddr     (host_iccm_widx),
       .wdata     (host_wdata_c),
-      .wstrb     (host_wstrb_c)
+      .wstrb     (4'hF)  // full-word only; RMW is caller's job
   );
 
   // =========================================================================
-  // DCCM — SVLib sync_rw_mem_rstn, ports muxed for host when halted
+  // DCCM — sync_tdp_mem only (no AXI inside the RAM).
+  //   Port A: core reads
+  //   Port B: core writes while running; host R/W while halted
+  // Valid/handshake for host+core live outside the RAM.
   // =========================================================================
-  logic [XLEN-1:0] dccm_raddr, dccm_rdata_core, dccm_waddr, dccm_wdata;
+  logic [XLEN-1:0] dccm_raddr, dccm_waddr, dccm_wdata, dccm_rdata;
   logic            dccm_rvalid_in, dccm_rvalid_out, dccm_wen;
   wire [DCCM_AW-1:0] dccm_r_word = dccm_raddr[DATA_MEM_ADDR_WIDTH-1:2];
   wire [DCCM_AW-1:0] dccm_w_word = dccm_waddr[DATA_MEM_ADDR_WIDTH-1:2];
@@ -243,50 +244,66 @@ module vedas_fpga_soc #(
   reg [31:0] host_rmw_data;
   reg [3:0]  host_rmw_strb;
 
-  wire dccm_host_wen = (host_st == H_DCCM_WR);
   wire dccm_host_wr_now = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
                           host_wr_c && !host_iccm_c && (host_wstrb_c == 4'hF);
   wire dccm_host_rd_now = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
                           !host_iccm_c &&
                           (!host_wr_c || (host_wstrb_c != 4'hF));
-  wire dccm_host_access = dccm_host_wen || dccm_host_wr_now || dccm_host_rd_now ||
-                          (host_st == H_DCCM_RD) || (host_st == H_DCCM_RMW);
+  wire dccm_host_wen = (host_st == H_DCCM_WR);
+  wire dccm_host_ren = dccm_host_rd_now || (host_st == H_DCCM_RD) ||
+                       (host_st == H_DCCM_RMW);
 
-  wire [DCCM_AW-1:0] dccm_waddr_u =
-      (dccm_host_wen || dccm_host_wr_now) ? host_dccm_idx : dccm_w_word;
-  wire               dccm_wen_u =
-      dccm_host_wen | dccm_host_wr_now | dccm_wen_mem;
-  wire [31:0]        dccm_wdata_u =
-      dccm_host_wen ? host_rmw_data :
-      dccm_host_wr_now ? host_wdata_c : dccm_wdata;
+  // Port A — core read
+  wire              dccm_ena  = dccm_rvalid_in & core_rstn;
+  wire [DCCM_AW-1:0] dccm_addra = dccm_r_word;
+  logic [31:0]      dccm_doa;
 
-  wire               dccm_rvalid_u =
-      dccm_host_rd_now || (host_st == H_DCCM_RD) || (host_st == H_DCCM_RMW)
-          ? 1'b1
-          : (dccm_rvalid_in & core_rstn);
-  wire [DCCM_AW-1:0] dccm_raddr_u =
-      dccm_host_access ? host_dccm_idx : dccm_r_word;
+  // Port B — core write (run) or host (halt)
+  wire dccm_enb = core_run_c ? dccm_wen_mem
+                             : (dccm_host_wr_now | dccm_host_wen | dccm_host_ren);
+  wire dccm_web = core_run_c ? dccm_wen_mem
+                             : (dccm_host_wr_now | dccm_host_wen);
+  wire [DCCM_AW-1:0] dccm_addrb = core_run_c ? dccm_w_word : host_dccm_idx;
+  wire [31:0] dccm_dib =
+      core_run_c ? dccm_wdata :
+      (dccm_host_wen ? host_rmw_data : host_wdata_c);
+  logic [31:0] dccm_dob;
 
-  logic [31:0] dccm_rdata_mem;
-  logic        dccm_rvalid_mem;
-
-  sync_rw_mem_rstn #(
+  sync_tdp_mem #(
       .DEPTH(DATA_MEM_DEPTH),
       .WIDTH(32)
   ) u_dccm (
-      .clk      (core_clk),
-      .rstn     (axi_rstn_c),
-      .raddr    (dccm_raddr_u),
-      .rvalid_in(dccm_rvalid_u),
-      .rdata    (dccm_rdata_mem),
-      .rvalid_out(dccm_rvalid_mem),
-      .waddr    (dccm_waddr_u),
-      .wen      (dccm_wen_u),
-      .wdata    (dccm_wdata_u)
+      .clka (core_clk),
+      .clkb (core_clk),
+      .ena  (dccm_ena),
+      .enb  (dccm_enb),
+      .wea  (1'b0),
+      .web  (dccm_web),
+      .addra(dccm_addra),
+      .addrb(dccm_addrb),
+      .dia  ('0),
+      .dib  (dccm_dib),
+      .doa  (dccm_doa),
+      .dob  (dccm_dob)
   );
 
-  assign dccm_rdata      = dccm_rdata_mem;
-  assign dccm_rvalid_out = dccm_rvalid_mem & core_rstn;
+  // Core valid is outside the RAM (1-cycle match to doa)
+  logic dccm_rvalid_core_q;
+  always_ff @(posedge core_clk) begin
+    if (!axi_rstn_c) dccm_rvalid_core_q <= 1'b0;
+    else             dccm_rvalid_core_q <= dccm_ena;
+  end
+  assign dccm_rdata      = dccm_doa;
+  assign dccm_rvalid_out = dccm_rvalid_core_q;
+
+  // Host valid outside the RAM
+  logic dccm_rvalid_host_q;
+  always_ff @(posedge core_clk) begin
+    if (!axi_rstn_c) dccm_rvalid_host_q <= 1'b0;
+    else             dccm_rvalid_host_q <= dccm_host_ren;
+  end
+  wire [31:0] dccm_rdata_mem  = dccm_dob;
+  wire        dccm_rvalid_mem = dccm_rvalid_host_q;
 
   // Host mem FSM on core_clk
   always_ff @(posedge core_clk) begin
@@ -304,7 +321,7 @@ module vedas_fpga_soc #(
           if (host_req_edge && !core_run_c) begin
             if (host_iccm_c) begin
               if (host_wr_c) begin
-                // ICCM write completes in write process this cycle
+                // full-word write (host_iccm_we) or drop partial; always ack
                 host_ack_c <= ~host_ack_c;
               end else begin
                 host_st <= H_ICCM_RD;
