@@ -33,6 +33,7 @@ set_property target_language Verilog [current_project]
 # Include path: FPGA-generated globals first
 set_property include_dirs [list $FPGA_INC [file join $PROJ rtl include] [file join $PROJ rtl idu]] \
   [current_fileset]
+# SYNTHESIS: strip sim-only sidebands (no FPGA retire TRACE).
 set_property verilog_define [list SYNTHESIS] [current_fileset]
 
 # Add Tiny-Vedas + SoC RTL (expand flist)

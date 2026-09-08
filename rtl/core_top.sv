@@ -71,7 +71,7 @@ module core_top #(
     output logic [XLEN-1:0] dccm_waddr,
     output logic            dccm_wen,
     output logic [XLEN-1:0] dccm_wdata
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
     ,
     output core_debug_lane_t debug[ISSUE_WIDTH-1:0]
 `endif
@@ -128,7 +128,7 @@ module core_top #(
   logic            dccm_wen_arr[LSU_DCCM_PORT_COUNT-1:0];
   logic [XLEN-1:0] dccm_wdata_arr[LSU_DCCM_PORT_COUNT-1:0];
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   logic [XLEN-1:0] lsu_debug_instr_tag_out[ISSUE_WIDTH-1:0];
   logic [    31:0] lsu_debug_instr_out[ISSUE_WIDTH-1:0];
   logic            lsu_debug_store_dc2_valid;
@@ -147,7 +147,7 @@ module core_top #(
   logic [ISSUE_WIDTH-1:0][XLEN-1:0] pc_out;
   logic [ISSUE_WIDTH-1:0] pc_load;
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   logic [ISSUE_WIDTH-1:0][XLEN-1:0] exu_instr_tag_out;
   logic [ISSUE_WIDTH-1:0][XLEN-1:0] exu_instr_out;
 `endif
@@ -273,7 +273,7 @@ module core_top #(
       .lsu_resp_rd_addr(lsu_resp_rd_addr[0]),
       .pc_out         (pc_out[0]),
       .pc_load        (pc_load[0])
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       ,
       .lsu_debug_store_dc2_valid    (lsu_debug_store_dc2_valid),
       .lsu_debug_store_dc2_instr_tag(lsu_debug_store_dc2_instr_tag),
@@ -313,7 +313,7 @@ module core_top #(
           .dccm_waddr     (dccm_waddr_arr),
           .dccm_wen       (dccm_wen_arr),
           .dccm_wdata     (dccm_wdata_arr)
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
           ,
           .debug_instr_tag_out(lsu_debug_instr_tag_out),
           .debug_instr_out    (lsu_debug_instr_out),
@@ -340,7 +340,7 @@ module core_top #(
       assign dccm_waddr_arr[0]    = '0;
       assign dccm_wen_arr[0]      = 1'b0;
       assign dccm_wdata_arr[0]    = '0;
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       assign lsu_debug_store_dc2_valid     = 1'b0;
       assign lsu_debug_store_dc2_instr_tag = '0;
       assign lsu_debug_store_dc2_instr     = '0;
@@ -363,7 +363,7 @@ module core_top #(
   assign dccm_wen           = dccm_wen_arr[0];
   assign dccm_wdata         = dccm_wdata_arr[0];
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   generate
     for (genvar lane = 1; lane < ISSUE_WIDTH; lane++) begin : g_unused_debug
       assign debug[lane] = '0;

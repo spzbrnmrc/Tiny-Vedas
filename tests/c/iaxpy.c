@@ -7,10 +7,13 @@ int main() {
     int x[LOOP_CNT] = {1, 2, 3};
     int a = 3;
 
-    for (int i = 0; i<LOOP_CNT; i++) {
-        y[i] = a*x[i]+y[i];
+    for (int i = 0; i < LOOP_CNT; i++) {
+        y[i] = a * x[i] + y[i];
+    }
+    if (y[0] != 4 || y[1] != 8 || y[2] != 12) {
+        for (;;)
+            ;
     }
     eot_sequence();
     return 0;
-
 }

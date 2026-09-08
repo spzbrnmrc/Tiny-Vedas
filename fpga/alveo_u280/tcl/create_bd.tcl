@@ -27,16 +27,16 @@ proc tv_create_pcie_bd {} {
     CONFIG.axisten_freq {250} \
   ] $qdma
 
-  # 64 KiB AXI-Lite BAR2: CTRL + ICCM + DCCM (see vedas_fpga_soc.sv)
+  # 128 KiB AXI-Lite BAR2: CTRL + ICCM + DCCM (see vedas_fpga_soc.sv)
   set_property CONFIG.pf0_bar2_enabled_qdma {false} $qdma
   set_property -dict [list \
     CONFIG.axilite_master_en {true} \
     CONFIG.pf0_bar2_enabled_qdma {true} \
     CONFIG.pf0_bar2_type_qdma {AXI_Lite_Master} \
     CONFIG.pf0_bar2_scale_qdma {Kilobytes} \
-    CONFIG.pf0_bar2_size_qdma {64} \
+    CONFIG.pf0_bar2_size_qdma {128} \
     CONFIG.axilite_master_scale {Kilobytes} \
-    CONFIG.axilite_master_size {64} \
+    CONFIG.axilite_master_size {128} \
     CONFIG.barlite2 {2} \
   ] $qdma
 

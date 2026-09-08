@@ -37,7 +37,7 @@ module exu_mul (
     output logic      [     4:0] out_rd_addr,
     output logic                 out_rd_wr_en,
     output logic                 mul_busy
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
     ,
     output logic [XLEN-1:0] instr_tag_out,
     output logic [    31:0] instr_out
@@ -57,7 +57,7 @@ module exu_mul (
   logic        [      4:0] out_rd_addr_e  [MUL_LAT:0];
   logic        [MUL_LAT:0] out_rd_wr_en_e;
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   logic [XLEN-1:0] instr_tag_e[MUL_LAT:0];
   logic [    31:0] instr_e    [MUL_LAT:0];
 `endif
@@ -109,7 +109,7 @@ module exu_mul (
     assign low_e[0]          = mul_ctrl.low;
     assign out_rd_addr_e[0]  = mul_ctrl.rd_addr;
     assign out_rd_wr_en_e[0] = mul_ctrl.legal & mul_ctrl.mul;
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
     assign instr_tag_e[0]    = mul_ctrl.instr_tag;
     assign instr_e[0]        = mul_ctrl.instr;
 `endif
@@ -142,7 +142,7 @@ module exu_mul (
           .dout(out_rd_wr_en_e[lat+1])
       );
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       register_sync_rstn #(
           .WIDTH(XLEN + 32)
       ) instr_tag_ff (
@@ -240,7 +240,7 @@ module exu_mul (
 
   assign mul_busy      = |out_rd_wr_en_e[MUL_LAT-1:1];
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   assign instr_tag_out = instr_tag_e[MUL_LAT];
   assign instr_out     = instr_e[MUL_LAT];
 `endif

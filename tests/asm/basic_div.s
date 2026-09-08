@@ -6,9 +6,8 @@ _start:
     li       x2, 0x2
     div      x3, x1, x2
     mv       x4, x3
-    nop
-    nop
-    nop
-    nop
-    nop
+    li       x5, 0xef56df78
+    bne      x3, x5, fail
+    bne      x4, x5, fail
     .include "eot_sequence.s"
+    .include "fail_hang.s"

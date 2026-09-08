@@ -14,11 +14,13 @@ from typing import Iterable, Optional
 XILINX_VENDOR = 0x10EE
 QDMA_DEVICE = 0x903F
 
-# BAR2 map (Slice B, 64 KiB)
+# BAR2 map (128 KiB): CTRL@0, ICCM@0x1000 (32KiB), DCCM@0x9000 (64KiB)
 CTRL_BASE = 0x0000
-ICCM_BASE = 0x4000
-DCCM_BASE = 0x8000
-BAR2_SIZE = 0x10000
+ICCM_BASE = 0x1000
+ICCM_SIZE = 0x8000
+DCCM_BASE = 0x9000
+DCCM_SIZE = 0x10000
+BAR2_SIZE = 0x20000
 
 REG_VERSION = 0x00
 REG_SCRATCH = 0x04
@@ -31,7 +33,7 @@ REG_UART_STATUS = 0x1C
 REG_UART_POP = 0x20
 REG_UART_CLEAR = 0x24
 
-VERSION_SLICE_B = 0x000B0009
+VERSION_SLICE_B = 0x000B0010
 LINK_BASE = 0x00100000
 DEFAULT_RESET_VECTOR = LINK_BASE
 
@@ -83,7 +85,7 @@ class VedasBar2:
         if self.size < min_size:
             raise RuntimeError(
                 f"BAR2 is {self.size} bytes (need >= {min_size}). "
-                f"Program Slice B bitstream (64 KiB BAR2), then PCIe remove/rescan."
+                f"Program Slice B bitstream, then PCIe remove/rescan."
             )
 
     def read32(self, off: int) -> int:
@@ -100,12 +102,37 @@ class VedasBar2:
         return bytes(self._mm[off : off + n])
 
     def write_bytes(self, off: int, data: bytes) -> None:
+        """Write bytes to BAR2.
+
+        ICCM/DCCM go through AXI-Lite CDC with backpressure. A bulk mmap
+        store is posted on PCIe and silently drops under load — word writes
+        plus a non-posted read drain are required for large images.
+        """
         end = off + len(data)
         if off < 0 or end > self.size:
             raise ValueError(f"write [{off:#x},{end:#x}) out of BAR2")
-        self._mm[off:end] = data
 
-    # --- CTRL helpers ---
+        mem = off >= ICCM_BASE and end <= (DCCM_BASE + DCCM_SIZE)
+        if not mem:
+            self._mm[off:end] = data
+            return
+
+        i = 0
+        n = len(data)
+        while i + 4 <= n:
+            struct.pack_into("<I", self._mm, off + i, struct.unpack_from("<I", data, i)[0])
+            i += 4
+            # Non-posted read forces PCIe to flush posted writes to the device.
+            if (i & 0xF) == 0:
+                self.read32(REG_VERSION)
+        if i < n:
+            # Rare unaligned tail — RMW via read32/write32
+            for j in range(i, n):
+                self._mm[off + j] = data[j]
+            self.read32(REG_VERSION)
+        else:
+            self.read32(REG_VERSION)
+
     def version(self) -> int:
         return self.read32(REG_VERSION)
 
@@ -165,17 +192,18 @@ class VedasBar2:
 
     def halt(self) -> None:
         self.set_core_run(False)
-        # Give CDC a few core cycles to drop run
         time.sleep(0.001)
 
     def load_iccm(self, data: bytes, link_addr: int = LINK_BASE) -> None:
-        """Load a bare image whose first byte is linked at link_addr into ICCM."""
         if self.core_run():
             raise RuntimeError("core_run=1 — halt before loading ICCM")
         if link_addr < LINK_BASE:
             raise ValueError("link_addr below default link base")
-        # Narrow ICCM maps link_addr low bits → word index; host window is flat @ ICCM_BASE
-        byte_off = (link_addr - LINK_BASE) & (0x4000 - 1)
+        byte_off = (link_addr - LINK_BASE) & (ICCM_SIZE - 1)
+        if byte_off + len(data) > ICCM_SIZE:
+            raise ValueError(
+                f"ICCM image {len(data)}B @ off {byte_off} exceeds {ICCM_SIZE}B window"
+            )
         self.write_bytes(ICCM_BASE + byte_off, data)
 
     def load_iccm_words(self, words: Iterable[int], word_index: int = 0) -> None:
@@ -187,6 +215,8 @@ class VedasBar2:
     def load_dccm(self, data: bytes, offset: int = 0) -> None:
         if self.core_run():
             raise RuntimeError("core_run=1 — halt before loading DCCM")
+        if offset + len(data) > DCCM_SIZE:
+            raise ValueError("DCCM image exceeds window")
         self.write_bytes(DCCM_BASE + offset, data)
 
     def run_and_wait_eot(self, timeout_s: float = 2.0) -> float:
@@ -198,6 +228,6 @@ class VedasBar2:
         while time.time() - t0 < timeout_s:
             if self.eot_done():
                 return time.time() - t0
-            time.sleep(0.001)
+            time.sleep(0.0002)
         self.set_core_run(False)
         raise TimeoutError(f"EOT not seen within {timeout_s}s")

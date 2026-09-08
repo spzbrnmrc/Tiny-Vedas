@@ -4,12 +4,13 @@
 //    Licensed under the Apache License, Version 2.0 (the "License");
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny-Vedas FPGA SoC (Slice B):
-//   AXI + CTRL + UART mailbox @ s_axi_aclk (~250 MHz)
+//   AXI + CTRL + UART/EOT @ s_axi_aclk (~250 MHz)
 //   core + ICCM/DCCM @ core_clk (100 MHz)
 //
 //   Memories are single-clock on core_clk. Host ICCM/DCCM: req/ack CDC
-//   (halt-and-load). ICCM: mem_lib iccm. DCCM: mem_lib sync_tdp_mem (bus
-//   outside the RAM). CDC: SVLib cdc_sync. BAR2: CTRL@0, ICCM@0x4000, DCCM@0x8000.
+//   (halt-and-load). ICCM: mem_lib iccm. DCCM: mem_lib sync_tdp_mem.
+//   BAR2: CTRL@0x0 (4KiB), ICCM@0x1000 (32KiB), DCCM@0x9000 (64KiB).
+//   Pass criterion: EOT (+ optional UART golden). No retire TRACE on FPGA.
 ///////////////////////////////////////////////////////////////////////////////
 
 `timescale 1ns / 1ps
@@ -23,7 +24,7 @@
 `endif
 
 module vedas_fpga_soc #(
-    parameter logic [31:0] VERSION = 32'h000B_0009,
+    parameter logic [31:0] VERSION = 32'h000B_0010,
     parameter int UART_FIFO_DEPTH = 256,
     parameter logic [31:0] UART_ADDRESS = 32'h0020_0000,
     parameter logic [31:0] EOT_ADDRESS = 32'h1000_0000,
@@ -59,9 +60,11 @@ module vedas_fpga_soc #(
 );
 
   localparam logic [31:0] CTRL_BASE = 32'h0000_0000;
-  localparam logic [31:0] ICCM_BASE = 32'h0000_4000;
-  localparam logic [31:0] DCCM_BASE = 32'h0000_8000;
-  localparam logic [31:0] REGION_MASK = 32'hFFFF_C000;
+  localparam logic [31:0] CTRL_END  = 32'h0000_1000;
+  localparam logic [31:0] ICCM_BASE = 32'h0000_1000;
+  localparam logic [31:0] ICCM_END  = 32'h0000_9000;
+  localparam logic [31:0] DCCM_BASE = 32'h0000_9000;
+  localparam logic [31:0] DCCM_END  = 32'h0001_9000;
 
   localparam int ICCM_AW = $clog2(INSTR_MEM_DEPTH);
   localparam int DCCM_AW = $clog2(DATA_MEM_DEPTH);
@@ -70,12 +73,12 @@ module vedas_fpga_soc #(
   wire [31:0] aw_addr = s_axi_awaddr;
   wire [31:0] ar_addr = s_axi_araddr;
 
-  wire aw_ctrl = (aw_addr & REGION_MASK) == CTRL_BASE;
-  wire aw_iccm = (aw_addr & REGION_MASK) == ICCM_BASE;
-  wire aw_dccm = (aw_addr & REGION_MASK) == DCCM_BASE;
-  wire ar_ctrl = (ar_addr & REGION_MASK) == CTRL_BASE;
-  wire ar_iccm = (ar_addr & REGION_MASK) == ICCM_BASE;
-  wire ar_dccm = (ar_addr & REGION_MASK) == DCCM_BASE;
+  wire aw_ctrl = (aw_addr >= CTRL_BASE) && (aw_addr < CTRL_END);
+  wire aw_iccm = (aw_addr >= ICCM_BASE) && (aw_addr < ICCM_END);
+  wire aw_dccm = (aw_addr >= DCCM_BASE) && (aw_addr < DCCM_END);
+  wire ar_ctrl = (ar_addr >= CTRL_BASE) && (ar_addr < CTRL_END);
+  wire ar_iccm = (ar_addr >= ICCM_BASE) && (ar_addr < ICCM_END);
+  wire ar_dccm = (ar_addr >= DCCM_BASE) && (ar_addr < DCCM_END);
 
   // ----- AXI CTRL -----
   reg [31:0] scratch;
@@ -404,7 +407,6 @@ module vedas_fpga_soc #(
     end
   end
 
-`ifdef SYNTHESIS
   core_top #(.STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)) core_i (
       .clk(core_clk), .rstn(core_rstn), .reset_vector(reset_vector_c),
       .instr_mem_addr(instr_mem_addr), .instr_mem_addr_valid(instr_mem_addr_valid),
@@ -414,18 +416,6 @@ module vedas_fpga_soc #(
       .dccm_rvalid_out(dccm_rvalid_out), .dccm_waddr(dccm_waddr), .dccm_wen(dccm_wen),
       .dccm_wdata(dccm_wdata)
   );
-`else
-  core_debug_lane_t unused_debug[ISSUE_WIDTH-1:0];
-  core_top #(.STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)) core_i (
-      .clk(core_clk), .rstn(core_rstn), .reset_vector(reset_vector_c),
-      .instr_mem_addr(instr_mem_addr), .instr_mem_addr_valid(instr_mem_addr_valid),
-      .instr_mem_tag_out(instr_mem_tag_out), .instr_mem_rdata(instr_mem_rdata),
-      .instr_mem_rdata_valid(instr_mem_rdata_valid), .instr_mem_tag_in(instr_mem_tag_in),
-      .dccm_raddr(dccm_raddr), .dccm_rvalid_in(dccm_rvalid_in), .dccm_rdata(dccm_rdata),
-      .dccm_rvalid_out(dccm_rvalid_out), .dccm_waddr(dccm_waddr), .dccm_wen(dccm_wen),
-      .dccm_wdata(dccm_wdata), .debug(unused_debug)
-  );
-`endif
 
   // ----- AXI-Lite -----
   wire aw_hs = s_axi_awvalid & s_axi_awready;
@@ -437,10 +427,10 @@ module vedas_fpga_soc #(
   assign s_axi_wready  = s_axi_awvalid & s_axi_wvalid & ~s_axi_bvalid & ~host_busy_a;
   assign s_axi_arready = s_axi_arvalid & ~s_axi_rvalid & ~host_busy_a;
 
-  wire [ICCM_AW-1:0] axi_iccm_widx = aw_addr[2 +: ICCM_AW];
-  wire [DCCM_AW-1:0] axi_dccm_widx = aw_addr[2 +: DCCM_AW];
-  wire [ICCM_AW-1:0] axi_iccm_ridx = ar_addr[2 +: ICCM_AW];
-  wire [DCCM_AW-1:0] axi_dccm_ridx = ar_addr[2 +: DCCM_AW];
+  wire [ICCM_AW-1:0] axi_iccm_widx = ICCM_AW'( (aw_addr - ICCM_BASE) >> 2 );
+  wire [DCCM_AW-1:0] axi_dccm_widx = DCCM_AW'( (aw_addr - DCCM_BASE) >> 2 );
+  wire [ICCM_AW-1:0] axi_iccm_ridx = ICCM_AW'( (ar_addr - ICCM_BASE) >> 2 );
+  wire [DCCM_AW-1:0] axi_dccm_ridx = DCCM_AW'( (ar_addr - DCCM_BASE) >> 2 );
 
   reg uart_req_a_q;
   wire host_ack_edge = host_ack_a ^ host_ack_a_q;

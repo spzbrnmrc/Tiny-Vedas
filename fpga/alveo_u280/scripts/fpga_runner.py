@@ -9,13 +9,15 @@ Slice C — run sim tests on Alveo U280 over PCIe.
   sudo ./venv/bin/python fpga/alveo_u280/scripts/fpga_runner.py -t tests/smoke.tlist --skip-oversized
 
 Reuses tools/sim_manager.run_gen for compile/_start; loads .text→ICCM and
-.data/.rodata/.bss→DCCM (same layout as prepare_imem). Pass = EOT (+ optional UART).
+.data/.rodata/.bss→DCCM (same layout as prepare_imem). Pass = EOT within
+timeout (+ UART golden when defined). Sim keeps ISS/retire TRACE.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -37,7 +39,9 @@ from tools.sim_manager import read_task_list, run_gen  # noqa: E402
 
 from vedas_host import (  # noqa: E402
     DCCM_BASE,
+    DCCM_SIZE,
     ICCM_BASE,
+    ICCM_SIZE,
     LINK_BASE,
     REG_HEARTBEAT,
     REG_SCRATCH,
@@ -45,9 +49,9 @@ from vedas_host import (  # noqa: E402
     VedasBar2,
 )
 
-# BAR2 windows (Slice B board.yaml)
-ICCM_BYTES = 0x4000
-DCCM_BYTES = 0x4000
+# BAR2 windows (board.yaml)
+ICCM_BYTES = ICCM_SIZE
+DCCM_BYTES = DCCM_SIZE
 LINK_BASE_OFFSET = 0x00100000
 
 DATA_SECTIONS = (".data", ".rodata", ".bss", ".sdata", ".init_array", ".fini_array")
@@ -56,6 +60,42 @@ DATA_SECTIONS = (".data", ".rodata", ".bss", ".sdata", ".init_array", ".fini_arr
 UART_GOLDEN = {
     "c.helloworld": b"Hello, World!\nNumber is 100\n",
 }
+
+# VAX MIPS reference used by classic Dhrystone 2.1 DMIPS reporting
+DHRYSTONE_VAX_MIPS = 1757.0
+
+
+@dataclass
+class DhryMetrics:
+    runs: int
+    dhrystones_per_sec: float
+    dmips: float
+    source: str  # "uart" or "host"
+
+
+def parse_dhrystone_metrics(uart: bytes, elapsed_s: float) -> Optional[DhryMetrics]:
+    """Extract Dhrystone rate from UART if present; else from host EOT time.
+
+    The on-card UART mailbox is only 256 bytes, so the trailing
+    \"Dhrystones per Second\" lines are often dropped. Host EOT wall time
+    with the printed run count is then the authoritative figure (and better
+    than the ELF's gettimeofday, which is an unimplemented ecall stub).
+    """
+    text = uart.decode("utf-8", errors="replace")
+    runs = 2000
+    m = re.search(r"Execution starts,\s*(\d+)\s+runs", text)
+    if m:
+        runs = int(m.group(1))
+
+    m = re.search(r"Dhrystones\s+per\s+Second:\s*([0-9]+(?:\.[0-9]+)?)", text)
+    if m and float(m.group(1)) > 0:
+        dps = float(m.group(1))
+        return DhryMetrics(runs, dps, dps / DHRYSTONE_VAX_MIPS, "uart")
+
+    if elapsed_s <= 0:
+        return None
+    dps = runs / elapsed_s
+    return DhryMetrics(runs, dps, dps / DHRYSTONE_VAX_MIPS, "host")
 
 
 @dataclass
@@ -187,6 +227,7 @@ def load_and_run(
             uart,
             f"UART mismatch: got {uart!r} want {expect_uart!r}",
         )
+
     return RunResult(img.name, True, elapsed, uart)
 
 
@@ -201,7 +242,7 @@ def main() -> int:
     ap.add_argument(
         "--skip-oversized",
         action="store_true",
-        help="skip tests that do not fit 16 KiB ICCM/DCCM (default: fail them)",
+        help="skip tests that do not fit 32 KiB ICCM / 64 KiB DCCM (default: fail them)",
     )
     ap.add_argument(
         "--expect-uart",
@@ -262,13 +303,26 @@ def main() -> int:
                 f"dccm_nonzero={sum(1 for b in img.dccm if b)}B "
                 f"reset=0x{img.reset_vector:08x}"
             )
-            rr = load_and_run(bar, img, timeout_s=args.timeout, expect_uart=expect)
+            rr = load_and_run(
+                bar,
+                img,
+                timeout_s=args.timeout,
+                expect_uart=expect,
+            )
             results.append(rr)
             if rr.ok:
                 uart_s = rr.uart.decode("utf-8", errors="replace") if rr.uart else ""
+                extra = ""
+                if test == "elf.dhrystone":
+                    m = parse_dhrystone_metrics(rr.uart, rr.elapsed_s)
+                    if m is not None:
+                        extra = (
+                            f" runs={m.runs} dps={m.dhrystones_per_sec:,.0f} "
+                            f"DMIPS={m.dmips:.2f} ({m.source})"
+                        )
                 print(
                     f"[fpga_runner] PASS {test} EOT={rr.elapsed_s*1e3:.2f}ms "
-                    f"UART={uart_s!r}"
+                    f"UART={uart_s!r}{extra}"
                 )
             else:
                 uart_s = rr.uart.decode("utf-8", errors="replace") if rr.uart else ""

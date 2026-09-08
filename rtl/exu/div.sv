@@ -44,7 +44,7 @@ module div (
     output logic [        31:0]  out,
     output logic [         4:0]  out_addr,
     output logic                 out_valid
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
     ,
     output logic [XLEN-1:0]      instr_tag_out,
     output logic [        31:0]  instr_out
@@ -242,7 +242,7 @@ module div (
       .dout(out_addr)
   );
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   register_en_sync_rstn #(
       .WIDTH(XLEN + INSTR_LEN)
   ) instr_tag_ff (

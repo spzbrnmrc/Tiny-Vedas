@@ -28,6 +28,9 @@ class CompilePlan:
     statements: List[str]
     runtime_sources: List[Path]
     includes: List[str]
+    # Output buffer name + flattened int goldens for target self-check (optional).
+    result_name: str | None = None
+    result_golden: Tuple[int, ...] = ()
 
 
 def _buffer_name(node: fx.Node) -> str:
@@ -77,6 +80,7 @@ def lower_graph(
     statements: List[str] = []
     runtime_sources: List[Path] = []
     seen_sources: Set[Path] = set()
+    result_name: str | None = None
 
     for node in graph.nodes:
         if node.op == "placeholder":
@@ -84,6 +88,7 @@ def lower_graph(
         if node.op == "output":
             src = _buffer_name(_output_value(node))
             src_buf = memory.get(src)
+            result_name = src
             statements.append(
                 f"/* result buffer: {src} shape={format_shape(src_buf.shape)} */"
             )
@@ -113,6 +118,7 @@ def lower_graph(
         statements=statements,
         runtime_sources=runtime_sources,
         includes=["pyvedas.h"],
+        result_name=result_name,
     )
 
 
@@ -139,6 +145,18 @@ def emit_c(plan: CompilePlan, out_path: Path, *, target: bool = False) -> None:
         lines.append(f"    {stmt}")
 
     if target:
+        if plan.result_name and plan.result_golden:
+            out_name = plan.result_name
+            info = plan.memory.get(out_name)
+            vals = ", ".join(str(v) for v in plan.result_golden)
+            lines.append(
+                f"    static const {info.c_type} _eot_golden[{info.numel}] = {{ {vals} }};"
+            )
+            lines.append(f"    for (size_t i = 0; i < {info.numel}; i++) {{")
+            lines.append(f"        if ({out_name}[i] != _eot_golden[i]) {{")
+            lines.append("            for (;;);")
+            lines.append("        }")
+            lines.append("    }")
         lines.append("    eot_sequence();")
     else:
         output_names = [

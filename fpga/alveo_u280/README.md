@@ -1,52 +1,28 @@
-# Alveo U280 FPGA shell (Slice B)
+# Alveo U280 — Tiny-Vedas Slice B/C
 
-Custom Vivado **2023.2** QDMA + Tiny-Vedas RV32IM.
-
-| Clock | Rate | Domain |
-|-------|------|--------|
-| QDMA `axi_aclk` | ~250 MHz | AXI-Lite, host mem, CTRL |
-| MMCM `core_clk` | **100 MHz** | `core_top`, core mem port |
-
-CDC: SVLib [`cdc_sync`](../../SVLib/src/cdc/cdc_sync.sv). Memories on `core_clk` only (halt-and-load). AXI mem ops while `core_run=1` → SLVERR.
-
-## Build bitstream
+## Program + driver reload
 
 ```bash
-make fpga alveo_u280
-# or: make -C fpga/alveo_u280 bitstream
-```
-
-Bit: `work/tiny_vedas_u280.bit`. Timing: `work/timing_summary_routed.rpt`.
-
-## Program + driver
-
-```bash
-# Vivado on PATH; sudo for PCIe remove/rescan + BAR verify
-make -C fpga/alveo_u280 program
-# or:
 sudo python3 fpga/alveo_u280/scripts/program_fpga.py
-sudo python3 fpga/alveo_u280/scripts/program_fpga.py --bit fpga/alveo_u280/work/tiny_vedas_u280.bit
 ```
 
 What it does: JTAG-program `work/tiny_vedas_u280.bit` → unload `qdma-pf` → PCIe remove/rescan → reload driver → check VERSION.
 
-Manual fallback: Vivado HW Manager, then remove/rescan + `sudo modprobe qdma-pf` (patched 2023.2.1 — see `scripts/patch_qdma_driver.sh`).
+Expect **BAR2 = 128 KiB**, VERSION `0x000B0010`.
 
-Expect **BAR2 = 64 KiB**, VERSION `0x000B0009`.
-
-## Automated smoke / ELF runner
+## Smoke / runner
 
 ```bash
 # Slice B builtins
 sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py
 sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --prog uart
 
-# Slice C — same tests as sim (16 KiB ICCM/DCCM; oversized skipped with --skip-oversized)
+# Slice C — same tests as sim; pass = EOT (+ UART golden when defined)
 sudo ./venv/bin/python fpga/alveo_u280/scripts/fpga_runner.py -n c.helloworld
 sudo ./venv/bin/python fpga/alveo_u280/scripts/fpga_runner.py -t tests/smoke.tlist --skip-oversized
 ```
 
-What it does: check VERSION / HEARTBEAT / SCRATCH / MMCM locked → halt → load RV32 image into ICCM @ BAR2 `0x4000` → set reset vector `0x00100000` → run → wait EOT → print UART.
+What it does: check VERSION / HEARTBEAT / SCRATCH / MMCM locked → halt → load RV32 image into ICCM @ BAR2 `0x1000` → set reset vector `0x00100000` → run → wait EOT → optional UART golden compare.
 
 Rebuild builtins:
 
@@ -54,18 +30,19 @@ Rebuild builtins:
 make -C fpga/alveo_u280/sw
 ```
 
-## BAR2 map (64 KiB)
+## BAR2 map (128 KiB)
 
 | Offset | Role |
 |--------|------|
 | `0x0000` | CTRL / UART / EOT |
-| `0x4000` | ICCM (host only while `core_run=0`) |
-| `0x8000` | DCCM (host only while `core_run=0`) |
+| `0x1000` | ICCM 32 KiB (host only while `core_run=0`) |
+| `0x9000` | DCCM 64 KiB (host only while `core_run=0`) |
 
 CTRL: `0x00` VERSION, `0x04` SCRATCH, `0x08` HEARTBEAT, `0x0C` CORE_CTRL `[0]=run [1]=locked`, `0x10` RESET_VECTOR, `0x14` EOT, `0x18` EOT_CLEAR, `0x1C`/`0x20`/`0x24` UART.
 
 ## Notes
 
 - Card still on Slice A shows VERSION `0x000A0001` and BAR2 8 KiB — smoke will refuse; program the Slice B bit first.
-- ICCM/DCCM are shared [`rtl/lib/mem_lib.sv`](../../rtl/lib/mem_lib.sv) (`ram_style=block`). URAM DCCM dropped load data on FPGA.
-- Slice C: `fpga_runner.py` loads ELF `.text`→ICCM / data→DCCM (16 KiB windows).
+- ICCM/DCCM are shared [`rtl/lib/mem_lib.sv`](../../rtl/lib/mem_lib.sv) (`ram_style=block`).
+- No retire TRACE on FPGA (sim keeps ISS compare). FPGA pass = EOT; prefer self-checking tests that only EOT on success.
+- Slice C: `fpga_runner.py` loads ELF `.text`→ICCM / data→DCCM (32 KiB / 64 KiB windows).

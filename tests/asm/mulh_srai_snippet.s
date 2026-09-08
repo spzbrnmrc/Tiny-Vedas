@@ -9,9 +9,9 @@ _start:
     li       x15, 0x66666667
     mulh     x15, x14, x15
     srai     x13, x15, 2
-    nop
-    nop
-    nop
-    nop
-    nop
+    li       x1, 0x28
+    bne      x15, x1, fail
+    li       x1, 0xa
+    bne      x13, x1, fail
     .include "eot_sequence.s"
+    .include "fail_hang.s"

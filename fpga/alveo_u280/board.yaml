@@ -3,8 +3,9 @@ board: alveo_u280
 part: xcu280-fsvh2892-2L-e
 vivado_version: "2023.2"
 
-synth_iccm_depth_words: 4096
-synth_dccm_depth_words: 4096
+# 8192 words = 32 KiB ICCM; 16384 words = 64 KiB DCCM (dhrystone needs ~0xa708)
+synth_iccm_depth_words: 8192
+synth_dccm_depth_words: 16384
 
 qdma:
   link_width: x16
@@ -12,21 +13,28 @@ qdma:
   axi_clock_mhz: 250
   core_clock_mhz: 100
   axil_bar: 2
-  axil_bar_size: 0x10000
+  axil_bar_size: 0x20000
   ctrl_offset: 0x0000
   ctrl_size: 0x1000
-  iccm_offset: 0x4000
-  iccm_size: 0x4000
-  dccm_offset: 0x8000
-  dccm_size: 0x4000
+  iccm_offset: 0x1000
+  iccm_size: 0x8000
+  dccm_offset: 0x9000
+  dccm_size: 0x10000
 
 # Clocks:
 #   QDMA axi_aclk ~250 MHz — AXI-Lite, host ICCM/DCCM port, CTRL
 #   MMCM → core_clk 100 MHz — Tiny-Vedas core + core mem port
-# CDC: SVLib cdc_sync (levels + UART req/ack toggles)
+# CDC: SVLib cdc_sync (levels + UART/EOT/host-mem req/ack toggles)
 #
-# CTRL (BAR2):
-#   0x00 VERSION (0x000B0009), 0x04 SCRATCH, 0x08 HEARTBEAT
+# BAR2 (128 KiB):
+#   0x0000 CTRL  (4 KiB)
+#   0x1000 ICCM  (32 KiB / 8192 words)
+#   0x9000 DCCM  (64 KiB / 16384 words)
+#   end    0x19000 (unused to 0x20000)
+#
+# CTRL:
+#   0x00 VERSION (0x000B0010), 0x04 SCRATCH, 0x08 HEARTBEAT
 #   0x0C CORE_CTRL [0]=core_run [1]=mmcm_locked
 #   0x10 RESET_VECTOR, 0x14 STATUS eot_done, 0x18 EOT_CLEAR
 #   0x1C UART_STATUS, 0x20 UART_POP, 0x24 UART_CLEAR
+# Pass = EOT (+ optional UART golden). No retire TRACE on FPGA.

@@ -90,7 +90,7 @@ module lsu_engine (
     output logic [XLEN-1:0] dccm_waddr,
     output logic            dccm_wen,
     output logic [XLEN-1:0] dccm_wdata
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
     ,
     output logic [XLEN-1:0] instr_tag_out,
     output logic [    31:0] instr_out,
@@ -148,7 +148,7 @@ module lsu_engine (
   logic [             2:0] dc3_shamt_by;
   logic [        XLEN-1:0] dc3_rs2_data;
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   logic [XLEN-1:0] dc1_lsu_instr_tag_out;
   logic [    31:0] dc1_lsu_instr_out;
   logic [XLEN-1:0] dc2_lsu_instr_tag_out;
@@ -188,7 +188,7 @@ module lsu_engine (
       .dout({dc1_rs1_data, dc1_rs2_data, dc1_imm, dc1_rd_addr, dc1_lane_id_q})
   );
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   register_sync_rstn #(
       .WIDTH(XLEN)
   ) lsu_instr_tag_reg (
@@ -291,7 +291,7 @@ module lsu_engine (
       })
   );
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   register_sync_rstn #(
       .WIDTH(XLEN)
   ) dc2_instr_tag_reg (
@@ -396,7 +396,7 @@ module lsu_engine (
       })
   );
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   register_sync_rstn #(
       .WIDTH(XLEN)
   ) dc3_instr_tag_reg (
@@ -494,7 +494,7 @@ module lsu_engine (
   assign store_cam_fill_addr  = dc2_computed_addr;
   assign store_cam_fill_data  = dc2_store_buffer[XLEN-1:0];
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   assign instr_tag_out = dc3_lsu_instr_tag_out;
   assign instr_out     = dc3_lsu_instr_out;
 

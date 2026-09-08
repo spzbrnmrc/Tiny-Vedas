@@ -8,8 +8,10 @@ _start:
 
 target:
     li       x2, 0xFFFFFFFE
-    blt      x1, x2, zombie
+    blt      x1, x2, fail
+    li       x3, -1
+    bne      x1, x3, fail
+    li       x3, -2
+    bne      x2, x3, fail
     .include "eot_sequence.s"
-
-zombie:
-    .include "eot_sequence.s"
+    .include "fail_hang.s"

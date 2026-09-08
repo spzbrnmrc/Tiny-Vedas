@@ -8,7 +8,7 @@ Automated Slice B smoke on Alveo U280.
   sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --prog uart
   sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --bin path/to/image.bin
 
-Requires: Slice B bitstream programmed (VERSION 0x000B0009, BAR2 64 KiB),
+Requires: Slice B bitstream programmed (VERSION 0x000B0010, BAR2 128 KiB),
 PCIe enumerated, root for BAR mmap. qdma-pf may be loaded or not.
 """
 
@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vedas_host import (  # noqa: E402
+    ICCM_BASE,
     LINK_BASE,
     REG_HEARTBEAT,
     REG_SCRATCH,
@@ -118,11 +119,11 @@ def main() -> int:
 
         print(f"[fpga_smoke] loading {label} ({len(image)} bytes) @ ICCM")
         # Zero first page then write image
-        bar.write_bytes(0x4000, b"\x00" * max(len(image), 64))
+        bar.write_bytes(ICCM_BASE, b"\x00" * max(len(image), 64))
         bar.load_iccm(image, link_addr=LINK_BASE)
 
         # Readback first word
-        w0 = bar.read32(0x4000)
+        w0 = bar.read32(ICCM_BASE)
         print(f"[fpga_smoke] ICCM[0]=0x{w0:08x}")
 
         bar.set_reset_vector(args.reset_vector)

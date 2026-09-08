@@ -186,8 +186,13 @@ typedef struct packed {
   logic legal;
 } lsu_mem_op_t;
 
+/* Retire events for sim ISS compare only (not on FPGA). */
 `ifndef SYNTHESIS
-/* Simulation retire events exported from core_top (one struct per issue lane). */
+`define TV_HAS_CORE_DEBUG
+`endif
+
+`ifdef TV_HAS_CORE_DEBUG
+/* Retire events exported from core_top (one struct per issue lane). */
 typedef struct packed {
   logic reg_wr;
   logic reg_wr_jal;
@@ -217,6 +222,6 @@ typedef struct packed {
   logic [XLEN-1:0] ecall_instr_tag;
   logic [INSTR_LEN-1:0] ecall_instr;
 } core_debug_lane_t;
-`endif
+`endif // TV_HAS_CORE_DEBUG
 
 `endif
