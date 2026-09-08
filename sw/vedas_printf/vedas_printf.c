@@ -16,7 +16,13 @@ void uart_write(int b) {
   printf("%c", b);
 }
 #else
-/* Naked: -O0 must not spill with sb (LSU RMW). UART MMIO takes wdata[7:0]. */
+/*
+ * UART putc must use sw, not sb:
+ * - lsu_engine RMW-loads on sb/sh (store_needs_load), which stalls the pipe
+ *   for every printf byte and tanks helloworld IPC/cycles.
+ * - UART MMIO only samples wdata[7:0], so a word store is functionally fine.
+ * Naked + int arg: at -O0 a char formal is spilled with sb (same RMW hit).
+ */
 __attribute__((naked)) void uart_write(int b) {
   __asm__ volatile(
       "li   t0, %[addr]\n\t"
