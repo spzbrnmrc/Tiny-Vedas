@@ -39,7 +39,16 @@ We brought Tiny-Vedas up on an Alveo U280 over PCIe: one bitstream, host loads p
 
 ## Hard problems we hit (good LinkedIn texture)
 
-### 1. TRACE vs. the pipeline
+### 0. Host OS ↔ QDMA driver
+Stock Xilinx `dma_ip_drivers` **2023.2.1** does not build cleanly on **Linux 6.8 / Ubuntu 24.04**. We keep a small out-of-tree patch:
+
+- `fpga/alveo_u280/patches/qdma-2023.2.1-linux-6.8.patch`
+- apply via `fpga/alveo_u280/scripts/patch_qdma_driver.sh`
+
+Mostly **kernel API shims** (`iov_iter` / `class_create` / PCI domain bits) — not custom DMA engine logic. After program, `program_fpga.py` unload/reload `qdma-pf` so BAR2 mmap works. Host load path is BAR mmap more than H2C streaming, but the PF driver still has to bind.
+
+---
+
 Early FPGA debug used retire TRACE into the host. Backpressure / stalls into the pipe caused **hangs or corruption**. Combo stall, registered stall, FIFO/CDC experiments all fought the core.
 
 **Resolution:** drop FPGA TRACE for bring-up. FPGA pass criterion = **EOT** (+ UART golden for some tests). Sim keeps ISS vs RTL compare under `!SYNTHESIS`. Lesson: observability must not become a second CPU.
