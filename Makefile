@@ -1,4 +1,4 @@
-.PHONY: deps smoke smoke-verilator decodes clean clean-sim clean-pd clean-pyvedas clean-fpga config sv2v rtl2gds pd-report timing mul-sweep pd-synth fpga
+.PHONY: deps smoke smoke-verilator decodes clean clean-sim clean-pd clean-pyvedas clean-fpga config sv2v rtl2gds pd-report timing mul-sweep pd-synth fpga fpga_smoke
 
 RUN = ./scripts/with_env.sh
 
@@ -9,8 +9,9 @@ ORFS_IMAGE ?= openroad/orfs:26Q2-446-g85d92b593
 SV2V_TAG ?= v0.0.13
 export ORFS_TARGET ORFS_IMAGE SV2V_TAG
 
-# `make fpga alveo_u280` — second word is the board folder under fpga/
-ifeq ($(firstword $(MAKECMDGOALS)),fpga)
+# `make fpga alveo_u280` / `make fpga_smoke alveo_u280` — second word is
+# the board folder under fpga/
+ifeq ($(filter $(firstword $(MAKECMDGOALS)),fpga fpga_smoke),$(firstword $(MAKECMDGOALS)))
   FPGA_NAME := $(word 2,$(MAKECMDGOALS))
   ifneq ($(FPGA_NAME),)
     .PHONY: $(FPGA_NAME)
@@ -56,6 +57,12 @@ fpga:
 	@test -n "$(FPGA_NAME)" || { echo "Usage: make fpga <board>   e.g. make fpga alveo_u280"; exit 1; }
 	@test -d fpga/$(FPGA_NAME) || { echo "error: unknown FPGA board '$(FPGA_NAME)' (expected fpga/$(FPGA_NAME)/)"; exit 1; }
 	$(MAKE) -C fpga/$(FPGA_NAME) bitstream
+
+# Host PCIe smoke (needs programmed bit + sudo BAR mmap + RISC-V toolchain on PATH).
+fpga_smoke:
+	@test -n "$(FPGA_NAME)" || { echo "Usage: make fpga_smoke <board>   e.g. make fpga_smoke alveo_u280"; exit 1; }
+	@test -d fpga/$(FPGA_NAME) || { echo "error: unknown FPGA board '$(FPGA_NAME)' (expected fpga/$(FPGA_NAME)/)"; exit 1; }
+	$(MAKE) -C fpga/$(FPGA_NAME) smoke
 
 clean: clean-sim clean-pd clean-pyvedas clean-fpga
 

@@ -259,6 +259,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
 | `make deps` | Install system packages, Python venv, RISC-V toolchain, and Verilator |
 | `make smoke-verilator` | Run the smoke regression via Verilator (CI default) |
 | `make smoke` | Run the smoke regression via XSim (requires Vivado) |
+| `make fpga_smoke alveo_u280` | Run `tests/smoke.tlist` on the programmed Alveo (needs sudo) |
 | `make decodes` | Regenerate `rtl/idu/rv32im_decoder.sv` from YAML |
 | `make clean` | Remove build artifacts (`work/`, `obj_dir/`, logs, VCDs) |
 

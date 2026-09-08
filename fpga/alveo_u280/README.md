@@ -13,13 +13,14 @@ Expect **BAR2 = 128 KiB**, VERSION `0x000B0010`.
 ## Smoke / runner
 
 ```bash
-# Slice B builtins
+# Slice C — same tests as sim; pass = EOT (+ UART golden when defined)
+make fpga_smoke alveo_u280
+
+# Single test / Slice B builtins (manual)
+sudo env PATH="/tools/riscv/bin:$$PATH" ./venv/bin/python \
+  fpga/alveo_u280/scripts/fpga_runner.py -n c.helloworld
 sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py
 sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --prog uart
-
-# Slice C — same tests as sim; pass = EOT (+ UART golden when defined)
-sudo ./venv/bin/python fpga/alveo_u280/scripts/fpga_runner.py -n c.helloworld
-sudo ./venv/bin/python fpga/alveo_u280/scripts/fpga_runner.py -t tests/smoke.tlist --skip-oversized
 ```
 
 What it does: check VERSION / HEARTBEAT / SCRATCH / MMCM locked → halt → load RV32 image into ICCM @ BAR2 `0x1000` → set reset vector `0x00100000` → run → wait EOT → optional UART golden compare.
