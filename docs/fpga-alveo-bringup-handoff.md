@@ -21,7 +21,7 @@ We brought Tiny-Vedas up on an Alveo U280 over PCIe: one bitstream, host loads p
 - Tiny-Vedas was sim/ASIC-oriented; this closes the loop with **real silicon on a datacenter FPGA**.
 - **One bitstream**, many programs: no rebuild-per-test. Host loads ICCM/DCCM over PCIe, runs, polls EOT, checks UART goldens where defined.
 - Same memory model and smoke list as RTL sim → fewer “works in sim, dies on FPGA” surprises.
-- Concrete performance: **~89 DMIPS** Dhrystone on the FPGA path (host-timed EOT).
+- Concrete performance: **~89 DMIPS** at **100 MHz core** ≈ **~0.9 DMIPS/MHz** (host-timed EOT) — same *efficiency neighborhood* as Cortex-M0 class cores (~0.9), not a “beat Arm” claim.
 
 ---
 
@@ -68,7 +68,8 @@ UART putc used RISC-V **`sb`**. LSU does **RMW** on byte/half stores → pipelin
 
 **FPGA (final session run):** **29/29 PASS**, 0 failed, 0 skipped  
 - Includes asm suite, `c.helloworld` (UART golden), `c.iaxpy`, PyVedas kernels, **`elf.dhrystone`**  
-- Dhrystone on card: ~**12.8 ms** EOT for 2000 runs → ~**156k dps / ~88.9 DMIPS** (host wall clock)
+- Dhrystone on card: ~**12.8 ms** EOT for 2000 runs → ~**156k dps / ~88.9 DMIPS** (host wall clock) at **100 MHz** → **~0.89 DMIPS/MHz**
+- Cross-check: sim ~1.27 M cycles ≈ 12.7 ms @ 100 MHz — matches FPGA wall time
 
 **Developer UX:**
 ```bash
@@ -116,7 +117,7 @@ Note: older README helloworld IPC (~0.62) was a different printf/binary mix (asm
 
 1. **Bring-up narrative:** sim → PCIe shell → first UART → full smoke on Alveo.  
 2. **Engineering honesty:** TRACE that hangs the core; PCIe posted-write truncation; byte-store RMW tax.  
-3. **Outcome metric:** same smoke list on FPGA + ~89 DMIPS Dhrystone on a research RV32 core.  
+3. **Outcome metric:** same smoke list on FPGA + ~0.9 DMIPS/MHz (M0-class efficiency neighborhood) on a research RV32 core.  
 4. **Open tooling:** one bitstream, host load, `make fpga_smoke`.
 
 Tone: proud but concrete; avoid “world’s first” claims; Siliscale / Tiny-Vedas / Alveo U280 / RISC-V are the name-checks.
@@ -129,6 +130,7 @@ Tone: proud but concrete; avoid “world’s first” claims; Siliscale / Tiny-V
 - Not superscalar/VLIW FPGA results (those are roadmap elsewhere).  
 - Not claiming FPGA IPC matches the old 0.6177 helloworld number.  
 - TRACE-quality on-hardware debug is still a follow-on, deliberately deferred.
+- **Do not** claim we beat Arm / Cortex-M*. Safe line: “~0.9 DMIPS/MHz — in the Cortex-M0 efficiency neighborhood,” with host-EOT / non-ProcTime caveat.
 
 ---
 
@@ -137,4 +139,5 @@ Tone: proud but concrete; avoid “world’s first” claims; Siliscale / Tiny-V
 - “One bitstream. Host loads the ELF. Same smoke list as simulation.”  
 - “If your debug channel can stall the pipeline, it isn’t debug — it’s a second CPU.”  
 - “Byte stores to UART looked innocent until LSU RMW showed up in the CPI.”  
-- “29/29 on Alveo, including Dhrystone at ~89 DMIPS.”
+- “29/29 on Alveo, including Dhrystone at ~90 DMIPS / ~0.9 DMIPS/MHz (100 MHz core).”
+- “Efficiency in the Cortex-M0 neighborhood — not an Arm bake-off.”
