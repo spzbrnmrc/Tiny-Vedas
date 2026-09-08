@@ -259,6 +259,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
 | `make deps` | Install system packages, Python venv, RISC-V toolchain, and Verilator |
 | `make smoke-verilator` | Run the smoke regression via Verilator (CI default) |
 | `make smoke` | Run the smoke regression via XSim (requires Vivado) |
+| `make fpga_smoke alveo_u280` | Run `tests/smoke.tlist` on the programmed Alveo (needs sudo) |
 | `make decodes` | Regenerate `rtl/idu/rv32im_decoder.sv` from YAML |
 | `make clean` | Remove build artifacts (`work/`, `obj_dir/`, logs, VCDs) |
 
@@ -484,13 +485,13 @@ make decodes   # ensure decoder is up to date before synthesis
 
 ## Performance Scoreboard
 
-IPC values from RTL simulation (see `work/<test>/stats.txt` after a run):
+From RTL simulation (see `work/<test>/stats.txt` after a run):
 
-| Benchmark | IPC |
-|:---------:|:---:|
-| c.helloworld | 0.6177 |
-| c.iaxpy | 0.4564 |
-| elf.dhrystone | 0.5078 |
+| Benchmark | Instructions | Cycles | IPC |
+|:---------:|-------------:|-------:|----:|
+| c.helloworld | 760 | 2293 | 0.3314 |
+| c.iaxpy | 109 | 235 | 0.4638 |
+| elf.dhrystone | 640720 | 1274337 | 0.5028 |
 
 ## Submodules
 

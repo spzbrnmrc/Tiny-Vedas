@@ -178,9 +178,9 @@ def run_iss(test: str, reset_vector: int) -> None:
         import subprocess
         cmd = ""
         if has_dmem:
-            cmd = f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
+            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
         else:
-            cmd = f"python3 ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}"
+            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}"
         result = subprocess.run(cmd, shell=True)
         if result.returncode != 0:
             print(f"ISS returned error code {result.returncode} for test {test}. See iss.log for details.")
@@ -274,7 +274,15 @@ def read_task_list(filename: str) -> List[str]:
 def run_verilator(test: str, reset_vector: int) -> None:
     """Execute Verilator simulation."""
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
-    verilator_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && verilator --cc --trace --trace-structs --build --timing --top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp -I$PROJ/rtl/include -f $PROJ/rtl/core_top.flist -DICCM_INIT_FILE='\"imem.hex\"' -DRESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} -DSTACK_POINTER_INIT_VALUE=32\\'h80000000"
+    verilator_cmd = (
+        f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && "
+        f"verilator --cc --trace --trace-structs --build --timing "
+        f"--top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp "
+        f"-I$PROJ/rtl/include -I$PROJ/rtl/idu -f $PROJ/rtl/core_top.flist "
+        f"-Wno-LATCH -Wno-UNOPTFLAT -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND "
+        f"-DICCM_INIT_FILE='\"imem.hex\"' -DRESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} "
+        f"-DSTACK_POINTER_INIT_VALUE=32\\'h80000000"
+    )
     if has_dmem:
         verilator_cmd += f" -DDCCM_INIT_FILE='\"dmem.hex\"'"
     else:
@@ -297,7 +305,7 @@ def run_verilator(test: str, reset_vector: int) -> None:
 def run_xsim(test: str, reset_vector: int) -> None:
     """Execute XSim simulation."""
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
-    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -i $PROJ/rtl/include -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
+    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -i $PROJ/rtl/include -i $PROJ/rtl/idu -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
     if has_dmem:
         xsim_cmd += f" --define DCCM_INIT_FILE='\"dmem.hex\"'"
     else:

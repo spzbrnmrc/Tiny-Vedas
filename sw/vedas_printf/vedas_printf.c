@@ -11,15 +11,29 @@
 
 #define MMIO_UART_ADDR 0x200000
 
-void uart_write(char b) {
 #ifdef TEST
+void uart_write(int b) {
   printf("%c", b);
-#else
-  int mmio_addr = MMIO_UART_ADDR;
-  /* .insn s opcode, func3, rd, rs1, simm12 */
-  asm("sb %0, 0(%1)" : : "r"(b), "r"(mmio_addr));
-#endif
 }
+#else
+/*
+ * UART putc must use sw, not sb:
+ * - lsu_engine RMW-loads on sb/sh (store_needs_load), which stalls the pipe
+ *   for every printf byte and tanks helloworld IPC/cycles.
+ * - UART MMIO only samples wdata[7:0], so a word store is functionally fine.
+ * Naked + int arg: at -O0 a char formal is spilled with sb (same RMW hit).
+ */
+__attribute__((naked)) void uart_write(int b) {
+  __asm__ volatile(
+      "li   t0, %[addr]\n\t"
+      "andi a0, a0, 0xff\n\t"
+      "sw   a0, 0(t0)\n\t"
+      "ret"
+      :
+      : [addr] "i"(MMIO_UART_ADDR)
+      : "t0", "memory");
+}
+#endif
 
 void intToStr(int N, char *str) {
   int i = 0;

@@ -123,7 +123,11 @@ module soc_top #(
       .rvalid_in (instr_mem_addr_valid),
       .rdata     (instr_mem_rdata),
       .rtag_out  (instr_mem_tag_in),
-      .rvalid_out(instr_mem_rdata_valid)
+      .rvalid_out(instr_mem_rdata_valid),
+      .wen       (1'b0),
+      .waddr     ('0),
+      .wdata     ('0),
+      .wstrb     ('0)
   );
 
   dccm #(

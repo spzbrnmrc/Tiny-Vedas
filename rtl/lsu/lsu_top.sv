@@ -79,7 +79,7 @@ module lsu_top #(
     output logic [XLEN-1:0] dccm_waddr     [DCCM_PORT_COUNT-1:0],
     output logic            dccm_wen       [DCCM_PORT_COUNT-1:0],
     output logic [XLEN-1:0] dccm_wdata     [DCCM_PORT_COUNT-1:0]
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
     ,
     output logic [XLEN-1:0] debug_instr_tag_out [REQ_PORT_COUNT-1:0],
     output logic [    31:0] debug_instr_out     [REQ_PORT_COUNT-1:0],
@@ -164,7 +164,7 @@ module lsu_top #(
   logic eng_dccm_wen;
   logic [XLEN-1:0] eng_dccm_wdata;
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   logic [XLEN-1:0] eng_instr_tag_out;
   logic [31:0] eng_instr_out;
   logic eng_debug_store_dc2_valid;
@@ -260,7 +260,7 @@ module lsu_top #(
       .dccm_waddr       (eng_dccm_waddr),
       .dccm_wen         (eng_dccm_wen),
       .dccm_wdata       (eng_dccm_wdata)
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       ,
       .instr_tag_out            (eng_instr_tag_out),
       .instr_out                (eng_instr_out),
@@ -344,14 +344,14 @@ module lsu_top #(
       assign resp_data[lane]    = wb_data;
       assign resp_rd_addr[lane] = wb_rd_addr;
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       assign debug_instr_tag_out[lane] = (resp_valid[lane]) ? eng_instr_tag_out : '0;
       assign debug_instr_out[lane]     = (resp_valid[lane]) ? eng_instr_out : '0;
 `endif
     end
   endgenerate
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   assign debug_store_dc2_valid     = eng_debug_store_dc2_valid;
   assign debug_store_dc2_instr_tag = eng_debug_store_dc2_instr_tag;
   assign debug_store_dc2_instr     = eng_debug_store_dc2_instr;

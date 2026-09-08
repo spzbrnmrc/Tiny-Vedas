@@ -74,7 +74,7 @@ module exu #(
     /* PC Interface */
     output logic [XLEN-1:0] pc_out,
     output logic            pc_load
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
     ,
     input  logic                           lsu_debug_store_dc2_valid,
     input  logic [               XLEN-1:0] lsu_debug_store_dc2_instr_tag,
@@ -110,7 +110,7 @@ module exu #(
   logic [REG_FILE_ADDR_WIDTH-1:0] lsu_wb_rd_addr;
   logic                           lsu_wb_rd_wr_en;
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   logic                           ecall_exe;
   logic [               XLEN-1:0] alu_instr_tag_out;
   logic [          INSTR_LEN-1:0] alu_instr_out;
@@ -136,7 +136,7 @@ module exu #(
           .alu_wb_rd_wr_en(alu_wb_rd_wr_en),
           .pc_out         (pc_out),
           .pc_load        (pc_load)
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
           ,
           .instr_tag_out               (alu_instr_tag_out),
           .instr_out                   (alu_instr_out),
@@ -151,7 +151,7 @@ module exu #(
       assign alu_wb_rd_wr_en = 1'b0;
       assign pc_out          = '0;
       assign pc_load         = 1'b0;
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       assign alu_instr_tag_out                = '0;
       assign alu_instr_out                    = '0;
       assign alu_debug_br_not_taken           = 1'b0;
@@ -170,7 +170,7 @@ module exu #(
           .out_rd_addr  (mul_wb_rd_addr),
           .out_rd_wr_en (mul_wb_rd_wr_en),
           .mul_busy     (exu_mul_busy)
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
           ,
           .instr_tag_out(mul_instr_tag_out),
           .instr_out    (mul_instr_out)
@@ -181,7 +181,7 @@ module exu #(
       assign mul_wb_rd_addr = '0;
       assign mul_wb_rd_wr_en = 1'b0;
       assign exu_mul_busy   = 1'b0;
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       assign mul_instr_tag_out = '0;
       assign mul_instr_out     = '0;
 `endif
@@ -201,7 +201,7 @@ module exu #(
           .finish_early            (),
           .valid_ff_e1             (),
           .div_stall               (exu_div_busy)
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
           ,
           .instr_out     (div_instr_out),
           .instr_tag_out (div_instr_tag_out)
@@ -212,7 +212,7 @@ module exu #(
       assign div_wb_rd_addr = '0;
       assign div_wb_rd_wr_en = 1'b0;
       assign exu_div_busy   = 1'b0;
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
       assign div_instr_tag_out = '0;
       assign div_instr_out     = '0;
 `endif
@@ -233,7 +233,7 @@ module exu #(
     end
   endgenerate
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   /* ECALL retire tracking for simulation only */
   register_sync_rstn #(
       .WIDTH($bits({idu1_out.ecall, idu1_out.instr_tag, idu1_out.instr}))
@@ -257,7 +257,7 @@ module exu #(
 
   assign exu_wb_rd_wr_en = alu_wb_rd_wr_en | mul_wb_rd_wr_en | div_wb_rd_wr_en | lsu_wb_rd_wr_en;
 
-`ifndef SYNTHESIS
+`ifdef TV_HAS_CORE_DEBUG
   assign instr_tag_out = ({XLEN{alu_wb_rd_wr_en}} & alu_instr_tag_out) |
                          ({XLEN{mul_wb_rd_wr_en}} & mul_instr_tag_out) |
                          ({XLEN{div_wb_rd_wr_en}} & div_instr_tag_out) |

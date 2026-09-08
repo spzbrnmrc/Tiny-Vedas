@@ -1,3 +1,5 @@
+`ifndef DECODE_OUT_T_SVH
+`define DECODE_OUT_T_SVH
 typedef struct packed {
 	logic alu;
 	logic rs1;
@@ -39,3 +41,4 @@ typedef struct packed {
 	logic ecall;
 	logic legal;
 } decode_out_t;
+`endif

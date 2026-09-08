@@ -7,8 +7,8 @@ _start:
 
 target:
     lui      x1, 0x10
-    beq      x0, x1, zombie
+    beq      x0, x1, fail
+    li       x2, 0x10000
+    bne      x1, x2, fail
     .include "eot_sequence.s"
-
-zombie:
-    .include "eot_sequence.s"
+    .include "fail_hang.s"

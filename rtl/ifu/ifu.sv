@@ -90,13 +90,19 @@ module ifu (
 
   assign instr_mem_addr_valid = pc_out_valid & ~pc_load;
 
+  /* Only accept a response we requested — BRAM may hold stale doa when !rvalid. */
+  logic [INSTR_MEM_WIDTH*ISSUE_WIDTH-1:0] instr_mem_rdata_q;
+  logic [INSTR_MEM_TAG_WIDTH-1:0]         instr_mem_tag_q;
+  assign instr_mem_rdata_q = instr_mem_rdata_valid ? instr_mem_rdata : '0;
+  assign instr_mem_tag_q   = instr_mem_rdata_valid ? instr_mem_tag_in : '0;
+
   /* Generate the outputs */
   register_en_flush_sync_rstn #(
       .WIDTH(INSTR_LEN * ISSUE_WIDTH + 1 + XLEN)
   ) instr_dff_rst_inst (
       .clk  (clk),
       .rstn (rstn),
-      .din  ({instr_mem_rdata_valid, instr_mem_rdata, instr_mem_tag_in}),
+      .din  ({instr_mem_rdata_valid, instr_mem_rdata_q, instr_mem_tag_q}),
       .dout ({instr_valid, instr, instr_tag}),
       .en   (~pipe_stall),
       .flush(pc_load)

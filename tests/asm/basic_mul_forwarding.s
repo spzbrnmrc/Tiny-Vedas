@@ -17,9 +17,9 @@ _start:
     li       x5, 0xcafebabe
     li       x5, 0xdeadbeef
     li       x5, 0xcafebabe
-    nop
-    nop
-    nop
-    nop
-    nop
+    li       x6, 0x016da324
+    bne      x4, x6, fail
+    li       x6, 0xcafebabe
+    bne      x5, x6, fail
     .include "eot_sequence.s"
+    .include "fail_hang.s"

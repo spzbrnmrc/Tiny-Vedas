@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, Tuple
 
+import torch
 import torch.nn as nn
 
 from .codegen import emit_c, lower_graph
@@ -45,6 +46,16 @@ def compile_model(
         trace_inputs,
         materializer=materializer,
     )
+
+    if target and plan.result_name:
+        # Bake host-computed goldens so FPGA EOT implies correct outputs.
+        eager = model
+        if isinstance(model, nn.Module) and hasattr(model, "_orig_mod"):
+            eager = model._orig_mod  # torch.compile wrapper
+        with torch.no_grad():
+            out_t = eager(*trace_inputs)
+        golden_buf = materializer.materialize("_eot_golden_tmp", out_t)
+        plan.result_golden = golden_buf.values
 
     generated_c = out_dir / "generated.c"
     emit_c(plan, generated_c, target=target)
