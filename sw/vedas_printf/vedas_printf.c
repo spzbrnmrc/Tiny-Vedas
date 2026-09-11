@@ -17,11 +17,10 @@ void uart_write(int b) {
 }
 #else
 /*
- * UART putc must use sw, not sb:
- * - lsu_engine RMW-loads on sb/sh (store_needs_load), which stalls the pipe
- *   for every printf byte and tanks helloworld IPC/cycles.
- * - UART MMIO only samples wdata[7:0], so a word store is functionally fine.
- * Naked + int arg: at -O0 a char formal is spilled with sb (same RMW hit).
+ * UART putc uses sw:
+ * - Historically sb/sh triggered LSU RMW; that path is gone (DCCM byte strobes).
+ * - UART MMIO still only samples wdata[7:0], so a word store is functionally fine.
+ * Naked + int arg: at -O0 a char formal is spilled with sb.
  */
 __attribute__((naked)) void uart_write(int b) {
   __asm__ volatile(

@@ -137,8 +137,8 @@ overlay shrinks ICCM/DCCM address widths in `pd/include/global.svh` (1024 words
 by default) so memory buses are reasonably sized during synthesis.
 
 Physical design targets **`core_top`** only (IFU/IDU/EXU pipeline with memory
-ports exposed). Simulation and software tests use **`soc_top`**, which wraps the
-core with behavioral ICCM/DCCM from `rtl/lib/mem_lib.sv`.
+ports exposed — no AXI adapters). Simulation and software tests use **`soc_top`**,
+which wraps the core with AXI4 adapters and ICCM/DCCM from `rtl/lib/mem_lib.sv`.
 
 The default PDK is **ASAP7** (`PD_PLATFORM=asap7`). Clock periods in SDC follow
 ORFS conventions for each PDK (picoseconds for ASAP7, nanoseconds for sky130).
@@ -154,7 +154,7 @@ pd/work/sv2v/tiny_vedas.v
         ▼
 pd/work/artifacts via ORFS results/ (linked under ORFS tree)
 
-Simulation uses `soc_top` (core + behavioral memories) via `rtl/core_top.flist`.
+Simulation uses `soc_top` (core + AXI4 CCM path) via `rtl/core_top.flist`.
 ```
 
 ## Layout

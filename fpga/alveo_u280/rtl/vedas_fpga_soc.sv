@@ -8,7 +8,8 @@
 //   core + ICCM/DCCM @ core_clk (100 MHz)
 //
 //   Memories are single-clock on core_clk. Host ICCM/DCCM: req/ack CDC
-//   (halt-and-load). ICCM: mem_lib iccm. DCCM: mem_lib sync_tdp_mem.
+//   (halt-and-load) via AXI4 slave host ports with byte strobes (no RMW).
+//   Core fetch/LSU go through imem_to_axi4 / dmem_to_axi4.
 //   BAR2: CTRL@0x0 (4KiB), ICCM@0x1000 (32KiB), DCCM@0x9000 (64KiB).
 //   Pass criterion: EOT (+ optional UART golden). No retire TRACE on FPGA.
 ///////////////////////////////////////////////////////////////////////////////
@@ -21,6 +22,10 @@
 
 `ifndef TYPES_SVH
 `include "types.svh"
+`endif
+
+`ifndef AXI4_SVH
+`include "axi4.svh"
 `endif
 
 module vedas_fpga_soc #(
@@ -159,8 +164,7 @@ module vedas_fpga_soc #(
   cdc_sync #(.N(3), .WIDTH(32)) u_cdc_hrdat (.clk(s_axi_aclk), .din(host_rdata_c), .dout(host_rdata_a));
 
   // =========================================================================
-  // ICCM — same rtl/lib/mem_lib.sv `iccm` as sim (aligned word fetch, 1-cycle).
-  // Host halt-and-load via write port / muxed read; core owns port while running.
+  // ICCM / DCCM via AXI4 adapters. Host halt-and-load uses byte strobes (no RMW).
   // =========================================================================
   logic [INSTR_MEM_ADDR_WIDTH-1:0] instr_mem_addr;
   logic                            instr_mem_addr_valid;
@@ -169,13 +173,10 @@ module vedas_fpga_soc #(
   logic                            instr_mem_rdata_valid;
   logic [INSTR_MEM_TAG_WIDTH-1:0]  instr_mem_tag_in;
 
-  // Host / core FSM for memory (core_clk)
-  typedef enum logic [2:0] {
-    H_IDLE      = 3'd0,
-    H_ICCM_RD   = 3'd1,
-    H_DCCM_RD   = 3'd2,
-    H_DCCM_RMW  = 3'd3,
-    H_DCCM_WR   = 3'd4
+  typedef enum logic [1:0] {
+    H_IDLE    = 2'd0,
+    H_ICCM_RD = 2'd1,
+    H_DCCM_RD = 2'd2
   } host_mem_state_e;
 
   host_mem_state_e host_st;
@@ -186,190 +187,228 @@ module vedas_fpga_soc #(
   wire [DCCM_AW-1:0] host_dccm_idx = host_addr_c[DCCM_AW-1:0];
 
   wire host_iccm_we = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                      host_wr_c && host_iccm_c && (host_wstrb_c == 4'hF);
+                      host_wr_c && host_iccm_c;
   wire host_iccm_re = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
                       !host_wr_c && host_iccm_c;
+  wire host_dccm_we = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
+                      host_wr_c && !host_iccm_c;
+  wire host_dccm_re = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
+                      !host_wr_c && !host_iccm_c;
 
-  wire host_iccm_rd_active = !core_run_c && (host_iccm_re || (host_st == H_ICCM_RD));
+  logic [INSTR_MEM_ADDR_WIDTH-1:0] host_iccm_raddr;
+  logic [INSTR_MEM_WIDTH-1:0]      host_iccm_rdata;
+  logic                            host_iccm_rvalid;
+  assign host_iccm_raddr = {{(INSTR_MEM_ADDR_WIDTH - ICCM_AW - 2){1'b0}}, host_iccm_widx, 2'b00};
 
-  logic [INSTR_MEM_ADDR_WIDTH-1:0] iccm_raddr;
-  logic                            iccm_rvalid_in;
-  logic [INSTR_MEM_TAG_WIDTH-1:0]  iccm_rtag_in;
-  logic [INSTR_MEM_WIDTH-1:0]      iccm_rdata;
-  logic                            iccm_rvalid_out;
-  logic [INSTR_MEM_TAG_WIDTH-1:0]  iccm_rtag_out;
-
-  assign iccm_raddr = host_iccm_rd_active
-      ? {{(INSTR_MEM_ADDR_WIDTH - ICCM_AW - 2){1'b0}}, host_iccm_widx, 2'b00}
-      : instr_mem_addr;
-  assign iccm_rvalid_in = host_iccm_rd_active ? 1'b1
-                                              : (instr_mem_addr_valid & core_rstn);
-  assign iccm_rtag_in = host_iccm_rd_active ? '0 : instr_mem_tag_out;
-
-  assign instr_mem_rdata       = iccm_rdata;
-  assign instr_mem_rdata_valid = iccm_rvalid_out & core_rstn & core_run_c;
-  assign instr_mem_tag_in      = iccm_rtag_out;  // IFU ignores when !rvalid
-
-  iccm #(
-      .DEPTH(INSTR_MEM_DEPTH),
-      .WIDTH(INSTR_MEM_WIDTH),
-      .INIT_FILE("")
-  ) u_iccm (
-      .clk       (core_clk),
-      .rstn      (axi_rstn_c),
-      .raddr     (iccm_raddr),
-      .rvalid_in (iccm_rvalid_in),
-      .rtag_in   (iccm_rtag_in),
-      .rdata     (iccm_rdata),
-      .rvalid_out(iccm_rvalid_out),
-      .rtag_out  (iccm_rtag_out),
-      .wen       (host_iccm_we),
-      .waddr     (host_iccm_widx),
-      .wdata     (host_wdata_c),
-      .wstrb     (4'hF)  // full-word only; RMW is caller's job
-  );
-
-  // =========================================================================
-  // DCCM — sync_tdp_mem only (no AXI inside the RAM).
-  //   Port A: core reads
-  //   Port B: core writes while running; host R/W while halted
-  // Valid/handshake for host+core live outside the RAM.
-  // =========================================================================
   logic [XLEN-1:0] dccm_raddr, dccm_waddr, dccm_wdata, dccm_rdata;
   logic            dccm_rvalid_in, dccm_rvalid_out, dccm_wen;
-  wire [DCCM_AW-1:0] dccm_r_word = dccm_raddr[DATA_MEM_ADDR_WIDTH-1:2];
-  wire [DCCM_AW-1:0] dccm_w_word = dccm_waddr[DATA_MEM_ADDR_WIDTH-1:2];
+  logic [3:0]      dccm_wstrb;
   wire dccm_is_uart = (dccm_waddr == UART_ADDRESS);
   wire dccm_is_eot  = (dccm_waddr == EOT_ADDRESS) && (dccm_wdata == EOT_MAGIC);
   wire dccm_mmio    = dccm_is_uart || (dccm_waddr == EOT_ADDRESS);
   wire dccm_wen_mem = dccm_wen && !dccm_mmio && core_rstn;
 
-  reg [31:0] host_rmw_data;
-  reg [3:0]  host_rmw_strb;
+  logic [31:0] host_dccm_dout;
+  logic        host_dccm_rvalid;
 
-  wire dccm_host_wr_now = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                          host_wr_c && !host_iccm_c && (host_wstrb_c == 4'hF);
-  wire dccm_host_rd_now = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                          !host_iccm_c &&
-                          (!host_wr_c || (host_wstrb_c != 4'hF));
-  wire dccm_host_wen = (host_st == H_DCCM_WR);
-  wire dccm_host_ren = dccm_host_rd_now || (host_st == H_DCCM_RD) ||
-                       (host_st == H_DCCM_RMW);
+  logic [   AXI_ID_WIDTH-1:0] imem_arid;
+  logic [ AXI_ADDR_WIDTH-1:0] imem_araddr;
+  logic [   AXI_LEN_WIDTH-1:0] imem_arlen;
+  logic [  AXI_SIZE_WIDTH-1:0] imem_arsize;
+  logic [ AXI_BURST_WIDTH-1:0] imem_arburst;
+  logic                        imem_arvalid, imem_arready;
+  logic [   AXI_ID_WIDTH-1:0] imem_rid;
+  logic [AXI_DATA_WIDTH-1:0]  imem_rdata_axi;
+  logic [ AXI_RESP_WIDTH-1:0] imem_rresp;
+  logic                        imem_rlast, imem_rvalid, imem_rready;
 
-  // Port A — core read
-  wire              dccm_ena  = dccm_rvalid_in & core_rstn;
-  wire [DCCM_AW-1:0] dccm_addra = dccm_r_word;
-  logic [31:0]      dccm_doa;
-
-  // Port B — core write (run) or host (halt)
-  wire dccm_enb = core_run_c ? dccm_wen_mem
-                             : (dccm_host_wr_now | dccm_host_wen | dccm_host_ren);
-  wire dccm_web = core_run_c ? dccm_wen_mem
-                             : (dccm_host_wr_now | dccm_host_wen);
-  wire [DCCM_AW-1:0] dccm_addrb = core_run_c ? dccm_w_word : host_dccm_idx;
-  wire [31:0] dccm_dib =
-      core_run_c ? dccm_wdata :
-      (dccm_host_wen ? host_rmw_data : host_wdata_c);
-  logic [31:0] dccm_dob;
-
-  sync_tdp_mem #(
-      .DEPTH(DATA_MEM_DEPTH),
-      .WIDTH(32)
-  ) u_dccm (
-      .clka (core_clk),
-      .clkb (core_clk),
-      .ena  (dccm_ena),
-      .enb  (dccm_enb),
-      .wea  (1'b0),
-      .web  (dccm_web),
-      .addra(dccm_addra),
-      .addrb(dccm_addrb),
-      .dia  ('0),
-      .dib  (dccm_dib),
-      .doa  (dccm_doa),
-      .dob  (dccm_dob)
+  imem_to_axi4 u_imem_ad (
+      .clk                  (core_clk),
+      .rstn                 (core_rstn),
+      .instr_mem_addr       (instr_mem_addr),
+      .instr_mem_addr_valid (instr_mem_addr_valid & core_rstn),
+      .instr_mem_tag_out    (instr_mem_tag_out),
+      .instr_mem_rdata      (instr_mem_rdata),
+      .instr_mem_rdata_valid(instr_mem_rdata_valid),
+      .instr_mem_tag_in     (instr_mem_tag_in),
+      .m_axi_arid           (imem_arid),
+      .m_axi_araddr         (imem_araddr),
+      .m_axi_arlen          (imem_arlen),
+      .m_axi_arsize         (imem_arsize),
+      .m_axi_arburst        (imem_arburst),
+      .m_axi_arvalid        (imem_arvalid),
+      .m_axi_arready        (imem_arready),
+      .m_axi_rid            (imem_rid),
+      .m_axi_rdata          (imem_rdata_axi),
+      .m_axi_rresp          (imem_rresp),
+      .m_axi_rlast          (imem_rlast),
+      .m_axi_rvalid         (imem_rvalid),
+      .m_axi_rready         (imem_rready)
   );
 
-  // Core valid is outside the RAM (1-cycle match to doa)
-  logic dccm_rvalid_core_q;
-  always_ff @(posedge core_clk) begin
-    if (!axi_rstn_c) dccm_rvalid_core_q <= 1'b0;
-    else             dccm_rvalid_core_q <= dccm_ena;
-  end
-  assign dccm_rdata      = dccm_doa;
-  assign dccm_rvalid_out = dccm_rvalid_core_q;
+  axi4_iccm #(
+      .DEPTH(INSTR_MEM_DEPTH),
+      .WIDTH(INSTR_MEM_WIDTH),
+      .INIT_FILE("")
+  ) u_iccm (
+      .clk          (core_clk),
+      .rstn         (axi_rstn_c),
+      .s_axi_arid   (imem_arid),
+      .s_axi_araddr (imem_araddr),
+      .s_axi_arlen  (imem_arlen),
+      .s_axi_arsize (imem_arsize),
+      .s_axi_arburst(imem_arburst),
+      .s_axi_arvalid(imem_arvalid),
+      .s_axi_arready(imem_arready),
+      .s_axi_rid    (imem_rid),
+      .s_axi_rdata  (imem_rdata_axi),
+      .s_axi_rresp  (imem_rresp),
+      .s_axi_rlast  (imem_rlast),
+      .s_axi_rvalid (imem_rvalid),
+      .s_axi_rready (imem_rready),
+      .host_wen     (host_iccm_we),
+      .host_waddr   (host_iccm_widx),
+      .host_wdata   (host_wdata_c),
+      .host_wstrb   (host_wstrb_c),
+      .host_ren     (host_iccm_re || (host_st == H_ICCM_RD)),
+      .host_raddr   (host_iccm_raddr),
+      .host_rdata   (host_iccm_rdata),
+      .host_rvalid  (host_iccm_rvalid)
+  );
 
-  // Host valid outside the RAM
-  logic dccm_rvalid_host_q;
-  always_ff @(posedge core_clk) begin
-    if (!axi_rstn_c) dccm_rvalid_host_q <= 1'b0;
-    else             dccm_rvalid_host_q <= dccm_host_ren;
-  end
-  wire [31:0] dccm_rdata_mem  = dccm_dob;
-  wire        dccm_rvalid_mem = dccm_rvalid_host_q;
+  logic [   AXI_ID_WIDTH-1:0] dmem_arid, dmem_awid, dmem_rid, dmem_bid;
+  logic [ AXI_ADDR_WIDTH-1:0] dmem_araddr, dmem_awaddr;
+  logic [   AXI_LEN_WIDTH-1:0] dmem_arlen, dmem_awlen;
+  logic [  AXI_SIZE_WIDTH-1:0] dmem_arsize, dmem_awsize;
+  logic [ AXI_BURST_WIDTH-1:0] dmem_arburst, dmem_awburst;
+  logic                        dmem_arvalid, dmem_arready, dmem_rvalid, dmem_rready, dmem_rlast;
+  logic [AXI_DATA_WIDTH-1:0]  dmem_rdata_axi, dmem_wdata_axi;
+  logic [ AXI_RESP_WIDTH-1:0] dmem_rresp, dmem_bresp;
+  logic                        dmem_awvalid, dmem_awready, dmem_wvalid, dmem_wready, dmem_wlast;
+  logic [AXI_STRB_WIDTH-1:0]  dmem_wstrb_axi;
+  logic                        dmem_bvalid, dmem_bready;
 
-  // Host mem FSM on core_clk
+  dmem_to_axi4 u_dmem_ad (
+      .clk            (core_clk),
+      .rstn           (core_rstn),
+      .dccm_raddr     (dccm_raddr),
+      .dccm_rvalid_in (dccm_rvalid_in & core_rstn),
+      .dccm_rdata     (dccm_rdata),
+      .dccm_rvalid_out(dccm_rvalid_out),
+      .dccm_waddr     (dccm_waddr),
+      .dccm_wen       (dccm_wen_mem),
+      .dccm_wdata     (dccm_wdata),
+      .dccm_wstrb     (dccm_wstrb),
+      .m_axi_arid     (dmem_arid),
+      .m_axi_araddr   (dmem_araddr),
+      .m_axi_arlen    (dmem_arlen),
+      .m_axi_arsize   (dmem_arsize),
+      .m_axi_arburst  (dmem_arburst),
+      .m_axi_arvalid  (dmem_arvalid),
+      .m_axi_arready  (dmem_arready),
+      .m_axi_rid      (dmem_rid),
+      .m_axi_rdata    (dmem_rdata_axi),
+      .m_axi_rresp    (dmem_rresp),
+      .m_axi_rlast    (dmem_rlast),
+      .m_axi_rvalid   (dmem_rvalid),
+      .m_axi_rready   (dmem_rready),
+      .m_axi_awid     (dmem_awid),
+      .m_axi_awaddr   (dmem_awaddr),
+      .m_axi_awlen    (dmem_awlen),
+      .m_axi_awsize   (dmem_awsize),
+      .m_axi_awburst  (dmem_awburst),
+      .m_axi_awvalid  (dmem_awvalid),
+      .m_axi_awready  (dmem_awready),
+      .m_axi_wdata    (dmem_wdata_axi),
+      .m_axi_wstrb    (dmem_wstrb_axi),
+      .m_axi_wlast    (dmem_wlast),
+      .m_axi_wvalid   (dmem_wvalid),
+      .m_axi_wready   (dmem_wready),
+      .m_axi_bid      (dmem_bid),
+      .m_axi_bresp    (dmem_bresp),
+      .m_axi_bvalid   (dmem_bvalid),
+      .m_axi_bready   (dmem_bready)
+  );
+
+  axi4_dccm #(
+      .DEPTH(DATA_MEM_DEPTH),
+      .WIDTH(DATA_MEM_WIDTH),
+      .INIT_FILE("")
+  ) u_dccm (
+      .clk          (core_clk),
+      .rstn         (axi_rstn_c),
+      .s_axi_arid   (dmem_arid),
+      .s_axi_araddr (dmem_araddr),
+      .s_axi_arlen  (dmem_arlen),
+      .s_axi_arsize (dmem_arsize),
+      .s_axi_arburst(dmem_arburst),
+      .s_axi_arvalid(dmem_arvalid),
+      .s_axi_arready(dmem_arready),
+      .s_axi_rid    (dmem_rid),
+      .s_axi_rdata  (dmem_rdata_axi),
+      .s_axi_rresp  (dmem_rresp),
+      .s_axi_rlast  (dmem_rlast),
+      .s_axi_rvalid (dmem_rvalid),
+      .s_axi_rready (dmem_rready),
+      .s_axi_awid   (dmem_awid),
+      .s_axi_awaddr (dmem_awaddr),
+      .s_axi_awlen  (dmem_awlen),
+      .s_axi_awsize (dmem_awsize),
+      .s_axi_awburst(dmem_awburst),
+      .s_axi_awvalid(dmem_awvalid),
+      .s_axi_awready(dmem_awready),
+      .s_axi_wdata  (dmem_wdata_axi),
+      .s_axi_wstrb  (dmem_wstrb_axi),
+      .s_axi_wlast  (dmem_wlast),
+      .s_axi_wvalid (dmem_wvalid),
+      .s_axi_wready (dmem_wready),
+      .s_axi_bid    (dmem_bid),
+      .s_axi_bresp  (dmem_bresp),
+      .s_axi_bvalid (dmem_bvalid),
+      .s_axi_bready (dmem_bready),
+      .host_sel     (!core_run_c),
+      .host_en      (host_dccm_we || host_dccm_re || (host_st == H_DCCM_RD)),
+      .host_wr      (host_dccm_we),
+      .host_addr    (host_dccm_idx),
+      .host_din     (host_wdata_c),
+      .host_wstrb   (host_wstrb_c),
+      .host_dout    (host_dccm_dout),
+      .host_rvalid  (host_dccm_rvalid)
+  );
+
   always_ff @(posedge core_clk) begin
     if (!axi_rstn_c) begin
-      host_st       <= H_IDLE;
-      host_req_c_q  <= 1'b0;
-      host_ack_c    <= 1'b0;
-      host_rdata_c  <= 32'h0;
-      host_rmw_data <= 32'h0;
-      host_rmw_strb <= 4'h0;
+      host_st      <= H_IDLE;
+      host_req_c_q <= 1'b0;
+      host_ack_c   <= 1'b0;
+      host_rdata_c <= 32'h0;
     end else begin
       host_req_c_q <= host_req_c;
       unique case (host_st)
         H_IDLE: begin
           if (host_req_edge && !core_run_c) begin
             if (host_iccm_c) begin
-              if (host_wr_c) begin
-                // full-word write (host_iccm_we) or drop partial; always ack
-                host_ack_c <= ~host_ack_c;
-              end else begin
-                host_st <= H_ICCM_RD;
-              end
+              if (host_wr_c) host_ack_c <= ~host_ack_c;
+              else           host_st <= H_ICCM_RD;
             end else begin
-              if (!host_wr_c) begin
-                host_st <= H_DCCM_RD;
-              end else if (host_wstrb_c == 4'hF) begin
-                // full-word write via sync_rw this cycle
-                host_ack_c <= ~host_ack_c;
-              end else begin
-                host_rmw_strb <= host_wstrb_c;
-                host_st       <= H_DCCM_RMW;
-              end
+              if (host_wr_c) host_ack_c <= ~host_ack_c;
+              else           host_st <= H_DCCM_RD;
             end
           end
         end
         H_ICCM_RD: begin
-          if (iccm_rvalid_out) begin
-            host_rdata_c <= iccm_rdata;
+          if (host_iccm_rvalid) begin
+            host_rdata_c <= host_iccm_rdata;
             host_ack_c   <= ~host_ack_c;
             host_st      <= H_IDLE;
           end
         end
         H_DCCM_RD: begin
-          if (dccm_rvalid_mem) begin
-            host_rdata_c <= dccm_rdata_mem;
+          if (host_dccm_rvalid) begin
+            host_rdata_c <= host_dccm_dout;
             host_ack_c   <= ~host_ack_c;
             host_st      <= H_IDLE;
           end
-        end
-        H_DCCM_RMW: begin
-          if (dccm_rvalid_mem) begin
-            host_rmw_data <= {
-                host_rmw_strb[3] ? host_wdata_c[31:24] : dccm_rdata_mem[31:24],
-                host_rmw_strb[2] ? host_wdata_c[23:16] : dccm_rdata_mem[23:16],
-                host_rmw_strb[1] ? host_wdata_c[15:8]  : dccm_rdata_mem[15:8],
-                host_rmw_strb[0] ? host_wdata_c[7:0]   : dccm_rdata_mem[7:0]
-            };
-            host_st <= H_DCCM_WR;
-          end
-        end
-        H_DCCM_WR: begin
-          host_ack_c <= ~host_ack_c;
-          host_st    <= H_IDLE;
         end
         default: host_st <= H_IDLE;
       endcase
@@ -414,7 +453,7 @@ module vedas_fpga_soc #(
       .instr_mem_rdata_valid(instr_mem_rdata_valid), .instr_mem_tag_in(instr_mem_tag_in),
       .dccm_raddr(dccm_raddr), .dccm_rvalid_in(dccm_rvalid_in), .dccm_rdata(dccm_rdata),
       .dccm_rvalid_out(dccm_rvalid_out), .dccm_waddr(dccm_waddr), .dccm_wen(dccm_wen),
-      .dccm_wdata(dccm_wdata)
+      .dccm_wdata(dccm_wdata), .dccm_wstrb(dccm_wstrb)
   );
 
   // ----- AXI-Lite -----

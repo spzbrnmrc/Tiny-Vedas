@@ -70,7 +70,8 @@ module core_top #(
     input  logic            dccm_rvalid_out,
     output logic [XLEN-1:0] dccm_waddr,
     output logic            dccm_wen,
-    output logic [XLEN-1:0] dccm_wdata
+    output logic [XLEN-1:0] dccm_wdata,
+    output logic [     3:0] dccm_wstrb
 `ifdef TV_HAS_CORE_DEBUG
     ,
     output core_debug_lane_t debug[ISSUE_WIDTH-1:0]
@@ -127,6 +128,7 @@ module core_top #(
   logic [XLEN-1:0] dccm_waddr_arr[LSU_DCCM_PORT_COUNT-1:0];
   logic            dccm_wen_arr[LSU_DCCM_PORT_COUNT-1:0];
   logic [XLEN-1:0] dccm_wdata_arr[LSU_DCCM_PORT_COUNT-1:0];
+  logic [     3:0] dccm_wstrb_arr[LSU_DCCM_PORT_COUNT-1:0];
 
 `ifdef TV_HAS_CORE_DEBUG
   logic [XLEN-1:0] lsu_debug_instr_tag_out[ISSUE_WIDTH-1:0];
@@ -312,7 +314,8 @@ module core_top #(
           .dccm_rvalid_out(dccm_rvalid_out_arr),
           .dccm_waddr     (dccm_waddr_arr),
           .dccm_wen       (dccm_wen_arr),
-          .dccm_wdata     (dccm_wdata_arr)
+          .dccm_wdata     (dccm_wdata_arr),
+          .dccm_wstrb     (dccm_wstrb_arr)
 `ifdef TV_HAS_CORE_DEBUG
           ,
           .debug_instr_tag_out(lsu_debug_instr_tag_out),
@@ -340,6 +343,7 @@ module core_top #(
       assign dccm_waddr_arr[0]    = '0;
       assign dccm_wen_arr[0]      = 1'b0;
       assign dccm_wdata_arr[0]    = '0;
+      assign dccm_wstrb_arr[0]    = '0;
 `ifdef TV_HAS_CORE_DEBUG
       assign lsu_debug_store_dc2_valid     = 1'b0;
       assign lsu_debug_store_dc2_instr_tag = '0;
@@ -362,6 +366,7 @@ module core_top #(
   assign dccm_waddr         = dccm_waddr_arr[0];
   assign dccm_wen           = dccm_wen_arr[0];
   assign dccm_wdata         = dccm_wdata_arr[0];
+  assign dccm_wstrb         = dccm_wstrb_arr[0];
 
 `ifdef TV_HAS_CORE_DEBUG
   generate
