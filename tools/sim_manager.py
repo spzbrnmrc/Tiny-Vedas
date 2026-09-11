@@ -271,12 +271,13 @@ def read_task_list(filename: str) -> List[str]:
         print(f"Error reading task list file: {e}")
         return []
 
-def run_verilator(test: str, reset_vector: int) -> None:
-    """Execute Verilator simulation."""
+def run_verilator(test: str, reset_vector: int, enable_vcd: bool = False) -> None:
+    """Execute Verilator simulation. VCD is opt-in — tracing Dhrystone is multi-GB."""
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
+    trace_flags = "--trace --trace-structs " if enable_vcd else ""
     verilator_cmd = (
         f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && "
-        f"verilator --cc --trace --trace-structs --build --timing "
+        f"verilator --cc {trace_flags}--build --timing "
         f"--top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp "
         f"-I$PROJ/rtl/include -I$PROJ/rtl/idu -f $PROJ/rtl/core_top.flist "
         f"-Wno-LATCH -Wno-UNOPTFLAT -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND "
@@ -294,8 +295,14 @@ def run_verilator(test: str, reset_vector: int) -> None:
     sim_log_path = os.path.join('work', test, 'sim.log')
     with open(sim_log_path, 'w') as sim_log:
         process = subprocess.Popen(verilator_cmd, shell=True, stdout=sim_log, stderr=subprocess.STDOUT)
-        process.wait()
-        # Get the exit code
+        try:
+            process.wait(timeout=300)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            print(f"Error: Verilator timed out after 300s for {test}")
+            sim_log.close()
+            sys.exit(1)
         exit_code = process.returncode
         if exit_code != 0:
             print(f"Error: Verilator returned exit code {exit_code}")
@@ -531,6 +538,7 @@ def run_e2e(
     simulator: str,
     hw_config: HwConfig,
     show_progress: bool = True,
+    enable_vcd: bool = False,
 ):
     """Run a test through the entire pipeline."""
     try:
@@ -538,7 +546,7 @@ def run_e2e(
         run_iss(test, reset_vector)
         prepare_imem(test)
         if simulator == "verilator":
-            run_verilator(test, reset_vector)
+            run_verilator(test, reset_vector, enable_vcd=enable_vcd)
         else:
             run_xsim(test, reset_vector)
         process_rtl_log(test, show_progress=show_progress)
@@ -570,6 +578,11 @@ def main():
         default=str(default_hw_config_path()),
         help="Hardware preset YAML (cpu/vector/memory/software contract)",
     )
+    parser.add_argument(
+        "--vcd",
+        action="store_true",
+        help="Write core_top.vcd (Verilator only; slow — not for smoke/CI)",
+    )
 
     args = parser.parse_args()
     hw_config = load_hw_config(args.hw_config)
@@ -600,7 +613,9 @@ def main():
     # Run tests in parallel using thread pool
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_cores) as executor:
         future_to_test = {
-            executor.submit(run_e2e, test, args.simulator, hw_config, show_progress): test
+            executor.submit(
+                run_e2e, test, args.simulator, hw_config, show_progress, args.vcd
+            ): test
             for test in tests
         }
 

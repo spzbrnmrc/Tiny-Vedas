@@ -23,24 +23,32 @@ DEALINGS IN THE SOFTWARE.
 */
 
 #include "Vcore_top_tb.h"
+#if VM_TRACE
 #include "verilated_vcd_c.h"
+#endif
 
 int main(int argc, char **argv, char **env) {
     Verilated::commandArgs(argc, argv);
     Vcore_top_tb* top = new Vcore_top_tb;
+#if VM_TRACE
     Verilated::traceEverOn(true);
     VerilatedVcdC* tfp = new VerilatedVcdC;
     top->trace(tfp, 99);
     tfp->open("core_top.vcd");
+#endif
 
     printf("****** START of CORE TOP SIM ****** \n");
 
     while (!Verilated::gotFinish()) {
         top->eval();
+#if VM_TRACE
         tfp->dump(Verilated::time());
+#endif
         Verilated::timeInc(1);
     }
+#if VM_TRACE
     tfp->close();
+#endif
     printf("****** END of CORE TOP SIM ****** \n");
     delete top;
     return 0;

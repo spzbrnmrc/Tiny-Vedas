@@ -250,6 +250,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
   -n, --test-name   Run a single test (e.g. asm.basic_alu_r)
   -t, --task-list   Run all tests listed in a file (e.g. tests/smoke.tlist)
   --hw-config       Hardware preset YAML (default: hw/presets/rv32im_scalar.yaml)
+  --vcd             Verilator waveform (core_top.vcd); omit for smoke/CI
 ```
 
 `make smoke-verilator` and `make smoke` invoke `with_env.sh` automatically.
@@ -277,7 +278,7 @@ Each test writes artifacts to `work/<test>/`:
 | `sim.log` | Simulator stdout and comparison errors |
 | `console.log` | Program UART output |
 | `stats.txt` | IPC/CPI performance metrics |
-| `core_top.vcd` | Waveform (Verilator only) |
+| `core_top.vcd` | Waveform (Verilator `--vcd` only; off by default) |
 
 ## Verification
 

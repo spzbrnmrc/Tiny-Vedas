@@ -115,6 +115,11 @@ module core_top_tb;
       $fdisplay(fd, "[%d] Nothing retired in 10000 cycles... Aborting", cycle_count);
       $finish;
     end
+    /* fail_hang.s is a tight JAL — it keeps retiring, so the idle abort never fires. */
+    if (cycle_count > 32'd5000000) begin
+      $fdisplay(fd, "[%d] Exceeded 5000000 cycles... Aborting", cycle_count);
+      $finish;
+    end
   end
 
   always_ff @(posedge clk) begin
