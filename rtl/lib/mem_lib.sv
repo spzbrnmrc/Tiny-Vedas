@@ -6,8 +6,8 @@
 
 /* ************** Memory Library ************** */
 
-/**** True dual-port sync RAM (Xilinx UG901 rams_tdp_rf_rf style) **************
- * Portable — no bus/AXI inside. Full-word writes only (RMW is the caller's job).
+/**** True dual-port sync RAM (Xilinx UG901 rams_tdp_rf_rf byte-write) ********
+ * Portable — no bus/AXI inside. Per-byte write strobes on each port.
  * Read latency: 1 cycle when en*=1. Data outs hold when en*=0 (BRAM).
  */
 module sync_tdp_mem #(
@@ -15,23 +15,30 @@ module sync_tdp_mem #(
     parameter int WIDTH = 32,
     parameter string INIT_FILE = ""
 ) (
-    input  logic                     clka,
-    input  logic                     clkb,
-    input  logic                     ena,
-    input  logic                     enb,
-    input  logic                     wea,
-    input  logic                     web,
-    input  logic [$clog2(DEPTH)-1:0] addra,
-    input  logic [$clog2(DEPTH)-1:0] addrb,
-    input  logic [        WIDTH-1:0] dia,
-    input  logic [        WIDTH-1:0] dib,
-    output logic [        WIDTH-1:0] doa,
-    output logic [        WIDTH-1:0] dob
+    input  logic                         clka,
+    input  logic                         clkb,
+    input  logic                         ena,
+    input  logic                         enb,
+    input  logic [            WIDTH/8-1:0] wea,
+    input  logic [            WIDTH/8-1:0] web,
+    input  logic [      $clog2(DEPTH)-1:0] addra,
+    input  logic [      $clog2(DEPTH)-1:0] addrb,
+    input  logic [              WIDTH-1:0] dia,
+    input  logic [              WIDTH-1:0] dib,
+    output logic [              WIDTH-1:0] doa,
+    output logic [              WIDTH-1:0] dob
 );
+
+  localparam int NBYTES = WIDTH / 8;
 
   (* ram_style = "block" *) logic [WIDTH-1:0] ram[DEPTH];
 
+  /* Byte strobes leave other bytes untouched. Start at 0 so xsim (and ISS)
+   * see defined data instead of X in unwritten bytes / unread words. */
   initial begin
+    for (int i = 0; i < DEPTH; i++) begin
+      ram[i] = '0;
+    end
     if (INIT_FILE != "") begin
       $readmemh(INIT_FILE, ram);
     end
@@ -39,8 +46,10 @@ module sync_tdp_mem #(
 
   always_ff @(posedge clka) begin
     if (ena) begin
-      if (wea) begin
-        ram[addra] <= dia;
+      for (int i = 0; i < NBYTES; i++) begin
+        if (wea[i]) begin
+          ram[addra][8*i+:8] <= dia[8*i+:8];
+        end
       end
       doa <= ram[addra];
     end
@@ -48,8 +57,10 @@ module sync_tdp_mem #(
 
   always_ff @(posedge clkb) begin
     if (enb) begin
-      if (web) begin
-        ram[addrb] <= dib;
+      for (int i = 0; i < NBYTES; i++) begin
+        if (web[i]) begin
+          ram[addrb][8*i+:8] <= dib[8*i+:8];
+        end
       end
       dob <= ram[addrb];
     end
@@ -59,7 +70,7 @@ endmodule
 
 /**** Instruction Closely Coupled Memory ************** */
 
-/* Port A = fetch (sync read), port B = full-word host write (sim: wen=0). */
+/* Port A = fetch (sync read), port B = host write with byte strobes. */
 module iccm #(
     parameter int DEPTH = 1024,
     parameter int WIDTH = 32,
@@ -75,7 +86,6 @@ module iccm #(
     output logic                               rvalid_out,
     output logic [    INSTR_MEM_TAG_WIDTH-1:0] rtag_out,
 
-    /* Host write — full word only; wstrb kept for port compat, ignored */
     input logic                     wen,
     input logic [$clog2(DEPTH)-1:0] waddr,
     input logic [        WIDTH-1:0] wdata,
@@ -99,8 +109,8 @@ module iccm #(
       .clkb (clk),
       .ena  (rvalid_in),
       .enb  (wen),
-      .wea  (1'b0),
-      .web  (wen),
+      .wea  ('0),
+      .web  ({(WIDTH/8){wen}} & wstrb),
       .addra(word_idx),
       .addrb(waddr),
       .dia  ('0),
@@ -126,7 +136,7 @@ endmodule
 
 /**** Data Closely Coupled Memory ************** */
 
-/* Port A = sync read, port B = full-word write. Same sync_tdp_mem as FPGA. */
+/* Port A = sync read, port B = byte-strobe write. Same sync_tdp_mem as FPGA. */
 module dccm #(
     parameter int DEPTH = 1024,
     parameter int WIDTH = 32,
@@ -142,7 +152,8 @@ module dccm #(
 
     input logic [$clog2(DEPTH)-1:0] waddr,
     input logic                     wen,
-    input logic [        WIDTH-1:0] wdata
+    input logic [        WIDTH-1:0] wdata,
+    input logic [      WIDTH/8-1:0] wstrb
 );
 
   logic [WIDTH-1:0] doa, dob_unused;
@@ -156,8 +167,8 @@ module dccm #(
       .clkb (clk),
       .ena  (rvalid_in),
       .enb  (wen),
-      .wea  (1'b0),
-      .web  (wen),
+      .wea  ('0),
+      .web  ({(WIDTH/8){wen}} & wstrb),
       .addra(raddr),
       .addrb(waddr),
       .dia  ('0),

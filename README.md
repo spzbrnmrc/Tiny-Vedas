@@ -32,7 +32,7 @@ Tiny Vedas is built to support **multiple CPU organizations** behind one hardwar
 
 - **ISA**: RISC-V RV32IM (32-bit integer + multiply/divide)
 - **Pipeline**: 4-stage (IFU → IDU0 → IDU1 → EXU)
-- **Memory**: Harvard architecture — separate instruction memory (ICCM) and data memory (DCCM)
+- **Memory**: Harvard architecture — separate ICCM and DCCM. The core keeps custom fetch/LSU ports; `soc_top` and the FPGA SoC convert those to **AXI4** (32-bit, ID width 4) into on-chip CCM slaves. ASIC PD still synthesizes `core_top` only.
 - **Decode**: Spec-driven via the `open-decode-tables` submodule (YAML → SystemVerilog)
 - **Verification**: Python instruction-set simulator (ISS) compared against RTL traces
 
@@ -56,7 +56,7 @@ Tiny Vedas is built to support **multiple CPU organizations** behind one hardwar
 - Multi-cycle multiplier and divider
 - Booth-encoded 32×32 multiplier with per-operand signedness (MUL / MULH / MULHU / MULHSU)
 - Non-restoring divider with combinational Kogge-Stone adders on the iteration path
-- Unaligned load/store support with store-to-load forwarding
+- Unaligned load/store support with byte-strobe DCCM writes (no store RMW) and strobe-aware store-to-load forwarding
 
 ## Project Structure
 
@@ -64,15 +64,17 @@ Tiny Vedas is built to support **multiple CPU organizations** behind one hardwar
 Tiny-Vedas/
 ├── rtl/                     # Processor RTL
 │   ├── core_top.sv          # CPU pipeline (memory ports exposed)
-│   ├── soc_top.sv           # core_top + ICCM/DCCM (simulation / integration)
-│   ├── core_top.flist       # File list for synthesis/simulation
+│   ├── soc_top.sv           # core_top + AXI4 adapters + ICCM/DCCM
+│   ├── core_top.flist       # Sim file list (core + SoC + bus)
+│   ├── bus/                 # AXI4 fetch/LSU masters and CCM slaves
 │   ├── ifu/                 # Instruction fetch unit
 │   ├── idu/                 # Decode stages, regfile, scoreboard
 │   │   ├── rv32im_decoder.sv   # Generated — do not hand-edit
 │   │   └── decode_out_t.svh      # Generated — do not hand-edit
 │   ├── exu/                 # ALU, MUL, DIV, LSU
-│   ├── include/             # global.svh, types.svh
-│   └── lib/                 # ICCM/DCCM memory models
+│   ├── include/             # global.svh, types.svh, axi4.svh
+│   └── lib/                 # Byte-write ICCM/DCCM (`sync_tdp_mem`)
+├── fpga/alveo_u280/         # Alveo U280 bitstream, host load, card smoke
 ├── dv/
 │   ├── sv/                  # core_top_tb.sv, lsu_tb.sv
 │   └── verilator/           # Verilator C++ harness
@@ -259,6 +261,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
 | `make deps` | Install system packages, Python venv, RISC-V toolchain, and Verilator |
 | `make smoke-verilator` | Run the smoke regression via Verilator (CI default) |
 | `make smoke` | Run the smoke regression via XSim (requires Vivado) |
+| `make fpga alveo_u280` | Build the Alveo U280 bitstream (Vivado 2023.2) |
 | `make fpga_smoke alveo_u280` | Run `tests/smoke.tlist` on the programmed Alveo (needs sudo) |
 | `make decodes` | Regenerate `rtl/idu/rv32im_decoder.sv` from YAML |
 | `make clean` | Remove build artifacts (`work/`, `obj_dir/`, logs, VCDs) |
@@ -351,9 +354,9 @@ Smoke tests cover ALU, forwarding, multiply, divide (`asm.basic_div`,
 | Memory | Depth | Width | Notes |
 |--------|-------|-------|-------|
 | ICCM (instructions) | 2^18 words | 32-bit | Loaded from ELF `.text` section |
-| DCCM (data) | 2^18 words | 32-bit | Loaded from `.data`, `.rodata`, `.bss`, etc. |
+| DCCM (data) | 2^18 words | 32-bit | Byte-write RAM; loaded from `.data`, `.rodata`, `.bss`, etc. |
 
-Configured in `rtl/include/global.svh`.
+Configured in `rtl/include/global.svh`. The Alveo overlay uses smaller windows (32 KiB ICCM / 64 KiB DCCM); see [fpga/alveo_u280/README.md](fpga/alveo_u280/README.md). UART (`0x00200000`) and EOT (`0x10000000`) writes are decoded on the core store path and do not enter DCCM.
 
 ### Software-visible addresses
 
@@ -464,9 +467,15 @@ pyvedas.my_add
 Inspect JIT output on failure: `work/pyvedas.my_add/jit.log`, `compile.log`, `sim.log`.
 
 
-The design is synthesizable. Use `rtl/core_top.flist` as the file list for FPGA
-flows. The file list references the `SVLib` submodule and sets `$PROJ` to the
-repository root.
+The core is synthesizable. Simulation and FPGA SoCs sit **outside** `core_top`:
+AXI4 adapters plus ICCM/DCCM slaves (`rtl/bus/`, `rtl/soc_top.sv`,
+`fpga/alveo_u280/rtl/`). ASIC PD still nets `core_top` only — see
+[pd/README.md](pd/README.md). FPGA build/program/smoke:
+
+```bash
+make fpga alveo_u280          # bitstream (Vivado 2023.2)
+make fpga_smoke alveo_u280    # PCIe load + EOT on the card (sudo)
+```
 
 For ASIC physical design (SystemVerilog → Verilog via
 [sv2v](https://github.com/zachjs/sv2v), then OpenROAD-flow-scripts), see
@@ -492,6 +501,8 @@ From RTL simulation (see `work/<test>/stats.txt` after a run):
 | c.helloworld | 760 | 2293 | 0.3314 |
 | c.iaxpy | 109 | 235 | 0.4638 |
 | elf.dhrystone | 640720 | 1274337 | 0.5028 |
+
+On Alveo U280 (100 MHz core, host-timed EOT) `elf.dhrystone` is ~12.9 ms for 2000 runs → ~155k dps / **~88.5 DMIPS** (~0.89 DMIPS/MHz). That matches the sim cycle count (1.274M cycles ≈ 12.7 ms at 100 MHz).
 
 ## Submodules
 

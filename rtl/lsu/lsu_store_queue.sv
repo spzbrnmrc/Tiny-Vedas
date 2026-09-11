@@ -50,11 +50,13 @@ module lsu_store_queue #(
     input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]   lookup_tag,
     output logic                                  lookup_hit,
     output logic [XLEN-1:0]                       lookup_data,
+    output logic [3:0]                            lookup_strb,
 
     input  logic                                  cam_update_valid,
     input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_update_index,
     input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]    cam_update_tag,
     input  logic [XLEN-1:0]                       cam_update_data,
+    input  logic [3:0]                            cam_update_strb,
 
     input  logic                                  cam_clear_valid,
     input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_clear_index,
@@ -81,6 +83,7 @@ module lsu_store_queue #(
   logic [DEPTH-1:0] cam_data_valid;
   logic [DEPTH-1:0][LSU_STORE_CAM_TAG_WIDTH-1:0] cam_tag;
   logic [DEPTH-1:0][XLEN-1:0] cam_data;
+  logic [DEPTH-1:0][3:0] cam_strb;
 
   logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] push_index;
   logic [LSU_STORE_CAM_TAG_WIDTH-1:0] push_tag;
@@ -124,6 +127,7 @@ module lsu_store_queue #(
   assign lookup_hit  = cam_valid[lookup_index] & cam_data_valid[lookup_index] &
                        (cam_tag[lookup_index] == lookup_tag);
   assign lookup_data = cam_data[lookup_index];
+  assign lookup_strb = cam_strb[lookup_index];
 
   assign cam_clear_fire = cam_clear_valid &
       ((cam_tag[cam_clear_index] == cam_clear_tag) |
@@ -198,6 +202,8 @@ module lsu_store_queue #(
       logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_tag_din;
       logic cam_data_en;
       logic [XLEN-1:0] cam_data_din;
+      logic cam_strb_en;
+      logic [3:0] cam_strb_din;
 
       always_comb begin
         cam_valid_en       = 1'b0;
@@ -208,6 +214,8 @@ module lsu_store_queue #(
         cam_tag_din        = cam_tag[cam_slot];
         cam_data_en        = 1'b0;
         cam_data_din       = cam_data[cam_slot];
+        cam_strb_en        = 1'b0;
+        cam_strb_din       = cam_strb[cam_slot];
 
         if (cam_update_fire && (cam_update_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot))) begin
           cam_valid_en       = 1'b1;
@@ -218,6 +226,8 @@ module lsu_store_queue #(
           cam_tag_din        = cam_update_tag;
           cam_data_en        = 1'b1;
           cam_data_din       = cam_update_data;
+          cam_strb_en        = 1'b1;
+          cam_strb_din       = cam_update_strb;
         end else if ((cam_clear_fire && (cam_clear_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot))) ||
                      (cam_clear_b_fire && (cam_clear_b_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot))) ||
                      (cam_clear_c_fire && (cam_clear_c_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot)))) begin
@@ -273,6 +283,16 @@ module lsu_store_queue #(
           .en  (cam_data_en),
           .din (cam_data_din),
           .dout(cam_data[cam_slot])
+      );
+
+      register_en_sync_rstn #(
+          .WIDTH(4)
+      ) cam_strb_ff (
+          .clk (clk),
+          .rstn(rstn),
+          .en  (cam_strb_en),
+          .din (cam_strb_din),
+          .dout(cam_strb[cam_slot])
       );
     end
   endgenerate

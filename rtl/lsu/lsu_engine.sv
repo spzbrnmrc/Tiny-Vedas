@@ -46,6 +46,10 @@
 `include "types.svh"
 `endif
 
+`ifndef LSU_ADDR_SVH
+`include "lsu_addr.svh"
+`endif
+
 module lsu_engine (
     input logic clk,
     input logic rstn,
@@ -54,6 +58,7 @@ module lsu_engine (
     input  lsu_mem_op_t engine_op,
     input  logic        ext_forward_valid,
     input  logic [XLEN-1:0] ext_forward_value,
+    input  logic [     3:0] ext_forward_strb,
     output logic        cam_lookup_valid,
     output logic [XLEN-1:0] cam_lookup_addr,
     output logic        engine_stall,
@@ -81,6 +86,7 @@ module lsu_engine (
     output logic            store_cam_fill_valid,
     output logic [XLEN-1:0] store_cam_fill_addr,
     output logic [XLEN-1:0] store_cam_fill_data,
+    output logic [     3:0] store_cam_fill_strb,
 
     /* DCCM Interface */
     output logic [XLEN-1:0] dccm_raddr,
@@ -89,7 +95,8 @@ module lsu_engine (
     input  logic            dccm_rvalid_out,
     output logic [XLEN-1:0] dccm_waddr,
     output logic            dccm_wen,
-    output logic [XLEN-1:0] dccm_wdata
+    output logic [XLEN-1:0] dccm_wdata,
+    output logic [     3:0] dccm_wstrb
 `ifdef TV_HAS_CORE_DEBUG
     ,
     output logic [XLEN-1:0] instr_tag_out,
@@ -115,11 +122,14 @@ module lsu_engine (
   logic [XLEN-1:0] dc1_computed_addr;
   logic [     4:0] dc1_rd_addr;
   logic [LSU_LANE_ID_WIDTH-1:0] dc1_lane_id_q;
-  logic            dc1_store_needs_load;
   logic            dc1_pipeline_forward;
   logic            dc1_cam_forward;
   logic            dc1_any_forward;
+  logic            dc1_skip_read;
   logic [XLEN-1:0] dc1_forward_value;
+  logic [     3:0] dc1_forward_strb;
+  logic [     7:0] dc1_strb_wide;
+  logic [     3:0] dc1_load_strb0;
 
   logic dc2_by, dc2_half, dc2_word, dc2_load, dc2_store, dc2_unsign, dc2_legal;
   logic            dc2_lsu_valid;
@@ -129,11 +139,12 @@ module lsu_engine (
   logic [     4:0] dc2_rd_addr;
   logic [LSU_LANE_ID_WIDTH-1:0] dc2_lane_id_q;
   logic [XLEN-1:0] dc2_rs2_data;
-  logic            dc2_store_needs_load;
-  logic            dc2_store_forward;
+  logic            dc2_fwd_valid;
   logic [XLEN-1:0] dc2_forward_value;
-  logic            dc2_store_forward_next;
+  logic [     3:0] dc2_forward_strb;
+  logic            dc2_fwd_valid_next;
   logic [XLEN-1:0] dc2_forward_value_next;
+  logic [     3:0] dc2_forward_strb_next;
 
   logic dc3_by, dc3_half, dc3_word, dc3_load, dc3_store, dc3_unsign, dc3_legal;
   logic                    dc3_unaligned_addr;
@@ -157,8 +168,9 @@ module lsu_engine (
   logic [    31:0] dc3_lsu_instr_out;
 `endif
   logic [        XLEN-1:0] dc3_store_buffer;
-  logic                    dc3_store_forward;
+  logic                    dc3_fwd_valid;
   logic [        XLEN-1:0] dc3_forward_value;
+  logic [             3:0] dc3_forward_strb;
 
   /* ***** DC1 ***** */
 
@@ -213,10 +225,12 @@ module lsu_engine (
 
   assign dc1_unaligned_addr = engine_stall_q ? 'b0 :
       (|dc1_computed_addr[1:0] & dc1_word) | (&dc1_computed_addr[1:0] & dc1_half);
-  assign dc1_store_needs_load = dc1_store & (dc1_by | dc1_half | dc1_word & dc1_unaligned_addr);
 
-  /* Compare registered stage addresses directly; do not reuse dccm_waddr (store-merge cone). */
-  assign dc1_pipeline_forward = ((dc1_store | dc1_load) & dc1_legal) & (
+  assign dc1_strb_wide = lsu_strb_wide(dc1_by, dc1_half, dc1_word, dc1_computed_addr[1:0]);
+  assign dc1_load_strb0 = dc1_strb_wide[3:0];
+
+  /* Word-aligned compare; do not reuse dccm_waddr (write mux cone). */
+  assign dc1_pipeline_forward = (dc1_load & dc1_legal) & (
       ((dc2_store & dc2_legal) &
        ({dc2_computed_addr[XLEN-1:2], 2'b00} == {dc1_computed_addr[XLEN-1:2], 2'b00})) |
       ((dc3_store & dc3_legal & dc3_unaligned_addr) &
@@ -227,6 +241,9 @@ module lsu_engine (
   assign cam_lookup_addr  = dc1_computed_addr;
   assign dc1_any_forward = dc1_pipeline_forward | dc1_cam_forward;
   assign dc1_forward_value = dc1_pipeline_forward ? dccm_wdata : ext_forward_value;
+  assign dc1_forward_strb  = dc1_pipeline_forward ? dccm_wstrb : ext_forward_strb;
+  assign dc1_skip_read = dc1_load & dc1_lsu_valid & dc1_any_forward &
+      lsu_strb_covers(dc1_load_strb0, dc1_forward_strb);
 
   /* ****** DC2 ***** */
   register_sync_rstn #(
@@ -244,10 +261,10 @@ module lsu_engine (
             dc1_rd_addr,
             dc1_lane_id_q,
             dc2_lsu_valid,
-            dc1_store_needs_load,
             dc1_rs2_data,
             dc1_any_forward,
-            dc1_forward_value
+            dc1_forward_value,
+            dc1_forward_strb
           }
       ))
   ) dc2_dccm_rdata_reg (
@@ -266,10 +283,10 @@ module lsu_engine (
         dc1_rd_addr,
         dc1_lane_id_q,
         dc1_lsu_valid,
-        dc1_store_needs_load,
         dc1_rs2_data,
         dc1_any_forward,
-        dc1_forward_value
+        dc1_forward_value,
+        dc1_forward_strb
       }),
       .dout({
         dc2_by,
@@ -284,10 +301,10 @@ module lsu_engine (
         dc2_rd_addr,
         dc2_lane_id_q,
         dc2_lsu_valid,
-        dc2_store_needs_load,
         dc2_rs2_data,
-        dc2_store_forward,
-        dc2_forward_value
+        dc2_fwd_valid,
+        dc2_forward_value,
+        dc2_forward_strb
       })
   );
 
@@ -311,30 +328,25 @@ module lsu_engine (
   );
 `endif
 
-  logic [2*XLEN-1:0] dc2_store_mask_base;
-  logic [2*XLEN-1:0] dc2_store_mask;
+  logic [7:0] dc2_strb_wide;
   logic [2*XLEN-1:0] dc2_store_buffer;
+  logic [XLEN-1:0] dc2_merged_word;
 
-  assign dc2_store_mask_base = {2*XLEN{dc2_by}} & 64'h00000000000000FF |
-                               {2*XLEN{dc2_half}} & 64'h000000000000FFFF |
-                               {2*XLEN{dc2_word}} & 64'h00000000FFFFFFFF;
+  assign dc2_strb_wide = lsu_strb_wide(dc2_by, dc2_half, dc2_word, dc2_computed_addr[1:0]);
+  assign dc2_store_buffer = lsu_store_data_wide(dc2_rs2_data, dc2_computed_addr[1:0]);
 
-  assign dc2_store_mask = dc2_store_mask_base << {dc2_computed_addr[1:0], 3'b000};
+  assign dc2_merged_word = dc2_fwd_valid ?
+      lsu_merge_bytes(dccm_rdata, dc2_forward_value, dc2_forward_strb) :
+      dccm_rdata;
 
-  assign dc2_store_buffer = (dc2_store_forward) ?
-      (({{XLEN{1'b0}}, dc2_rs2_data} & dc2_store_mask_base) << {dc2_computed_addr[1:0], 3'b000}) |
-      ({{XLEN{1'b0}}, dc2_forward_value} & ~dc2_store_mask) :
-      (({{XLEN{1'b0}}, dc2_rs2_data} & dc2_store_mask_base) << {dc2_computed_addr[1:0], 3'b000}) |
-      ({{XLEN{1'b0}}, dccm_rdata} & ~dc2_store_mask);
-
-  assign dc2_store_forward_next = ((dc2_store | dc2_load) & dc2_legal & dc2_unaligned_addr) &
+  assign dc2_fwd_valid_next = (dc2_load & dc2_legal & dc2_unaligned_addr) &
       (dc3_store & dc3_legal & dc3_unaligned_addr) &
       ({dc3_computed_addr[XLEN-1:2] + 30'd1, 2'b00} ==
        {dc2_computed_addr[XLEN-1:2] + 30'd1, 2'b00});
   assign dc2_forward_value_next = dccm_wdata;
+  assign dc2_forward_strb_next  = dccm_wstrb;
 
-  assign dc2_load_buffer = (dc2_store_forward) ? dc2_forward_value >> {dc2_computed_addr[1:0], 3'b000} :
-                                                 dccm_rdata >> {dc2_computed_addr[1:0], 3'b000};
+  assign dc2_load_buffer = dc2_merged_word >> {dc2_computed_addr[1:0], 3'b000};
 
   /* ****** DC3 ***** */
   register_sync_rstn #(
@@ -353,8 +365,9 @@ module lsu_engine (
             dc3_rd_addr,
             dc3_lane_id_q,
             dc3_rs2_data,
-            dc3_store_forward,
-            dc3_forward_value
+            dc3_fwd_valid,
+            dc3_forward_value,
+            dc3_forward_strb
           }
       ))
   ) dc3_dccm_rdata_reg (
@@ -374,8 +387,9 @@ module lsu_engine (
         dc2_rd_addr,
         dc2_lane_id_q,
         dc2_rs2_data,
-        dc2_store_forward_next,
-        dc2_forward_value_next
+        dc2_fwd_valid_next,
+        dc2_forward_value_next,
+        dc2_forward_strb_next
       }),
       .dout({
         dc3_load_buffer,
@@ -391,8 +405,9 @@ module lsu_engine (
         dc3_rd_addr,
         dc3_lane_id_q,
         dc3_rs2_data,
-        dc3_store_forward,
-        dc3_forward_value
+        dc3_fwd_valid,
+        dc3_forward_value,
+        dc3_forward_strb
       })
   );
 
@@ -428,12 +443,23 @@ module lsu_engine (
   assign dc3_shamt_by = (3'd4 - {1'd0, dc3_computed_addr[1:0]});
   assign dc3_shamt = {dc3_shamt_by[1:0], 3'b000};
 
-  assign dc3_wb_data = ({XLEN{~dc3_unaligned_addr & ~dc3_store_forward}} & dc3_load_buffer) |
-                       ({XLEN{dc3_unaligned_addr & ~dc3_store_forward}} &
-                        (dc3_load_buffer | (dccm_rdata << dc3_shamt))) |
-                       ({XLEN{~dc3_unaligned_addr & dc3_store_forward}} & dc3_forward_value) |
-                       ({XLEN{dc3_unaligned_addr & dc3_store_forward}} &
-                        (dc3_load_buffer | (dc3_forward_value << dc3_shamt)));
+  logic [7:0] dc3_strb_wide;
+  logic [2*XLEN-1:0] dc3_store_data_wide;
+  logic [XLEN-1:0] dc3_beat1_word;
+  logic [3:0] dc2_load_strb1;
+  logic dc2_skip_read1;
+
+  assign dc3_strb_wide = lsu_strb_wide(dc3_by, dc3_half, dc3_word, dc3_computed_addr[1:0]);
+  assign dc3_store_data_wide = lsu_store_data_wide(dc3_rs2_data, dc3_computed_addr[1:0]);
+  assign dc3_store_buffer = dc3_store_data_wide[2*XLEN-1:XLEN];
+
+  assign dc3_beat1_word = dc3_fwd_valid ?
+      lsu_merge_bytes(dccm_rdata, dc3_forward_value, dc3_forward_strb) :
+      dccm_rdata;
+
+  assign dc3_wb_data = dc3_unaligned_addr ?
+      (dc3_load_buffer | (dc3_beat1_word << dc3_shamt)) :
+      dc3_load_buffer;
 
   assign dc3_wb_sext_mask = ({{XLEN-8{dc3_by & ~dc3_unsign & dc3_wb_data[7]}} & 24'hFFFFFF, 8'h00}) |
                             ({{XLEN-16{dc3_half & ~dc3_unsign & dc3_wb_data[15]}} & 16'hFFFF, 16'h0000});
@@ -442,17 +468,17 @@ module lsu_engine (
                             ({XLEN{dc3_half}} & 32'h0000FFFF) |
                             ({XLEN{dc3_word}} & 32'hFFFFFFFF);
 
-  assign dc3_store_buffer = (dc3_store_forward) ?
-      (dc3_rs2_data >> dc3_shamt) | (dc3_forward_value & ~(dc3_wb_data_mask << dc3_shamt)) :
-      (dc3_rs2_data >> dc3_shamt) | (dccm_rdata & ~(dc3_wb_data_mask << dc3_shamt));
+  assign dc2_load_strb1 = dc2_strb_wide[7:4];
+  assign dc2_skip_read1 = dc2_load & dc2_lsu_valid & dc2_unaligned_addr & dc2_fwd_valid_next &
+      lsu_strb_covers(dc2_load_strb1, dc2_forward_strb_next);
 
-  assign dccm_raddr = ({XLEN{dc1_lsu_valid & (dc1_load | dc1_store_needs_load) & ~dc2_unaligned_addr}} &
+  assign dccm_raddr = ({XLEN{dc1_lsu_valid & dc1_load & ~dc2_unaligned_addr}} &
                        {dc1_computed_addr[XLEN-1:2], 2'b00}) |
-                      ({XLEN{dc2_lsu_valid & (dc2_load | dc2_store_needs_load) & dc2_unaligned_addr}} &
+                      ({XLEN{dc2_lsu_valid & dc2_load & dc2_unaligned_addr}} &
                        {dc2_computed_addr[XLEN-1:2] + 30'd1, 2'b00});
 
-  assign dccm_rvalid_in = (dc1_lsu_valid & ~dc2_unaligned_addr & ~dc1_any_forward) |
-                          (dc2_lsu_valid & dc2_unaligned_addr & ~dc2_store_forward);
+  assign dccm_rvalid_in = (dc1_lsu_valid & dc1_load & ~dc2_unaligned_addr & ~dc1_skip_read) |
+                          (dc2_lsu_valid & dc2_load & dc2_unaligned_addr & ~dc2_skip_read1);
 
   assign dccm_waddr = ({XLEN{dc2_legal & dc2_store & ~dc3_unaligned_addr}} &
                        {dc2_computed_addr[XLEN-1:2], 2'b00}) |
@@ -463,6 +489,9 @@ module lsu_engine (
 
   assign dccm_wdata = ({XLEN{dc2_legal & dc2_store & ~dc3_unaligned_addr}} & dc2_store_buffer[XLEN-1:0]) |
                       ({XLEN{dc3_legal & dc3_store & dc3_unaligned_addr}} & dc3_store_buffer);
+
+  assign dccm_wstrb = ({4{dc2_legal & dc2_store & ~dc3_unaligned_addr}} & dc2_strb_wide[3:0]) |
+                      ({4{dc3_legal & dc3_store & dc3_unaligned_addr}} & dc3_strb_wide[7:4]);
 
   assign wb_rd_wr_en = dc3_load & dc3_legal;
   assign wb_rd_addr  = dc3_rd_addr;
@@ -493,6 +522,7 @@ module lsu_engine (
   assign store_cam_fill_valid = dc2_legal & dc2_store;
   assign store_cam_fill_addr  = dc2_computed_addr;
   assign store_cam_fill_data  = dc2_store_buffer[XLEN-1:0];
+  assign store_cam_fill_strb  = dc2_strb_wide[3:0];
 
 `ifdef TV_HAS_CORE_DEBUG
   assign instr_tag_out = dc3_lsu_instr_tag_out;
@@ -503,7 +533,9 @@ module lsu_engine (
   assign debug_store_dc2_instr     = dc2_lsu_instr_out;
   assign debug_store_dc2_addr      = dc2_computed_addr;
   assign debug_store_dc2_wdata     = (dc2_store_buffer[XLEN-1:0] >> {dc2_computed_addr[1:0], 3'b000}) &
-                                     dc2_store_mask_base[XLEN-1:0];
+                                     (({XLEN{dc2_by}} & 32'h000000FF) |
+                                      ({XLEN{dc2_half}} & 32'h0000FFFF) |
+                                      ({XLEN{dc2_word}} & 32'hFFFFFFFF));
 
   assign debug_store_dc3_valid     = dc3_legal & dc3_store & dc3_unaligned_addr;
   assign debug_store_dc3_instr_tag = dc3_lsu_instr_tag_out;

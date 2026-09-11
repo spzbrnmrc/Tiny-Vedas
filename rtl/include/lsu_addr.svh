@@ -31,4 +31,44 @@ function automatic lsu_mem_op_t lsu_pack_req(
   return op;
 endfunction
 
+// Byte strobes for a store/load spanning one or two words (bit i = byte i).
+function automatic logic [7:0] lsu_strb_wide(
+    input logic by,
+    input logic half,
+    input logic word,
+    input logic [1:0] addr_lo
+);
+  logic [7:0] base;
+  base = ({8{by}} & 8'h01) | ({8{half}} & 8'h03) | ({8{word}} & 8'h0F);
+  return base << addr_lo;
+endfunction
+
+function automatic logic [2*XLEN-1:0] lsu_store_data_wide(
+    input logic [XLEN-1:0] rs2,
+    input logic [1:0] addr_lo
+);
+  return {{XLEN{1'b0}}, rs2} << {addr_lo, 3'b000};
+endfunction
+
+function automatic logic [XLEN-1:0] lsu_strb_to_mask(input logic [3:0] strb);
+  return {{8{strb[3]}}, {8{strb[2]}}, {8{strb[1]}}, {8{strb[0]}}};
+endfunction
+
+function automatic logic [XLEN-1:0] lsu_merge_bytes(
+    input logic [XLEN-1:0] mem,
+    input logic [XLEN-1:0] fwd,
+    input logic [3:0] strb
+);
+  logic [XLEN-1:0] mask;
+  mask = lsu_strb_to_mask(strb);
+  return (mem & ~mask) | (fwd & mask);
+endfunction
+
+function automatic logic lsu_strb_covers(
+    input logic [3:0] needed,
+    input logic [3:0] have
+);
+  return (needed & ~have) == 4'h0;
+endfunction
+
 `endif

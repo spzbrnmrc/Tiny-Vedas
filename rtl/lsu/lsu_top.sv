@@ -78,7 +78,8 @@ module lsu_top #(
     input  logic            dccm_rvalid_out[DCCM_PORT_COUNT-1:0],
     output logic [XLEN-1:0] dccm_waddr     [DCCM_PORT_COUNT-1:0],
     output logic            dccm_wen       [DCCM_PORT_COUNT-1:0],
-    output logic [XLEN-1:0] dccm_wdata     [DCCM_PORT_COUNT-1:0]
+    output logic [XLEN-1:0] dccm_wdata     [DCCM_PORT_COUNT-1:0],
+    output logic [     3:0] dccm_wstrb     [DCCM_PORT_COUNT-1:0]
 `ifdef TV_HAS_CORE_DEBUG
     ,
     output logic [XLEN-1:0] debug_instr_tag_out [REQ_PORT_COUNT-1:0],
@@ -117,6 +118,7 @@ module lsu_top #(
   logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_lookup_tag;
   logic cam_lookup_hit;
   logic [XLEN-1:0] cam_lookup_data;
+  logic [3:0] cam_lookup_strb;
   logic cam_update_valid;
   logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_update_index;
   logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_update_tag;
@@ -137,6 +139,7 @@ module lsu_top #(
   logic [XLEN-1:0] cam_lookup_addr;
   logic        ext_forward_valid;
   logic [XLEN-1:0] ext_forward_value;
+  logic [3:0] ext_forward_strb;
   logic engine_stall;
   logic [LSU_LANE_ID_WIDTH-1:0] wb_lane_id;
   logic [XLEN-1:0] wb_data;
@@ -155,6 +158,7 @@ module lsu_top #(
   logic store_cam_fill_valid;
   logic [XLEN-1:0] store_cam_fill_addr;
   logic [XLEN-1:0] store_cam_fill_data;
+  logic [3:0] store_cam_fill_strb;
 
   logic [XLEN-1:0] eng_dccm_raddr;
   logic eng_dccm_rvalid_in;
@@ -163,6 +167,7 @@ module lsu_top #(
   logic [XLEN-1:0] eng_dccm_waddr;
   logic eng_dccm_wen;
   logic [XLEN-1:0] eng_dccm_wdata;
+  logic [3:0] eng_dccm_wstrb;
 
 `ifdef TV_HAS_CORE_DEBUG
   logic [XLEN-1:0] eng_instr_tag_out;
@@ -211,10 +216,12 @@ module lsu_top #(
       .lookup_tag       (cam_lookup_tag),
       .lookup_hit       (cam_lookup_hit),
       .lookup_data      (cam_lookup_data),
+      .lookup_strb      (cam_lookup_strb),
       .cam_update_valid (cam_update_valid),
       .cam_update_index (cam_update_index),
       .cam_update_tag   (cam_update_tag),
       .cam_update_data  (cam_update_data),
+      .cam_update_strb  (store_cam_fill_strb),
       .cam_clear_valid  (cam_clear_valid),
       .cam_clear_index  (cam_clear_index),
       .cam_clear_tag    (cam_clear_tag),
@@ -232,6 +239,7 @@ module lsu_top #(
       .engine_op        (engine_op),
       .ext_forward_valid(ext_forward_valid),
       .ext_forward_value(ext_forward_value),
+      .ext_forward_strb (ext_forward_strb),
       .cam_lookup_valid (cam_lookup_valid),
       .cam_lookup_addr  (cam_lookup_addr),
       .engine_stall     (engine_stall),
@@ -253,13 +261,15 @@ module lsu_top #(
       .store_cam_fill_valid(store_cam_fill_valid),
       .store_cam_fill_addr (store_cam_fill_addr),
       .store_cam_fill_data (store_cam_fill_data),
+      .store_cam_fill_strb (store_cam_fill_strb),
       .dccm_raddr       (eng_dccm_raddr),
       .dccm_rvalid_in   (eng_dccm_rvalid_in),
       .dccm_rdata       (eng_dccm_rdata),
       .dccm_rvalid_out  (eng_dccm_rvalid_out),
       .dccm_waddr       (eng_dccm_waddr),
       .dccm_wen         (eng_dccm_wen),
-      .dccm_wdata       (eng_dccm_wdata)
+      .dccm_wdata       (eng_dccm_wdata),
+      .dccm_wstrb       (eng_dccm_wstrb)
 `ifdef TV_HAS_CORE_DEBUG
       ,
       .instr_tag_out            (eng_instr_tag_out),
@@ -294,6 +304,7 @@ module lsu_top #(
   /* CAM lookup uses DC1 registered address, not combo IDU stream. */
   assign ext_forward_valid  = cam_lookup_valid & cam_lookup_hit;
   assign ext_forward_value  = cam_lookup_data;
+  assign ext_forward_strb   = cam_lookup_strb;
 
   assign req_ready = '{default: 1'b1};
 
@@ -325,6 +336,7 @@ module lsu_top #(
       assign dccm_waddr[0]      = eng_dccm_waddr;
       assign dccm_wen[0]        = eng_dccm_wen;
       assign dccm_wdata[0]      = eng_dccm_wdata;
+      assign dccm_wstrb[0]      = eng_dccm_wstrb;
     end else begin : g_multi_dccm
       initial $error("lsu_top: DCCM_PORT_COUNT > 1 is not implemented yet");
     end

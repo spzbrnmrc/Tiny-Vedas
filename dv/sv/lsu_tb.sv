@@ -32,6 +32,7 @@ module lsu_tb;
   logic [XLEN-1:0] dccm_waddr;
   logic            dccm_wen;
   logic [XLEN-1:0] dccm_wdata;
+  logic [     3:0] dccm_wstrb;
 
   assign engine_op = lsu_pack_req(lsu_ctrl, '0);
 
@@ -43,6 +44,7 @@ module lsu_tb;
       .engine_op        (engine_op),
       .ext_forward_valid(1'b0),
       .ext_forward_value('0),
+      .ext_forward_strb ('0),
       .cam_lookup_valid (),
       .cam_lookup_addr  (),
       .engine_stall     (engine_stall),
@@ -57,16 +59,22 @@ module lsu_tb;
       .dc2_lane_valid   (),
       .store_retire_valid(),
       .store_retire_addr (),
+      .store_retire_line_clear_valid(),
+      .store_retire_line_clear_addr(),
+      .store_retire_line_clear_b_valid(),
+      .store_retire_line_clear_b_addr(),
       .store_cam_fill_valid(),
       .store_cam_fill_addr(),
       .store_cam_fill_data(),
+      .store_cam_fill_strb(),
       .dccm_raddr       (dccm_raddr),
       .dccm_rvalid_in   (dccm_rvalid_in),
       .dccm_rdata       (dccm_rdata),
       .dccm_rvalid_out  (dccm_rvalid_out),
       .dccm_waddr       (dccm_waddr),
       .dccm_wen         (dccm_wen),
-      .dccm_wdata       (dccm_wdata)
+      .dccm_wdata       (dccm_wdata),
+      .dccm_wstrb       (dccm_wstrb)
   );
 
   always_ff @(posedge clk) begin
