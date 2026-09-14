@@ -496,7 +496,9 @@ module lsu_engine (
   assign dccm_wdata[1]     = dc2_store_wide[XLEN-1:0];
   assign dccm_wstrb[1]     = dc2_strb_wide[3:0];
 
-  logic unused_rvalid = &{1'b0, dccm_rvalid_out[0], dccm_rvalid_out[1]};
+  /* sv2v flattens unpacked ports; Yosys rejects them in a reg initializer. */
+  logic unused_rvalid;
+  assign unused_rvalid = dccm_rvalid_out[0] | dccm_rvalid_out[1];
 
   assign wb_rd_wr_en = dc3_load & dc3_legal;
   assign wb_rd_addr  = dc3_rd_addr;
