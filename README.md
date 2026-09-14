@@ -32,7 +32,7 @@ Tiny Vedas is built to support **multiple CPU organizations** behind one hardwar
 
 - **ISA**: RISC-V RV32IM (32-bit integer + multiply/divide)
 - **Pipeline**: 4-stage (IFU → IDU0 → IDU1 → EXU)
-- **Memory**: Harvard architecture — separate ICCM and DCCM. The core keeps custom fetch/LSU ports; `soc_top` and the FPGA SoC convert those to **AXI4** (32-bit, ID width 4) into on-chip CCM slaves. ASIC PD still synthesizes `core_top` only.
+- **Memory**: Harvard architecture — separate ICCM and DCCM (true dual-port, both ports RW). The core keeps custom fetch/LSU ports; `soc_top` and the FPGA SoC convert those to **AXI4** (32-bit, ID width 4, two DCCM masters) into on-chip CCM slaves. FPGA muxes DCCM port B between the core and the host (halt-and-load). ASIC PD still synthesizes `core_top` only.
 - **Decode**: Spec-driven via the `open-decode-tables` submodule (YAML → SystemVerilog)
 - **Verification**: Python instruction-set simulator (ISS) compared against RTL traces
 
@@ -56,7 +56,7 @@ Tiny Vedas is built to support **multiple CPU organizations** behind one hardwar
 - Multi-cycle multiplier and divider
 - Booth-encoded 32×32 multiplier with per-operand signedness (MUL / MULH / MULHU / MULHSU)
 - Non-restoring divider with combinational Kogge-Stone adders on the iteration path
-- Unaligned load/store support with byte-strobe DCCM writes (no store RMW) and strobe-aware store-to-load forwarding
+- Unaligned load/store support with byte-strobe DCCM writes (no store RMW) and strobe-aware store-to-load forwarding. Dual RW DCCM ports complete both beats of an unaligned access in one cycle (stall only on a same-cycle load/store port conflict).
 
 ## Project Structure
 
@@ -355,7 +355,7 @@ Smoke tests cover ALU, forwarding, multiply, divide (`asm.basic_div`,
 | Memory | Depth | Width | Notes |
 |--------|-------|-------|-------|
 | ICCM (instructions) | 2^18 words | 32-bit | Loaded from ELF `.text` section |
-| DCCM (data) | 2^18 words | 32-bit | Byte-write RAM; loaded from `.data`, `.rodata`, `.bss`, etc. |
+| DCCM (data) | 2^18 words | 32-bit | Dual RW ports (byte strobes); loaded from `.data`, `.rodata`, `.bss`, etc. |
 
 Configured in `rtl/include/global.svh`. The Alveo overlay uses smaller windows (32 KiB ICCM / 64 KiB DCCM); see [fpga/alveo_u280/README.md](fpga/alveo_u280/README.md). UART (`0x00200000`) and EOT (`0x10000000`) writes are decoded on the core store path and do not enter DCCM.
 

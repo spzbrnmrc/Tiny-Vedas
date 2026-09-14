@@ -46,14 +46,15 @@ module soc_top #(
   logic                                 instr_mem_rdata_valid;
   logic      [ INSTR_MEM_TAG_WIDTH-1:0] instr_mem_tag_in;
 
-  logic      [                XLEN-1:0] dccm_raddr;
-  logic                                 dccm_rvalid_in;
-  logic      [                XLEN-1:0] dccm_rdata;
-  logic                                 dccm_rvalid_out;
-  logic      [                XLEN-1:0] dccm_waddr;
-  logic                                 dccm_wen;
-  logic      [                XLEN-1:0] dccm_wdata;
-  logic      [                     3:0] dccm_wstrb;
+  logic [XLEN-1:0] dccm_raddr     [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dccm_rvalid_in [LSU_DCCM_PORT_COUNT-1:0];
+  logic [XLEN-1:0] dccm_rdata     [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dccm_rvalid_out[LSU_DCCM_PORT_COUNT-1:0];
+  logic [XLEN-1:0] dccm_waddr     [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dccm_wen       [LSU_DCCM_PORT_COUNT-1:0];
+  logic [XLEN-1:0] dccm_wdata     [LSU_DCCM_PORT_COUNT-1:0];
+  logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dccm_wen_mem   [LSU_DCCM_PORT_COUNT-1:0];
 
   core_top #(
       .STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)
@@ -82,15 +83,19 @@ module soc_top #(
   );
 
 `ifndef SYNTHESIS
-  assign core_dccm_waddr = dccm_waddr;
-  assign core_dccm_wen   = dccm_wen;
-  assign core_dccm_wdata = dccm_wdata;
+  /* TB EOT/UART sniffer: aligned MMIO stores use write-primary port 1. */
+  assign core_dccm_wen   = dccm_wen[0] | dccm_wen[1];
+  assign core_dccm_waddr = dccm_wen[1] ? dccm_waddr[1] : dccm_waddr[0];
+  assign core_dccm_wdata = dccm_wen[1] ? dccm_wdata[1] : dccm_wdata[0];
 `endif
 
-  logic dccm_is_mmio;
-  logic dccm_wen_mem;
-  assign dccm_is_mmio = (dccm_waddr == UART_ADDRESS) || (dccm_waddr == EOT_ADDRESS);
-  assign dccm_wen_mem = dccm_wen & ~dccm_is_mmio;
+  genvar gp;
+  generate
+    for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_mmio
+      assign dccm_wen_mem[gp] = dccm_wen[gp] &
+          ~((dccm_waddr[gp] == UART_ADDRESS) || (dccm_waddr[gp] == EOT_ADDRESS));
+    end
+  endgenerate
 
   logic [   AXI_ID_WIDTH-1:0] imem_arid;
   logic [ AXI_ADDR_WIDTH-1:0] imem_araddr;
@@ -160,78 +165,82 @@ module soc_top #(
       .host_rvalid  ()
   );
 
-  logic [   AXI_ID_WIDTH-1:0] dmem_arid;
-  logic [ AXI_ADDR_WIDTH-1:0] dmem_araddr;
-  logic [   AXI_LEN_WIDTH-1:0] dmem_arlen;
-  logic [  AXI_SIZE_WIDTH-1:0] dmem_arsize;
-  logic [ AXI_BURST_WIDTH-1:0] dmem_arburst;
-  logic                        dmem_arvalid;
-  logic                        dmem_arready;
-  logic [   AXI_ID_WIDTH-1:0] dmem_rid;
-  logic [AXI_DATA_WIDTH-1:0]  dmem_rdata;
-  logic [ AXI_RESP_WIDTH-1:0] dmem_rresp;
-  logic                        dmem_rlast;
-  logic                        dmem_rvalid;
-  logic                        dmem_rready;
+  logic [   AXI_ID_WIDTH-1:0] dmem_arid     [LSU_DCCM_PORT_COUNT-1:0];
+  logic [ AXI_ADDR_WIDTH-1:0] dmem_araddr   [LSU_DCCM_PORT_COUNT-1:0];
+  logic [   AXI_LEN_WIDTH-1:0] dmem_arlen    [LSU_DCCM_PORT_COUNT-1:0];
+  logic [  AXI_SIZE_WIDTH-1:0] dmem_arsize   [LSU_DCCM_PORT_COUNT-1:0];
+  logic [ AXI_BURST_WIDTH-1:0] dmem_arburst  [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_arvalid  [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_arready  [LSU_DCCM_PORT_COUNT-1:0];
+  logic [   AXI_ID_WIDTH-1:0] dmem_rid      [LSU_DCCM_PORT_COUNT-1:0];
+  logic [AXI_DATA_WIDTH-1:0]  dmem_rdata_axi[LSU_DCCM_PORT_COUNT-1:0];
+  logic [ AXI_RESP_WIDTH-1:0] dmem_rresp    [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_rlast    [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_rvalid   [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_rready   [LSU_DCCM_PORT_COUNT-1:0];
 
-  logic [   AXI_ID_WIDTH-1:0] dmem_awid;
-  logic [ AXI_ADDR_WIDTH-1:0] dmem_awaddr;
-  logic [   AXI_LEN_WIDTH-1:0] dmem_awlen;
-  logic [  AXI_SIZE_WIDTH-1:0] dmem_awsize;
-  logic [ AXI_BURST_WIDTH-1:0] dmem_awburst;
-  logic                        dmem_awvalid;
-  logic                        dmem_awready;
-  logic [AXI_DATA_WIDTH-1:0]  dmem_wdata;
-  logic [AXI_STRB_WIDTH-1:0]  dmem_wstrb;
-  logic                        dmem_wlast;
-  logic                        dmem_wvalid;
-  logic                        dmem_wready;
-  logic [   AXI_ID_WIDTH-1:0] dmem_bid;
-  logic [ AXI_RESP_WIDTH-1:0] dmem_bresp;
-  logic                        dmem_bvalid;
-  logic                        dmem_bready;
+  logic [   AXI_ID_WIDTH-1:0] dmem_awid     [LSU_DCCM_PORT_COUNT-1:0];
+  logic [ AXI_ADDR_WIDTH-1:0] dmem_awaddr   [LSU_DCCM_PORT_COUNT-1:0];
+  logic [   AXI_LEN_WIDTH-1:0] dmem_awlen    [LSU_DCCM_PORT_COUNT-1:0];
+  logic [  AXI_SIZE_WIDTH-1:0] dmem_awsize   [LSU_DCCM_PORT_COUNT-1:0];
+  logic [ AXI_BURST_WIDTH-1:0] dmem_awburst  [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_awvalid  [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_awready  [LSU_DCCM_PORT_COUNT-1:0];
+  logic [AXI_DATA_WIDTH-1:0]  dmem_wdata_axi[LSU_DCCM_PORT_COUNT-1:0];
+  logic [AXI_STRB_WIDTH-1:0]  dmem_wstrb_axi[LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_wlast    [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_wvalid   [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_wready   [LSU_DCCM_PORT_COUNT-1:0];
+  logic [   AXI_ID_WIDTH-1:0] dmem_bid      [LSU_DCCM_PORT_COUNT-1:0];
+  logic [ AXI_RESP_WIDTH-1:0] dmem_bresp    [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_bvalid   [LSU_DCCM_PORT_COUNT-1:0];
+  logic                        dmem_bready   [LSU_DCCM_PORT_COUNT-1:0];
 
-  dmem_to_axi4 u_dmem_ad (
-      .clk            (clk),
-      .rstn           (rstn),
-      .dccm_raddr     (dccm_raddr),
-      .dccm_rvalid_in (dccm_rvalid_in),
-      .dccm_rdata     (dccm_rdata),
-      .dccm_rvalid_out(dccm_rvalid_out),
-      .dccm_waddr     (dccm_waddr),
-      .dccm_wen       (dccm_wen_mem),
-      .dccm_wdata     (dccm_wdata),
-      .dccm_wstrb     (dccm_wstrb),
-      .m_axi_arid     (dmem_arid),
-      .m_axi_araddr   (dmem_araddr),
-      .m_axi_arlen    (dmem_arlen),
-      .m_axi_arsize   (dmem_arsize),
-      .m_axi_arburst  (dmem_arburst),
-      .m_axi_arvalid  (dmem_arvalid),
-      .m_axi_arready  (dmem_arready),
-      .m_axi_rid      (dmem_rid),
-      .m_axi_rdata    (dmem_rdata),
-      .m_axi_rresp    (dmem_rresp),
-      .m_axi_rlast    (dmem_rlast),
-      .m_axi_rvalid   (dmem_rvalid),
-      .m_axi_rready   (dmem_rready),
-      .m_axi_awid     (dmem_awid),
-      .m_axi_awaddr   (dmem_awaddr),
-      .m_axi_awlen    (dmem_awlen),
-      .m_axi_awsize   (dmem_awsize),
-      .m_axi_awburst  (dmem_awburst),
-      .m_axi_awvalid  (dmem_awvalid),
-      .m_axi_awready  (dmem_awready),
-      .m_axi_wdata    (dmem_wdata),
-      .m_axi_wstrb    (dmem_wstrb),
-      .m_axi_wlast    (dmem_wlast),
-      .m_axi_wvalid   (dmem_wvalid),
-      .m_axi_wready   (dmem_wready),
-      .m_axi_bid      (dmem_bid),
-      .m_axi_bresp    (dmem_bresp),
-      .m_axi_bvalid   (dmem_bvalid),
-      .m_axi_bready   (dmem_bready)
-  );
+  generate
+    for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_dmem_ad
+      dmem_to_axi4 u_dmem_ad (
+          .clk            (clk),
+          .rstn           (rstn),
+          .dccm_raddr     (dccm_raddr[gp]),
+          .dccm_rvalid_in (dccm_rvalid_in[gp]),
+          .dccm_rdata     (dccm_rdata[gp]),
+          .dccm_rvalid_out(dccm_rvalid_out[gp]),
+          .dccm_waddr     (dccm_waddr[gp]),
+          .dccm_wen       (dccm_wen_mem[gp]),
+          .dccm_wdata     (dccm_wdata[gp]),
+          .dccm_wstrb     (dccm_wstrb[gp]),
+          .m_axi_arid     (dmem_arid[gp]),
+          .m_axi_araddr   (dmem_araddr[gp]),
+          .m_axi_arlen    (dmem_arlen[gp]),
+          .m_axi_arsize   (dmem_arsize[gp]),
+          .m_axi_arburst  (dmem_arburst[gp]),
+          .m_axi_arvalid  (dmem_arvalid[gp]),
+          .m_axi_arready  (dmem_arready[gp]),
+          .m_axi_rid      (dmem_rid[gp]),
+          .m_axi_rdata    (dmem_rdata_axi[gp]),
+          .m_axi_rresp    (dmem_rresp[gp]),
+          .m_axi_rlast    (dmem_rlast[gp]),
+          .m_axi_rvalid   (dmem_rvalid[gp]),
+          .m_axi_rready   (dmem_rready[gp]),
+          .m_axi_awid     (dmem_awid[gp]),
+          .m_axi_awaddr   (dmem_awaddr[gp]),
+          .m_axi_awlen    (dmem_awlen[gp]),
+          .m_axi_awsize   (dmem_awsize[gp]),
+          .m_axi_awburst  (dmem_awburst[gp]),
+          .m_axi_awvalid  (dmem_awvalid[gp]),
+          .m_axi_awready  (dmem_awready[gp]),
+          .m_axi_wdata    (dmem_wdata_axi[gp]),
+          .m_axi_wstrb    (dmem_wstrb_axi[gp]),
+          .m_axi_wlast    (dmem_wlast[gp]),
+          .m_axi_wvalid   (dmem_wvalid[gp]),
+          .m_axi_wready   (dmem_wready[gp]),
+          .m_axi_bid      (dmem_bid[gp]),
+          .m_axi_bresp    (dmem_bresp[gp]),
+          .m_axi_bvalid   (dmem_bvalid[gp]),
+          .m_axi_bready   (dmem_bready[gp])
+      );
+    end
+  endgenerate
 
   axi4_dccm #(
       .DEPTH(DATA_MEM_DEPTH),
@@ -240,35 +249,64 @@ module soc_top #(
   ) u_dccm (
       .clk          (clk),
       .rstn         (rstn),
-      .s_axi_arid   (dmem_arid),
-      .s_axi_araddr (dmem_araddr),
-      .s_axi_arlen  (dmem_arlen),
-      .s_axi_arsize (dmem_arsize),
-      .s_axi_arburst(dmem_arburst),
-      .s_axi_arvalid(dmem_arvalid),
-      .s_axi_arready(dmem_arready),
-      .s_axi_rid    (dmem_rid),
-      .s_axi_rdata  (dmem_rdata),
-      .s_axi_rresp  (dmem_rresp),
-      .s_axi_rlast  (dmem_rlast),
-      .s_axi_rvalid (dmem_rvalid),
-      .s_axi_rready (dmem_rready),
-      .s_axi_awid   (dmem_awid),
-      .s_axi_awaddr (dmem_awaddr),
-      .s_axi_awlen  (dmem_awlen),
-      .s_axi_awsize (dmem_awsize),
-      .s_axi_awburst(dmem_awburst),
-      .s_axi_awvalid(dmem_awvalid),
-      .s_axi_awready(dmem_awready),
-      .s_axi_wdata  (dmem_wdata),
-      .s_axi_wstrb  (dmem_wstrb),
-      .s_axi_wlast  (dmem_wlast),
-      .s_axi_wvalid (dmem_wvalid),
-      .s_axi_wready (dmem_wready),
-      .s_axi_bid    (dmem_bid),
-      .s_axi_bresp  (dmem_bresp),
-      .s_axi_bvalid (dmem_bvalid),
-      .s_axi_bready (dmem_bready),
+      .s_axi_arid   (dmem_arid[0]),
+      .s_axi_araddr (dmem_araddr[0]),
+      .s_axi_arlen  (dmem_arlen[0]),
+      .s_axi_arsize (dmem_arsize[0]),
+      .s_axi_arburst(dmem_arburst[0]),
+      .s_axi_arvalid(dmem_arvalid[0]),
+      .s_axi_arready(dmem_arready[0]),
+      .s_axi_rid    (dmem_rid[0]),
+      .s_axi_rdata  (dmem_rdata_axi[0]),
+      .s_axi_rresp  (dmem_rresp[0]),
+      .s_axi_rlast  (dmem_rlast[0]),
+      .s_axi_rvalid (dmem_rvalid[0]),
+      .s_axi_rready (dmem_rready[0]),
+      .s_axi_awid   (dmem_awid[0]),
+      .s_axi_awaddr (dmem_awaddr[0]),
+      .s_axi_awlen  (dmem_awlen[0]),
+      .s_axi_awsize (dmem_awsize[0]),
+      .s_axi_awburst(dmem_awburst[0]),
+      .s_axi_awvalid(dmem_awvalid[0]),
+      .s_axi_awready(dmem_awready[0]),
+      .s_axi_wdata  (dmem_wdata_axi[0]),
+      .s_axi_wstrb  (dmem_wstrb_axi[0]),
+      .s_axi_wlast  (dmem_wlast[0]),
+      .s_axi_wvalid (dmem_wvalid[0]),
+      .s_axi_wready (dmem_wready[0]),
+      .s_axi_bid    (dmem_bid[0]),
+      .s_axi_bresp  (dmem_bresp[0]),
+      .s_axi_bvalid (dmem_bvalid[0]),
+      .s_axi_bready (dmem_bready[0]),
+      .s1_axi_arid   (dmem_arid[1]),
+      .s1_axi_araddr (dmem_araddr[1]),
+      .s1_axi_arlen  (dmem_arlen[1]),
+      .s1_axi_arsize (dmem_arsize[1]),
+      .s1_axi_arburst(dmem_arburst[1]),
+      .s1_axi_arvalid(dmem_arvalid[1]),
+      .s1_axi_arready(dmem_arready[1]),
+      .s1_axi_rid    (dmem_rid[1]),
+      .s1_axi_rdata  (dmem_rdata_axi[1]),
+      .s1_axi_rresp  (dmem_rresp[1]),
+      .s1_axi_rlast  (dmem_rlast[1]),
+      .s1_axi_rvalid (dmem_rvalid[1]),
+      .s1_axi_rready (dmem_rready[1]),
+      .s1_axi_awid   (dmem_awid[1]),
+      .s1_axi_awaddr (dmem_awaddr[1]),
+      .s1_axi_awlen  (dmem_awlen[1]),
+      .s1_axi_awsize (dmem_awsize[1]),
+      .s1_axi_awburst(dmem_awburst[1]),
+      .s1_axi_awvalid(dmem_awvalid[1]),
+      .s1_axi_awready(dmem_awready[1]),
+      .s1_axi_wdata  (dmem_wdata_axi[1]),
+      .s1_axi_wstrb  (dmem_wstrb_axi[1]),
+      .s1_axi_wlast  (dmem_wlast[1]),
+      .s1_axi_wvalid (dmem_wvalid[1]),
+      .s1_axi_wready (dmem_wready[1]),
+      .s1_axi_bid    (dmem_bid[1]),
+      .s1_axi_bresp  (dmem_bresp[1]),
+      .s1_axi_bvalid (dmem_bvalid[1]),
+      .s1_axi_bready (dmem_bready[1]),
       .host_sel     (1'b0),
       .host_en      (1'b0),
       .host_wr      (1'b0),

@@ -25,14 +25,14 @@ module lsu_tb;
   logic [4:0] wb_rd_addr;
   logic wb_rd_wr_en;
 
-  logic [XLEN-1:0] dccm_raddr;
-  logic            dccm_rvalid_in;
-  logic [XLEN-1:0] dccm_rdata;
-  logic            dccm_rvalid_out;
-  logic [XLEN-1:0] dccm_waddr;
-  logic            dccm_wen;
-  logic [XLEN-1:0] dccm_wdata;
-  logic [     3:0] dccm_wstrb;
+  logic [XLEN-1:0] dccm_raddr[1:0];
+  logic            dccm_rvalid_in[1:0];
+  logic [XLEN-1:0] dccm_rdata[1:0];
+  logic            dccm_rvalid_out[1:0];
+  logic [XLEN-1:0] dccm_waddr[1:0];
+  logic            dccm_wen[1:0];
+  logic [XLEN-1:0] dccm_wdata[1:0];
+  logic [     3:0] dccm_wstrb[1:0];
 
   assign engine_op = lsu_pack_req(lsu_ctrl, '0);
 
@@ -45,8 +45,13 @@ module lsu_tb;
       .ext_forward_valid(1'b0),
       .ext_forward_value('0),
       .ext_forward_strb ('0),
+      .ext_forward_b_valid(1'b0),
+      .ext_forward_b_value('0),
+      .ext_forward_b_strb ('0),
       .cam_lookup_valid (),
       .cam_lookup_addr  (),
+      .cam_lookup_b_valid(),
+      .cam_lookup_b_addr(),
       .engine_stall     (engine_stall),
       .engine_busy      (),
       .wb_lane_id       (),
@@ -67,6 +72,10 @@ module lsu_tb;
       .store_cam_fill_addr(),
       .store_cam_fill_data(),
       .store_cam_fill_strb(),
+      .store_cam_fill_b_valid(),
+      .store_cam_fill_b_addr(),
+      .store_cam_fill_b_data(),
+      .store_cam_fill_b_strb(),
       .dccm_raddr       (dccm_raddr),
       .dccm_rvalid_in   (dccm_rvalid_in),
       .dccm_rdata       (dccm_rdata),
@@ -149,11 +158,17 @@ module lsu_tb;
   end
 
   always_ff @(posedge clk) begin
-    dccm_rdata <= 0;
-    dccm_rvalid_out <= 0;
-    if (dccm_rvalid_in) begin
-      dccm_rdata <= $urandom;
-      dccm_rvalid_out <= 1;
+    dccm_rdata[0] <= 0;
+    dccm_rdata[1] <= 0;
+    dccm_rvalid_out[0] <= 0;
+    dccm_rvalid_out[1] <= 0;
+    if (dccm_rvalid_in[0]) begin
+      dccm_rdata[0] <= $urandom;
+      dccm_rvalid_out[0] <= 1;
+    end
+    if (dccm_rvalid_in[1]) begin
+      dccm_rdata[1] <= $urandom;
+      dccm_rvalid_out[1] <= 1;
     end
   end
 

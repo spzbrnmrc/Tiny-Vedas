@@ -63,15 +63,15 @@ module core_top #(
     input  logic                                   instr_mem_rdata_valid,
     input  logic [        INSTR_MEM_TAG_WIDTH-1:0] instr_mem_tag_in,
 
-    /* Data Memory <-> Central LSU Interface */
-    output logic [XLEN-1:0] dccm_raddr,
-    output logic            dccm_rvalid_in,
-    input  logic [XLEN-1:0] dccm_rdata,
-    input  logic            dccm_rvalid_out,
-    output logic [XLEN-1:0] dccm_waddr,
-    output logic            dccm_wen,
-    output logic [XLEN-1:0] dccm_wdata,
-    output logic [     3:0] dccm_wstrb
+    /* Data Memory <-> Central LSU Interface (dual RW DCCM ports) */
+    output logic [XLEN-1:0] dccm_raddr     [LSU_DCCM_PORT_COUNT-1:0],
+    output logic            dccm_rvalid_in [LSU_DCCM_PORT_COUNT-1:0],
+    input  logic [XLEN-1:0] dccm_rdata     [LSU_DCCM_PORT_COUNT-1:0],
+    input  logic            dccm_rvalid_out[LSU_DCCM_PORT_COUNT-1:0],
+    output logic [XLEN-1:0] dccm_waddr     [LSU_DCCM_PORT_COUNT-1:0],
+    output logic            dccm_wen       [LSU_DCCM_PORT_COUNT-1:0],
+    output logic [XLEN-1:0] dccm_wdata     [LSU_DCCM_PORT_COUNT-1:0],
+    output logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0]
 `ifdef TV_HAS_CORE_DEBUG
     ,
     output core_debug_lane_t debug[ISSUE_WIDTH-1:0]
@@ -338,12 +338,20 @@ module core_top #(
       assign lsu_resp_rd_addr[0]  = '0;
       assign exu_lsu_busy[0]      = 1'b0;
       assign exu_lsu_stall[0]     = 1'b0;
-      assign dccm_raddr_arr[0]    = '0;
+      assign dccm_raddr_arr[0]     = '0;
       assign dccm_rvalid_in_arr[0] = 1'b0;
-      assign dccm_waddr_arr[0]    = '0;
-      assign dccm_wen_arr[0]      = 1'b0;
-      assign dccm_wdata_arr[0]    = '0;
-      assign dccm_wstrb_arr[0]    = '0;
+      assign dccm_waddr_arr[0]     = '0;
+      assign dccm_wen_arr[0]       = 1'b0;
+      assign dccm_wdata_arr[0]     = '0;
+      assign dccm_wstrb_arr[0]     = '0;
+      if (LSU_DCCM_PORT_COUNT > 1) begin : g_no_lsu_port1
+        assign dccm_raddr_arr[1]     = '0;
+        assign dccm_rvalid_in_arr[1] = 1'b0;
+        assign dccm_waddr_arr[1]     = '0;
+        assign dccm_wen_arr[1]       = 1'b0;
+        assign dccm_wdata_arr[1]     = '0;
+        assign dccm_wstrb_arr[1]     = '0;
+      end
 `ifdef TV_HAS_CORE_DEBUG
       assign lsu_debug_store_dc2_valid     = 1'b0;
       assign lsu_debug_store_dc2_instr_tag = '0;
@@ -359,14 +367,14 @@ module core_top #(
     end
   endgenerate
 
-  assign dccm_raddr         = dccm_raddr_arr[0];
-  assign dccm_rvalid_in     = dccm_rvalid_in_arr[0];
-  assign dccm_rdata_arr[0]  = dccm_rdata;
-  assign dccm_rvalid_out_arr[0] = dccm_rvalid_out;
-  assign dccm_waddr         = dccm_waddr_arr[0];
-  assign dccm_wen           = dccm_wen_arr[0];
-  assign dccm_wdata         = dccm_wdata_arr[0];
-  assign dccm_wstrb         = dccm_wstrb_arr[0];
+  assign dccm_raddr         = dccm_raddr_arr;
+  assign dccm_rvalid_in     = dccm_rvalid_in_arr;
+  assign dccm_rdata_arr     = dccm_rdata;
+  assign dccm_rvalid_out_arr = dccm_rvalid_out;
+  assign dccm_waddr         = dccm_waddr_arr;
+  assign dccm_wen           = dccm_wen_arr;
+  assign dccm_wdata         = dccm_wdata_arr;
+  assign dccm_wstrb         = dccm_wstrb_arr;
 
 `ifdef TV_HAS_CORE_DEBUG
   generate

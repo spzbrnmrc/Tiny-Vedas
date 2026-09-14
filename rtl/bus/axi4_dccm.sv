@@ -2,7 +2,9 @@
 //     Copyright (c) 2025 Siliscale Consulting, LLC
 //     Licensed under the Apache License, Version 2.0 (the "License");
 ///////////////////////////////////////////////////////////////////////////////
-// AXI4 slave around byte-write DCCM. Handles LEN=0 and LEN=1 INCR bursts.
+// Dual AXI4 slaves around a true dual-port DCCM.
+//   Slave 0 -> TDP port A (core LSU port 0)
+//   Slave 1 -> TDP port B (core LSU port 1), muxed with host when host_sel.
 
 `ifndef GLOBAL_SVH
 `include "global.svh"
@@ -20,6 +22,7 @@ module axi4_dccm #(
     input logic clk,
     input logic rstn,
 
+    /* AXI slave 0 (TDP port A) */
     input  logic [   AXI_ID_WIDTH-1:0] s_axi_arid,
     input  logic [ AXI_ADDR_WIDTH-1:0] s_axi_araddr,
     input  logic [   AXI_LEN_WIDTH-1:0] s_axi_arlen,
@@ -51,6 +54,38 @@ module axi4_dccm #(
     output logic                        s_axi_bvalid,
     input  logic                        s_axi_bready,
 
+    /* AXI slave 1 (TDP port B / core, muxed with host) */
+    input  logic [   AXI_ID_WIDTH-1:0] s1_axi_arid,
+    input  logic [ AXI_ADDR_WIDTH-1:0] s1_axi_araddr,
+    input  logic [   AXI_LEN_WIDTH-1:0] s1_axi_arlen,
+    input  logic [  AXI_SIZE_WIDTH-1:0] s1_axi_arsize,
+    input  logic [ AXI_BURST_WIDTH-1:0] s1_axi_arburst,
+    input  logic                        s1_axi_arvalid,
+    output logic                        s1_axi_arready,
+    output logic [   AXI_ID_WIDTH-1:0] s1_axi_rid,
+    output logic [AXI_DATA_WIDTH-1:0]  s1_axi_rdata,
+    output logic [ AXI_RESP_WIDTH-1:0] s1_axi_rresp,
+    output logic                        s1_axi_rlast,
+    output logic                        s1_axi_rvalid,
+    input  logic                        s1_axi_rready,
+
+    input  logic [   AXI_ID_WIDTH-1:0] s1_axi_awid,
+    input  logic [ AXI_ADDR_WIDTH-1:0] s1_axi_awaddr,
+    input  logic [   AXI_LEN_WIDTH-1:0] s1_axi_awlen,
+    input  logic [  AXI_SIZE_WIDTH-1:0] s1_axi_awsize,
+    input  logic [ AXI_BURST_WIDTH-1:0] s1_axi_awburst,
+    input  logic                        s1_axi_awvalid,
+    output logic                        s1_axi_awready,
+    input  logic [AXI_DATA_WIDTH-1:0]  s1_axi_wdata,
+    input  logic [AXI_STRB_WIDTH-1:0]  s1_axi_wstrb,
+    input  logic                        s1_axi_wlast,
+    input  logic                        s1_axi_wvalid,
+    output logic                        s1_axi_wready,
+    output logic [   AXI_ID_WIDTH-1:0] s1_axi_bid,
+    output logic [ AXI_RESP_WIDTH-1:0] s1_axi_bresp,
+    output logic                        s1_axi_bvalid,
+    input  logic                        s1_axi_bready,
+
     input  logic                     host_sel,
     input  logic                     host_en,
     input  logic                     host_wr,
@@ -63,153 +98,104 @@ module axi4_dccm #(
 
   localparam int WORD_AW = $clog2(DEPTH);
 
-  logic        rd_active;
-  logic [7:0]  rd_len;
-  logic [7:0]  rd_beat;
-  logic [AXI_ID_WIDTH-1:0] rd_id;
-  logic [AXI_ADDR_WIDTH-1:0] rd_addr;
+  logic               ram_ena, ram_enb;
+  logic [WIDTH/8-1:0] ram_wea, ram_web;
+  logic [WORD_AW-1:0] ram_addra, ram_addrb;
+  logic [WIDTH-1:0]   ram_dia, ram_dib, ram_doa, ram_dob;
 
-  logic ar_fire;
-  logic r_fire;
-  assign ar_fire = s_axi_arvalid & s_axi_arready;
-  assign r_fire  = s_axi_rvalid & s_axi_rready;
-  assign s_axi_arready = ~rd_active | (r_fire & s_axi_rlast);
+  logic               p0_en, p1_en;
+  logic [WIDTH/8-1:0] p0_we, p1_we;
+  logic [WORD_AW-1:0] p0_addr, p1_addr;
+  logic [WIDTH-1:0]   p0_di, p1_di;
 
-  logic [WORD_AW-1:0] dccm_raddr;
-  logic               dccm_rvalid_in;
-  logic [WIDTH-1:0]   dccm_rdata;
-  logic               dccm_rvalid_out;
+  axi4_tdp_port #(
+      .DEPTH(DEPTH),
+      .WIDTH(WIDTH)
+  ) u_p0 (
+      .clk          (clk),
+      .rstn         (rstn),
+      .port_enable  (1'b1),
+      .s_axi_arid   (s_axi_arid),
+      .s_axi_araddr (s_axi_araddr),
+      .s_axi_arlen  (s_axi_arlen),
+      .s_axi_arvalid(s_axi_arvalid),
+      .s_axi_arready(s_axi_arready),
+      .s_axi_rid    (s_axi_rid),
+      .s_axi_rdata  (s_axi_rdata),
+      .s_axi_rresp  (s_axi_rresp),
+      .s_axi_rlast  (s_axi_rlast),
+      .s_axi_rvalid (s_axi_rvalid),
+      .s_axi_rready (s_axi_rready),
+      .s_axi_awid   (s_axi_awid),
+      .s_axi_awaddr (s_axi_awaddr),
+      .s_axi_awlen  (s_axi_awlen),
+      .s_axi_awvalid(s_axi_awvalid),
+      .s_axi_awready(s_axi_awready),
+      .s_axi_wdata  (s_axi_wdata),
+      .s_axi_wstrb  (s_axi_wstrb),
+      .s_axi_wlast  (s_axi_wlast),
+      .s_axi_wvalid (s_axi_wvalid),
+      .s_axi_wready (s_axi_wready),
+      .s_axi_bid    (s_axi_bid),
+      .s_axi_bresp  (s_axi_bresp),
+      .s_axi_bvalid (s_axi_bvalid),
+      .s_axi_bready (s_axi_bready),
+      .ram_en       (p0_en),
+      .ram_we       (p0_we),
+      .ram_addr     (p0_addr),
+      .ram_di       (p0_di),
+      .ram_do       (ram_doa)
+  );
 
-  assign dccm_raddr = ar_fire ? s_axi_araddr[WORD_AW+1:2] :
-                      (rd_active ? rd_addr[WORD_AW+1:2] : '0);
-  assign dccm_rvalid_in = ar_fire | (rd_active & r_fire & ~s_axi_rlast);
+  axi4_tdp_port #(
+      .DEPTH(DEPTH),
+      .WIDTH(WIDTH)
+  ) u_p1 (
+      .clk          (clk),
+      .rstn         (rstn),
+      .port_enable  (~host_sel),
+      .s_axi_arid   (s1_axi_arid),
+      .s_axi_araddr (s1_axi_araddr),
+      .s_axi_arlen  (s1_axi_arlen),
+      .s_axi_arvalid(s1_axi_arvalid),
+      .s_axi_arready(s1_axi_arready),
+      .s_axi_rid    (s1_axi_rid),
+      .s_axi_rdata  (s1_axi_rdata),
+      .s_axi_rresp  (s1_axi_rresp),
+      .s_axi_rlast  (s1_axi_rlast),
+      .s_axi_rvalid (s1_axi_rvalid),
+      .s_axi_rready (s1_axi_rready),
+      .s_axi_awid   (s1_axi_awid),
+      .s_axi_awaddr (s1_axi_awaddr),
+      .s_axi_awlen  (s1_axi_awlen),
+      .s_axi_awvalid(s1_axi_awvalid),
+      .s_axi_awready(s1_axi_awready),
+      .s_axi_wdata  (s1_axi_wdata),
+      .s_axi_wstrb  (s1_axi_wstrb),
+      .s_axi_wlast  (s1_axi_wlast),
+      .s_axi_wvalid (s1_axi_wvalid),
+      .s_axi_wready (s1_axi_wready),
+      .s_axi_bid    (s1_axi_bid),
+      .s_axi_bresp  (s1_axi_bresp),
+      .s_axi_bvalid (s1_axi_bvalid),
+      .s_axi_bready (s1_axi_bready),
+      .ram_en       (p1_en),
+      .ram_we       (p1_we),
+      .ram_addr     (p1_addr),
+      .ram_di       (p1_di),
+      .ram_do       (ram_dob)
+  );
 
-  always_ff @(posedge clk) begin
-    if (!rstn) begin
-      rd_active <= 1'b0;
-      rd_len    <= '0;
-      rd_beat   <= '0;
-      rd_id     <= '0;
-      rd_addr   <= '0;
-    end else begin
-      if (ar_fire) begin
-        rd_active <= 1'b1;
-        rd_len    <= s_axi_arlen;
-        rd_beat   <= '0;
-        rd_id     <= s_axi_arid;
-        rd_addr   <= s_axi_araddr + 32'd4;
-      end else if (r_fire) begin
-        if (s_axi_rlast) begin
-          rd_active <= 1'b0;
-        end else begin
-          rd_beat <= rd_beat + 8'd1;
-          rd_addr <= rd_addr + 32'd4;
-        end
-      end
-    end
-  end
+  assign ram_ena   = p0_en;
+  assign ram_wea   = p0_we;
+  assign ram_addra = p0_addr;
+  assign ram_dia   = p0_di;
 
-  assign s_axi_rid    = rd_id;
-  assign s_axi_rdata  = dccm_rdata;
-  assign s_axi_rresp  = AXI_RESP_OKAY;
-  assign s_axi_rlast  = dccm_rvalid_out & (rd_beat == rd_len);
-  assign s_axi_rvalid = dccm_rvalid_out;
-
-  logic        wr_active;
-  logic        wr_have_aw;
-  logic [7:0]  wr_len;
-  logic [7:0]  wr_beat;
-  logic [AXI_ID_WIDTH-1:0] wr_id;
-  logic [AXI_ADDR_WIDTH-1:0] wr_addr;
-  logic        b_pend;
-
-  logic aw_fire;
-  logic w_fire;
-  logic b_fire;
-  assign aw_fire = s_axi_awvalid & s_axi_awready;
-  assign w_fire  = s_axi_wvalid & s_axi_wready;
-  assign b_fire  = s_axi_bvalid & s_axi_bready;
-
-  /* Do not stall AW/W on B: LSU issues back-to-back beats (unaligned stores)
-   * and expects 1-cycle BRAM writes. BREADY is always 1 from the adapter. */
-  assign s_axi_awready = ~wr_have_aw;
-  assign s_axi_wready  = (wr_have_aw | s_axi_awvalid);
-
-  logic [WORD_AW-1:0] dccm_waddr;
-  logic               dccm_wen;
-  logic [WIDTH-1:0]   dccm_wdata;
-  logic [WIDTH/8-1:0] dccm_wstrb;
-
-  logic [AXI_ADDR_WIDTH-1:0] wr_addr_now;
-  assign wr_addr_now = wr_have_aw ? wr_addr : s_axi_awaddr;
-  assign dccm_waddr  = wr_addr_now[WORD_AW+1:2];
-  assign dccm_wen    = w_fire;
-  assign dccm_wdata  = s_axi_wdata;
-  assign dccm_wstrb  = s_axi_wstrb;
-
-  always_ff @(posedge clk) begin
-    if (!rstn) begin
-      wr_active  <= 1'b0;
-      wr_have_aw <= 1'b0;
-      wr_len     <= '0;
-      wr_beat    <= '0;
-      wr_id      <= '0;
-      wr_addr    <= '0;
-      b_pend     <= 1'b0;
-    end else begin
-      if (aw_fire) begin
-        wr_have_aw <= 1'b1;
-        wr_active  <= 1'b1;
-        wr_len     <= s_axi_awlen;
-        wr_id      <= s_axi_awid;
-        wr_addr    <= s_axi_awaddr;
-        wr_beat    <= '0;
-      end
-
-      if (w_fire) begin
-        wr_addr <= wr_addr_now + 32'd4;
-        wr_beat <= wr_beat + 8'd1;
-        if (s_axi_wlast || (wr_have_aw && (wr_beat == wr_len)) ||
-            (aw_fire && (s_axi_awlen == 8'd0))) begin
-          wr_have_aw <= 1'b0;
-          wr_active  <= 1'b0;
-          b_pend     <= 1'b1;
-        end
-      end
-
-      /* Keep B outstanding if a new write completes the same cycle B is taken. */
-      if (b_fire && !(w_fire && (s_axi_wlast || (wr_have_aw && (wr_beat == wr_len)) ||
-                                 (aw_fire && (s_axi_awlen == 8'd0))))) begin
-        b_pend <= 1'b0;
-      end
-    end
-  end
-
-  assign s_axi_bid    = wr_id;
-  assign s_axi_bresp  = AXI_RESP_OKAY;
-  assign s_axi_bvalid = b_pend;
-
-  logic [WIDTH-1:0] ram_doa;
-  logic [WIDTH-1:0] ram_dob;
-  logic               ram_ena;
-  logic               ram_enb;
-  logic [WIDTH/8-1:0] ram_wea;
-  logic [WIDTH/8-1:0] ram_web;
-  logic [WORD_AW-1:0] ram_addra;
-  logic [WORD_AW-1:0] ram_addrb;
-  logic [WIDTH-1:0]   ram_dia;
-  logic [WIDTH-1:0]   ram_dib;
-
-  assign ram_ena   = host_sel ? 1'b0 : dccm_rvalid_in;
-  assign ram_addra = dccm_raddr;
-  assign ram_wea   = '0;
-  assign ram_dia   = '0;
-
-  assign ram_enb   = host_sel ? host_en : dccm_wen;
-  assign ram_web   = host_sel ? ({(WIDTH/8){host_wr}} & host_wstrb)
-                              : ({(WIDTH/8){dccm_wen}} & dccm_wstrb);
-  assign ram_addrb = host_sel ? host_addr : dccm_waddr;
-  assign ram_dib   = host_sel ? host_din : dccm_wdata;
+  /* Host vs core mux on TDP port B. Host only while the core is halted. */
+  assign ram_enb   = host_sel ? host_en : p1_en;
+  assign ram_web   = host_sel ? ({(WIDTH/8){host_wr}} & host_wstrb) : p1_we;
+  assign ram_addrb = host_sel ? host_addr : p1_addr;
+  assign ram_dib   = host_sel ? host_din : p1_di;
 
   sync_tdp_mem #(
       .DEPTH(DEPTH),
@@ -231,17 +217,12 @@ module axi4_dccm #(
   );
 
   always_ff @(posedge clk) begin
-    if (!rstn) dccm_rvalid_out <= 1'b0;
-    else       dccm_rvalid_out <= ram_ena;
-  end
-  assign dccm_rdata = ram_doa;
-
-  always_ff @(posedge clk) begin
     if (!rstn) host_rvalid <= 1'b0;
     else       host_rvalid <= host_sel & host_en & ~host_wr;
   end
   assign host_dout = ram_dob;
 
-  logic unused_ax = &{1'b0, s_axi_arsize, s_axi_arburst, s_axi_awsize, s_axi_awburst, wr_active};
+  logic unused_ax = &{1'b0, s_axi_arsize, s_axi_arburst, s_axi_awsize, s_axi_awburst,
+                       s1_axi_arsize, s1_axi_arburst, s1_axi_awsize, s1_axi_awburst};
 
 endmodule

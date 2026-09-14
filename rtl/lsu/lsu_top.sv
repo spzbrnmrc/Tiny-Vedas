@@ -119,10 +119,20 @@ module lsu_top #(
   logic cam_lookup_hit;
   logic [XLEN-1:0] cam_lookup_data;
   logic [3:0] cam_lookup_strb;
+  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_lookup_b_index;
+  logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_lookup_b_tag;
+  logic cam_lookup_b_hit;
+  logic [XLEN-1:0] cam_lookup_b_data;
+  logic [3:0] cam_lookup_b_strb;
   logic cam_update_valid;
   logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_update_index;
   logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_update_tag;
   logic [XLEN-1:0] cam_update_data;
+  logic cam_update_b_valid;
+  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_update_b_index;
+  logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_update_b_tag;
+  logic [XLEN-1:0] cam_update_b_data;
+  logic [3:0] cam_update_b_strb;
   logic cam_clear_valid;
   logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] cam_clear_index;
   logic [LSU_STORE_CAM_TAG_WIDTH-1:0] cam_clear_tag;
@@ -137,9 +147,14 @@ module lsu_top #(
   logic        stream_valid;
   logic        cam_lookup_valid;
   logic [XLEN-1:0] cam_lookup_addr;
+  logic        cam_lookup_b_valid;
+  logic [XLEN-1:0] cam_lookup_b_addr;
   logic        ext_forward_valid;
   logic [XLEN-1:0] ext_forward_value;
   logic [3:0] ext_forward_strb;
+  logic        ext_forward_b_valid;
+  logic [XLEN-1:0] ext_forward_b_value;
+  logic [3:0] ext_forward_b_strb;
   logic engine_stall;
   logic [LSU_LANE_ID_WIDTH-1:0] wb_lane_id;
   logic [XLEN-1:0] wb_data;
@@ -159,15 +174,19 @@ module lsu_top #(
   logic [XLEN-1:0] store_cam_fill_addr;
   logic [XLEN-1:0] store_cam_fill_data;
   logic [3:0] store_cam_fill_strb;
+  logic store_cam_fill_b_valid;
+  logic [XLEN-1:0] store_cam_fill_b_addr;
+  logic [XLEN-1:0] store_cam_fill_b_data;
+  logic [3:0] store_cam_fill_b_strb;
 
-  logic [XLEN-1:0] eng_dccm_raddr;
-  logic eng_dccm_rvalid_in;
-  logic [XLEN-1:0] eng_dccm_rdata;
-  logic eng_dccm_rvalid_out;
-  logic [XLEN-1:0] eng_dccm_waddr;
-  logic eng_dccm_wen;
-  logic [XLEN-1:0] eng_dccm_wdata;
-  logic [3:0] eng_dccm_wstrb;
+  logic [XLEN-1:0] eng_dccm_raddr[1:0];
+  logic eng_dccm_rvalid_in[1:0];
+  logic [XLEN-1:0] eng_dccm_rdata[1:0];
+  logic eng_dccm_rvalid_out[1:0];
+  logic [XLEN-1:0] eng_dccm_waddr[1:0];
+  logic eng_dccm_wen[1:0];
+  logic [XLEN-1:0] eng_dccm_wdata[1:0];
+  logic [3:0] eng_dccm_wstrb[1:0];
 
 `ifdef TV_HAS_CORE_DEBUG
   logic [XLEN-1:0] eng_instr_tag_out;
@@ -217,11 +236,21 @@ module lsu_top #(
       .lookup_hit       (cam_lookup_hit),
       .lookup_data      (cam_lookup_data),
       .lookup_strb      (cam_lookup_strb),
+      .lookup_b_index   (cam_lookup_b_index),
+      .lookup_b_tag     (cam_lookup_b_tag),
+      .lookup_b_hit     (cam_lookup_b_hit),
+      .lookup_b_data    (cam_lookup_b_data),
+      .lookup_b_strb    (cam_lookup_b_strb),
       .cam_update_valid (cam_update_valid),
       .cam_update_index (cam_update_index),
       .cam_update_tag   (cam_update_tag),
       .cam_update_data  (cam_update_data),
       .cam_update_strb  (store_cam_fill_strb),
+      .cam_update_b_valid(cam_update_b_valid),
+      .cam_update_b_index(cam_update_b_index),
+      .cam_update_b_tag (cam_update_b_tag),
+      .cam_update_b_data(cam_update_b_data),
+      .cam_update_b_strb(cam_update_b_strb),
       .cam_clear_valid  (cam_clear_valid),
       .cam_clear_index  (cam_clear_index),
       .cam_clear_tag    (cam_clear_tag),
@@ -240,8 +269,13 @@ module lsu_top #(
       .ext_forward_valid(ext_forward_valid),
       .ext_forward_value(ext_forward_value),
       .ext_forward_strb (ext_forward_strb),
+      .ext_forward_b_valid(ext_forward_b_valid),
+      .ext_forward_b_value(ext_forward_b_value),
+      .ext_forward_b_strb (ext_forward_b_strb),
       .cam_lookup_valid (cam_lookup_valid),
       .cam_lookup_addr  (cam_lookup_addr),
+      .cam_lookup_b_valid(cam_lookup_b_valid),
+      .cam_lookup_b_addr(cam_lookup_b_addr),
       .engine_stall     (engine_stall),
       .engine_busy      (),
       .wb_lane_id       (wb_lane_id),
@@ -262,6 +296,10 @@ module lsu_top #(
       .store_cam_fill_addr (store_cam_fill_addr),
       .store_cam_fill_data (store_cam_fill_data),
       .store_cam_fill_strb (store_cam_fill_strb),
+      .store_cam_fill_b_valid(store_cam_fill_b_valid),
+      .store_cam_fill_b_addr (store_cam_fill_b_addr),
+      .store_cam_fill_b_data (store_cam_fill_b_data),
+      .store_cam_fill_b_strb (store_cam_fill_b_strb),
       .dccm_raddr       (eng_dccm_raddr),
       .dccm_rvalid_in   (eng_dccm_rvalid_in),
       .dccm_rdata       (eng_dccm_rdata),
@@ -301,10 +339,14 @@ module lsu_top #(
 
   assign cam_lookup_index   = cam_lookup_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
   assign cam_lookup_tag     = cam_lookup_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
-  /* CAM lookup uses DC1 registered address, not combo IDU stream. */
+  assign cam_lookup_b_index = cam_lookup_b_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
+  assign cam_lookup_b_tag   = cam_lookup_b_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
   assign ext_forward_valid  = cam_lookup_valid & cam_lookup_hit;
   assign ext_forward_value  = cam_lookup_data;
   assign ext_forward_strb   = cam_lookup_strb;
+  assign ext_forward_b_valid = cam_lookup_b_valid & cam_lookup_b_hit;
+  assign ext_forward_b_value = cam_lookup_b_data;
+  assign ext_forward_b_strb  = cam_lookup_b_strb;
 
   assign req_ready = '{default: 1'b1};
 
@@ -313,6 +355,11 @@ module lsu_top #(
   assign cam_update_index = store_cam_fill_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
   assign cam_update_tag   = store_cam_fill_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
   assign cam_update_data  = store_cam_fill_data;
+  assign cam_update_b_valid = store_cam_fill_b_valid;
+  assign cam_update_b_index = store_cam_fill_b_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
+  assign cam_update_b_tag   = store_cam_fill_b_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
+  assign cam_update_b_data  = store_cam_fill_b_data;
+  assign cam_update_b_strb  = store_cam_fill_b_strb;
 
   assign cam_clear_valid = store_retire_valid;
   assign cam_clear_index = store_retire_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
@@ -326,19 +373,17 @@ module lsu_top #(
   assign cam_clear_c_index = store_retire_line_clear_b_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
   assign cam_clear_c_tag   = store_retire_line_clear_b_addr[XLEN-1:LSU_STORE_CAM_INDEX_WIDTH];
 
-  /* DCCM port 0 is the scalar SoC attachment point. */
+  /* Dual TDP ports: engine port i maps 1:1 onto DCCM port i. */
   generate
-    if (DCCM_PORT_COUNT == 1) begin : g_single_dccm
-      assign dccm_raddr[0]      = eng_dccm_raddr;
-      assign dccm_rvalid_in[0]  = eng_dccm_rvalid_in;
-      assign eng_dccm_rdata     = dccm_rdata[0];
-      assign eng_dccm_rvalid_out = dccm_rvalid_out[0];
-      assign dccm_waddr[0]      = eng_dccm_waddr;
-      assign dccm_wen[0]        = eng_dccm_wen;
-      assign dccm_wdata[0]      = eng_dccm_wdata;
-      assign dccm_wstrb[0]      = eng_dccm_wstrb;
-    end else begin : g_multi_dccm
-      initial $error("lsu_top: DCCM_PORT_COUNT > 1 is not implemented yet");
+    for (genvar p = 0; p < DCCM_PORT_COUNT; p++) begin : g_dccm_ports
+      assign dccm_raddr[p]       = eng_dccm_raddr[p];
+      assign dccm_rvalid_in[p]   = eng_dccm_rvalid_in[p];
+      assign eng_dccm_rdata[p]   = dccm_rdata[p];
+      assign eng_dccm_rvalid_out[p] = dccm_rvalid_out[p];
+      assign dccm_waddr[p]       = eng_dccm_waddr[p];
+      assign dccm_wen[p]         = eng_dccm_wen[p];
+      assign dccm_wdata[p]       = eng_dccm_wdata[p];
+      assign dccm_wstrb[p]       = eng_dccm_wstrb[p];
     end
   endgenerate
 
