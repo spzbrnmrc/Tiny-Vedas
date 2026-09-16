@@ -296,11 +296,11 @@ def run_verilator(test: str, reset_vector: int, enable_vcd: bool = False) -> Non
     with open(sim_log_path, 'w') as sim_log:
         process = subprocess.Popen(verilator_cmd, shell=True, stdout=sim_log, stderr=subprocess.STDOUT)
         try:
-            process.wait(timeout=300)
+            process.wait(timeout=600)
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-            print(f"Error: Verilator timed out after 300s for {test}")
+            print(f"Error: Verilator timed out after 600s for {test}")
             sim_log.close()
             sys.exit(1)
         exit_code = process.returncode

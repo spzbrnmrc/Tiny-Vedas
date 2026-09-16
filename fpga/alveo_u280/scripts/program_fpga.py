@@ -29,6 +29,9 @@ PROGRAM_TCL = BOARD_DIR / "tcl" / "program.tcl"
 
 XILINX_VENDOR = 0x10EE
 QDMA_DEVICE = 0x903F
+# Factory/golden PROM image occupies the same slot until removed + rescanned.
+GOLDEN_DEVICE = 0xD00C
+REMOVE_DEVICES = (QDMA_DEVICE, GOLDEN_DEVICE)
 QDMA_MODPROBE = "qdma-pf"
 
 
@@ -55,20 +58,30 @@ def find_vivado() -> str:
     )
 
 
-def find_qdma_bdfs() -> list[str]:
+def find_pci_bdfs(*device_ids: int) -> list[str]:
     sysfs = Path("/sys/bus/pci/devices")
     out: list[str] = []
     if not sysfs.is_dir():
         return out
+    want = set(device_ids)
     for p in sorted(sysfs.iterdir()):
         try:
             vend = int((p / "vendor").read_text().strip(), 16)
             dev = int((p / "device").read_text().strip(), 16)
         except OSError:
             continue
-        if vend == XILINX_VENDOR and dev == QDMA_DEVICE:
+        if vend == XILINX_VENDOR and dev in want:
             out.append(p.name)
     return out
+
+
+def find_qdma_bdfs() -> list[str]:
+    return find_pci_bdfs(QDMA_DEVICE)
+
+
+def find_endpoints_to_remove() -> list[str]:
+    """QDMA user image or Alveo golden image still occupying the slot."""
+    return find_pci_bdfs(*REMOVE_DEVICES)
 
 
 def write_sysfs(path: Path, value: str) -> None:
@@ -193,7 +206,7 @@ def main() -> int:
     vivado = find_vivado()
     args.log.parent.mkdir(parents=True, exist_ok=True)
 
-    bdfs_before = find_qdma_bdfs()
+    bdfs_before = find_endpoints_to_remove()
     print(f"[program_fpga] PCI before: {bdfs_before or '(none)'}")
 
     if not args.no_rescan and not args.no_driver:
@@ -220,8 +233,10 @@ def main() -> int:
         return 0
 
     # Link may drop during config; brief settle before remove.
+    # After JTAG from the golden image the slot is still 10ee:d00c until
+    # that endpoint is removed — a plain rescan keeps the golden PF.
     time.sleep(1.0)
-    bdfs = find_qdma_bdfs() or bdfs_before
+    bdfs = find_endpoints_to_remove() or bdfs_before
     if not bdfs:
         # Device already gone — just rescan.
         print("[program_fpga] no PCI endpoint present; rescanning")

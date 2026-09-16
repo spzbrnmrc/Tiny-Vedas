@@ -52,7 +52,7 @@ localparam int EXU_HAS_LSU[EXU_COUNT] = {_sv_array([u.lsu for u in exu_units])};
 
 localparam int LSU_LOAD_QUEUE_DEPTH  = 4;
 localparam int LSU_STORE_QUEUE_DEPTH = 4;
-localparam int LSU_DCCM_PORT_COUNT   = 1;
+localparam int LSU_DCCM_PORT_COUNT   = 2;
 
 `endif
 """

@@ -45,18 +45,28 @@ module lsu_store_queue #(
     output logic [$clog2(DEPTH):0] occupancy,
     output logic [ISSUE_WIDTH-1:0] lane_pending,
 
-    /* Direct-mapped store CAM for load forwarding */
+    /* Direct-mapped store CAM for load forwarding (two lookups for unaligned) */
     input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] lookup_index,
     input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]   lookup_tag,
     output logic                                  lookup_hit,
     output logic [XLEN-1:0]                       lookup_data,
     output logic [3:0]                            lookup_strb,
+    input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0] lookup_b_index,
+    input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]   lookup_b_tag,
+    output logic                                  lookup_b_hit,
+    output logic [XLEN-1:0]                       lookup_b_data,
+    output logic [3:0]                            lookup_b_strb,
 
     input  logic                                  cam_update_valid,
     input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_update_index,
     input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]    cam_update_tag,
     input  logic [XLEN-1:0]                       cam_update_data,
     input  logic [3:0]                            cam_update_strb,
+    input  logic                                  cam_update_b_valid,
+    input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_update_b_index,
+    input  logic [LSU_STORE_CAM_TAG_WIDTH-1:0]    cam_update_b_tag,
+    input  logic [XLEN-1:0]                       cam_update_b_data,
+    input  logic [3:0]                            cam_update_b_strb,
 
     input  logic                                  cam_clear_valid,
     input  logic [LSU_STORE_CAM_INDEX_WIDTH-1:0]  cam_clear_index,
@@ -99,6 +109,7 @@ module lsu_store_queue #(
   logic cam_clear_b_fire;
   logic cam_clear_c_fire;
   logic cam_update_fire;
+  logic cam_update_b_fire;
 
   assign push_addr  = lsu_effective_addr(push_data);
   assign push_index = push_addr[LSU_STORE_CAM_INDEX_WIDTH-1:0];
@@ -128,6 +139,10 @@ module lsu_store_queue #(
                        (cam_tag[lookup_index] == lookup_tag);
   assign lookup_data = cam_data[lookup_index];
   assign lookup_strb = cam_strb[lookup_index];
+  assign lookup_b_hit  = cam_valid[lookup_b_index] & cam_data_valid[lookup_b_index] &
+                         (cam_tag[lookup_b_index] == lookup_b_tag);
+  assign lookup_b_data = cam_data[lookup_b_index];
+  assign lookup_b_strb = cam_strb[lookup_b_index];
 
   assign cam_clear_fire = cam_clear_valid &
       ((cam_tag[cam_clear_index] == cam_clear_tag) |
@@ -145,6 +160,10 @@ module lsu_store_queue #(
       ~((cam_clear_fire & (cam_update_index == cam_clear_index)) |
         (cam_clear_b_fire & (cam_update_index == cam_clear_b_index)) |
         (cam_clear_c_fire & (cam_update_index == cam_clear_c_index)));
+  assign cam_update_b_fire = cam_update_b_valid &
+      ~((cam_clear_fire & (cam_update_b_index == cam_clear_index)) |
+        (cam_clear_b_fire & (cam_update_b_index == cam_clear_b_index)) |
+        (cam_clear_c_fire & (cam_update_b_index == cam_clear_c_index)));
 
   register_en_sync_rstn #(
       .WIDTH(PTR_WIDTH)
@@ -228,6 +247,17 @@ module lsu_store_queue #(
           cam_data_din       = cam_update_data;
           cam_strb_en        = 1'b1;
           cam_strb_din       = cam_update_strb;
+        end else if (cam_update_b_fire && (cam_update_b_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot))) begin
+          cam_valid_en       = 1'b1;
+          cam_valid_din      = 1'b1;
+          cam_data_valid_en  = 1'b1;
+          cam_data_valid_din = 1'b1;
+          cam_tag_en         = 1'b1;
+          cam_tag_din        = cam_update_b_tag;
+          cam_data_en        = 1'b1;
+          cam_data_din       = cam_update_b_data;
+          cam_strb_en        = 1'b1;
+          cam_strb_din       = cam_update_b_strb;
         end else if ((cam_clear_fire && (cam_clear_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot))) ||
                      (cam_clear_b_fire && (cam_clear_b_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot))) ||
                      (cam_clear_c_fire && (cam_clear_c_index == LSU_STORE_CAM_INDEX_WIDTH'(cam_slot)))) begin

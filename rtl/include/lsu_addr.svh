@@ -71,4 +71,13 @@ function automatic logic lsu_strb_covers(
   return (needed & ~have) == 4'h0;
 endfunction
 
+function automatic logic lsu_is_unaligned(
+    input logic by,
+    input logic half,
+    input logic word,
+    input logic [1:0] addr_lo
+);
+  return (word & (|addr_lo)) | (half & (&addr_lo));
+endfunction
+
 `endif
