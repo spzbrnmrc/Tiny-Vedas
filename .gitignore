@@ -18,6 +18,8 @@ x*/
 *.elf
 *.bin
 *.dump
+*.o
+*.dis
 
 # Local toolchain installs (see `make deps`)
 .local/
