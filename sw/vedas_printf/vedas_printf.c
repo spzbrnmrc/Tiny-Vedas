@@ -3,13 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "soc_defines.h"
 #include <stdarg.h>
 #include <stdio.h>
 
 #define STR(x) #x
 #define XSTR(s) STR(s)
-
-#define MMIO_UART_ADDR 0x200000
 
 #ifdef TEST
 void uart_write(int b) {

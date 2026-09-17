@@ -38,13 +38,42 @@ memory:
   iccm_depth_words: <int>
   dccm_depth_words: <int>
   link_address: <hex>
-  uart_address: <hex>
-  eot_address: <hex>
+
+soc: default                 # hw/soc/<name>.yaml
 
 software:
   materializer: flat_row_major   # PyVedas buffer layout strategy
   vectorize_min_numel: <int>     # 0 = always scalar loops
 ```
+
+UART/EOT (and later GEMM-class accelerators) live in the **SoC device map**, not the CPU preset. `memory.uart_address` / `eot_address` on the loaded `HwConfig` are derived from that map.
+
+## SoC device map (`hw/soc/`)
+
+Device-tree-style YAML consumed by `make soc` / `sim_manager`. It generates:
+
+| Artifact | Role |
+|----------|------|
+| `rtl/include/mmio_map.svh` | Address ranges + indices for `rtl/bus/mmio_mux.sv` |
+| `sw/include/soc_defines.h` | C / preprocessed `.S` macros (`MMIO_UART_ADDR`, …) |
+| `sw/include/soc_defines.inc` | Gas `.include` for `.s` tests |
+
+```yaml
+name: default
+version: 1
+devices:
+  - name: uart
+    compatible: tv,uart-tx
+    role: uart                 # uart | eot | mmio | accelerator
+    base: 0x00200000
+    size: 4                    # bytes; decode is [base, base+size)
+    access: [write]
+    # module: gemm_top         # optional RTL instance name (future)
+    sw:
+      addr_macro: MMIO_UART_ADDR
+```
+
+Stores in any mapped range are stripped from DCCM. `role: uart` and `role: eot` are required today (TB console, sim finish, FPGA FIFO/sticky).
 
 ## Usage
 
@@ -76,5 +105,5 @@ assert cfg.cpu.kind.value == "ooo"
 | Consumer | Reads today | Will use next |
 |----------|-------------|---------------|
 | **PyVedas** | `software.materializer`, `vectorize_min_numel` | tiled layouts, vector intrinsics |
-| **sim_manager** | memory map, preset name in artifacts | ICCM/DCCM depths, RTL plusargs |
-| **RTL** | (manual) | generate `global.svh` from preset (future) |
+| **sim_manager** | SoC map → `soc_defines.h`, ISS EOT address | ICCM/DCCM depths, RTL plusargs |
+| **RTL** | `mmio_mux` + `mmio_map.svh` from SoC YAML | instantiate `module:` accelerators |

@@ -72,7 +72,7 @@ Tiny-Vedas/
 │   │   ├── rv32im_decoder.sv   # Generated — do not hand-edit
 │   │   └── decode_out_t.svh      # Generated — do not hand-edit
 │   ├── exu/                 # ALU, MUL, DIV, LSU
-│   ├── include/             # global.svh, types.svh, axi4.svh
+│   ├── include/             # global.svh, types.svh, axi4.svh, mmio_map.svh (generated)
 │   └── lib/                 # Byte-write ICCM/DCCM (`sync_tdp_mem`)
 ├── fpga/alveo_u280/         # Alveo U280 bitstream, host load, card smoke
 ├── dv/
@@ -80,6 +80,7 @@ Tiny-Vedas/
 │   └── verilator/           # Verilator C++ harness
 ├── hw/                      # Hardware presets (scalar, VLIW, OoO + vector)
 │   ├── presets/             # YAML configs shared by RTL/SW (see hw/README.md)
+│   ├── soc/                 # SoC device map (MMIO mux + soc_defines.h)
 │   └── types.py             # Typed HwConfig loader
 ├── tests/
 │   ├── asm/                 # Assembly test programs
@@ -91,7 +92,9 @@ Tiny-Vedas/
 ├── tools/
 │   ├── sim_manager.py       # Main test runner (compile → ISS → RTL → compare)
 │   └── rv_iss.py            # Reference instruction-set simulator
-├── sw/vedas_printf/         # Bare-metal printf library for C tests
+├── sw/
+│   ├── include/             # soc_defines.h (generated — do not hand-edit)
+│   └── vedas_printf/        # Bare-metal printf library for C tests
 ├── SVLib/                   # Git submodule — reusable SystemVerilog primitives
 ├── open-decode-tables/      # Git submodule — YAML decode table generator
 ├── scripts/
@@ -265,6 +268,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
 | `make fpga alveo_u280` | Build the Alveo U280 bitstream (Vivado 2023.2) |
 | `make fpga_smoke alveo_u280` | Run `tests/smoke.tlist` on the programmed Alveo (needs sudo) |
 | `make decodes` | Regenerate `rtl/idu/rv32im_decoder.sv` from YAML |
+| `make soc` | Regenerate `mmio_map.svh` and `sw/include/soc_defines.h` from `hw/soc/` |
 | `make clean` | Remove build artifacts (`work/`, `obj_dir/`, logs, VCDs) |
 
 ### Per-test output
@@ -284,7 +288,7 @@ Each test writes artifacts to `work/<test>/`:
 
 Tiny Vedas uses **co-simulation**: a Python ISS generates a golden trace, the RTL simulator produces its own trace, and `sim_manager.py` compares them instruction by instruction (PC, opcode, register writes, memory stores, branches).
 
-Programs signal completion by storing `0xdeadbeef` to address `0x10000000`. See `tests/asm/eot_sequence.s`.
+Programs signal completion by storing `EOT_MAGIC` (`0xdeadbeef`) to `MMIO_EOT_ADDR` (`0x10000000`). See `tests/asm/eot_sequence.s` and `sw/include/soc_defines.h`.
 
 ## Arithmetic units
 
@@ -357,15 +361,15 @@ Smoke tests cover ALU, forwarding, multiply, divide (`asm.basic_div`,
 | ICCM (instructions) | 2^18 words | 32-bit | Loaded from ELF `.text` section |
 | DCCM (data) | 2^18 words | 32-bit | Dual RW ports (byte strobes); loaded from `.data`, `.rodata`, `.bss`, etc. |
 
-Configured in `rtl/include/global.svh`. The Alveo overlay uses smaller windows (32 KiB ICCM / 64 KiB DCCM); see [fpga/alveo_u280/README.md](fpga/alveo_u280/README.md). UART (`0x00200000`) and EOT (`0x10000000`) writes are decoded on the core store path and do not enter DCCM.
+Configured in `rtl/include/global.svh`. The Alveo overlay uses smaller windows (32 KiB ICCM / 64 KiB DCCM); see [fpga/alveo_u280/README.md](fpga/alveo_u280/README.md). UART (`0x00200000`) and EOT (`0x10000000`) writes are decoded on the core store path and do not enter DCCM. Addresses come from [`hw/soc/default.yaml`](hw/soc/default.yaml); software uses generated [`sw/include/soc_defines.h`](sw/include/soc_defines.h).
 
 ### Software-visible addresses
 
 | Address | Purpose |
 |---------|---------|
-| `0x00100000` | Default link address for test programs (`-Wl,-Ttext=0x100000`) |
-| `0x00200000` | MMIO UART — bare-metal `printf` output (`sw/vedas_printf`) |
-| `0x10000000` | End-of-test flag — write `0xdeadbeef` to halt simulation |
+| `SOC_LINK_ADDRESS` (`0x00100000`) | Default link address for test programs (`-Wl,-Ttext=0x100000`) |
+| `MMIO_UART_ADDR` (`0x00200000`) | MMIO UART — bare-metal `printf` output (`sw/vedas_printf`) |
+| `MMIO_EOT_ADDR` (`0x10000000`) | End-of-test flag — write `EOT_MAGIC` to halt simulation |
 | `0x80000000` | Default initial stack pointer (register x2) |
 
 The reset vector is taken from the ELF `_start` symbol, not hardcoded.
@@ -384,6 +388,22 @@ This regenerates:
 - `rtl/idu/decode_out_t.svh`
 
 To add or modify instructions, edit the YAML in the `open-decode-tables` submodule, commit and push there, then update the submodule pointer in this repo and run `make decodes`.
+
+## SoC device map
+
+MMIO devices (UART, EOT, later accelerators) are described in `hw/soc/default.yaml`, not hardcoded in RTL or C. CPU presets select the map with `soc: default`.
+
+```bash
+make soc
+```
+
+This regenerates:
+
+- `rtl/include/mmio_map.svh` — address ranges and indices for `rtl/bus/mmio_mux.sv`
+- `sw/include/soc_defines.h` — C / preprocessed `.S` macros (`MMIO_UART_ADDR`, `EOT_MAGIC`, …)
+- `sw/include/soc_defines.inc` — gas `.include` for `.s` tests
+
+`sim_manager.py` runs the same generation at the start of a test. To add a device, edit the YAML and re-run `make soc`. Bare-metal software includes `soc_defines.h` and uses the generated macros — see `sw/vedas_printf/vedas_printf.c`.
 
 ## Writing Tests
 
@@ -491,6 +511,7 @@ make rtl2gds ORFS_TARGET=synth # stop after synthesis
 
 ```bash
 make decodes   # ensure decoder is up to date before synthesis
+make soc       # ensure MMIO map + soc_defines.h match hw/soc/
 ```
 
 ## Performance Scoreboard
@@ -517,6 +538,7 @@ After pulling submodule updates:
 ```bash
 git submodule update --init --recursive
 make decodes
+make soc
 ```
 
 ## Continuous Integration
@@ -526,7 +548,8 @@ GitHub Actions runs on every push and pull request to `main`. The workflow (`.gi
 1. Checkout with submodules
 2. `make deps` — system packages, Python venv, RISC-V toolchain, Verilator, `scripts/env.sh`
 3. `make decodes` — regenerate the instruction decoder
-4. `make smoke-verilator` — full smoke regression (`tests/smoke.tlist`)
+4. `make soc` — regenerate the MMIO map and `soc_defines.h`
+5. `make smoke-verilator` — full smoke regression (`tests/smoke.tlist`)
 
 No Vivado license is required. `make deps` writes `scripts/env.sh`; subsequent `make` targets load it automatically — no manual `PATH` or `source venv/bin/activate` in CI.
 

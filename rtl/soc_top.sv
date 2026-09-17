@@ -17,6 +17,10 @@
 `include "axi4.svh"
 `endif
 
+`ifndef MMIO_MAP_SVH
+`include "mmio_map.svh"
+`endif
+
 module soc_top #(
     parameter string ICCM_INIT_FILE = "",
     parameter string DCCM_INIT_FILE = "",
@@ -29,15 +33,11 @@ module soc_top #(
 `ifndef SYNTHESIS
     ,
     output core_debug_lane_t core_debug[ISSUE_WIDTH-1:0],
-    output logic [XLEN-1:0]  core_dccm_waddr,
-    output logic             core_dccm_wen,
-    output logic [XLEN-1:0]  core_dccm_wdata
+    output logic            mmio_dev_we    [MMIO_DEV_COUNT-1:0],
+    output logic [XLEN-1:0] mmio_dev_wdata [MMIO_DEV_COUNT-1:0]
 `endif
 
 );
-
-  localparam logic [XLEN-1:0] UART_ADDRESS = 32'h00200000;
-  localparam logic [XLEN-1:0] EOT_ADDRESS  = 32'h10000000;
 
   logic      [INSTR_MEM_ADDR_WIDTH-1:0] instr_mem_addr;
   logic                                 instr_mem_addr_valid;
@@ -55,6 +55,11 @@ module soc_top #(
   logic [XLEN-1:0] dccm_wdata     [LSU_DCCM_PORT_COUNT-1:0];
   logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0];
   logic            dccm_wen_mem   [LSU_DCCM_PORT_COUNT-1:0];
+`ifdef SYNTHESIS
+  logic            mmio_dev_we    [MMIO_DEV_COUNT-1:0];
+  logic [XLEN-1:0] mmio_dev_wdata [MMIO_DEV_COUNT-1:0];
+`endif
+  logic [XLEN-1:0] mmio_dev_addr  [MMIO_DEV_COUNT-1:0];
 
   core_top #(
       .STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)
@@ -82,20 +87,16 @@ module soc_top #(
 `endif
   );
 
-`ifndef SYNTHESIS
-  /* TB EOT/UART sniffer: aligned MMIO stores use write-primary port 1. */
-  assign core_dccm_wen   = dccm_wen[0] | dccm_wen[1];
-  assign core_dccm_waddr = dccm_wen[1] ? dccm_waddr[1] : dccm_waddr[0];
-  assign core_dccm_wdata = dccm_wen[1] ? dccm_wdata[1] : dccm_wdata[0];
-`endif
-
   genvar gp;
-  generate
-    for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_mmio
-      assign dccm_wen_mem[gp] = dccm_wen[gp] &
-          ~((dccm_waddr[gp] == UART_ADDRESS) || (dccm_waddr[gp] == EOT_ADDRESS));
-    end
-  endgenerate
+  mmio_mux u_mmio (
+      .addr     (dccm_waddr),
+      .wen      (dccm_wen),
+      .wdata    (dccm_wdata),
+      .mem_wen  (dccm_wen_mem),
+      .dev_we   (mmio_dev_we),
+      .dev_addr (mmio_dev_addr),
+      .dev_wdata(mmio_dev_wdata)
+  );
 
   logic [   AXI_ID_WIDTH-1:0] imem_arid;
   logic [ AXI_ADDR_WIDTH-1:0] imem_araddr;

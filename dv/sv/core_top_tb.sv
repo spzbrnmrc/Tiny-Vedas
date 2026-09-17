@@ -45,6 +45,10 @@
 `include "types.svh"
 `endif
 
+`ifndef MMIO_MAP_SVH
+`include "mmio_map.svh"
+`endif
+
 module core_top_tb;
 
   localparam string ICCM_INIT_FILE = `ICCM_INIT_FILE;
@@ -65,9 +69,8 @@ module core_top_tb;
   core_debug_lane_t dbg;
 
   core_debug_lane_t core_debug[ISSUE_WIDTH-1:0];
-  logic [XLEN-1:0]  core_dccm_waddr;
-  logic             core_dccm_wen;
-  logic [XLEN-1:0]  core_dccm_wdata;
+  logic            mmio_dev_we    [MMIO_DEV_COUNT-1:0];
+  logic [XLEN-1:0] mmio_dev_wdata [MMIO_DEV_COUNT-1:0];
 
   /* DUT Instantiation */
   soc_top #(
@@ -95,14 +98,14 @@ module core_top_tb;
 
   logic finish_seq_detected;
   always_ff @(posedge clk) begin
-    if (core_dccm_wen & core_dccm_waddr == 32'h10000000) begin
+    if (mmio_dev_we[MMIO_IDX_EOT]) begin
       finish_seq_detected <= 1;
     end
   end
 
   always_ff @(posedge clk) begin
-    if (core_dccm_wen & core_dccm_waddr == 32'h00200000) begin
-      $fwrite(fd_console, "%c", core_dccm_wdata[7:0]);
+    if (mmio_dev_we[MMIO_IDX_UART]) begin
+      $fwrite(fd_console, "%c", mmio_dev_wdata[MMIO_IDX_UART][7:0]);
     end
   end
 

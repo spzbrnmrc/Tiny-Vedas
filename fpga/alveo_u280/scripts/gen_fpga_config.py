@@ -17,6 +17,7 @@ sys.path.insert(0, str(_REPO))
 
 from hw.load import load_hw_config  # noqa: E402
 from hw.rtl_config import write_hw_config_svh  # noqa: E402
+from hw.soc_config import render_mmio_map_svh  # noqa: E402
 
 
 def _write_global_svh(path: Path, iccm_depth: int, dccm_depth: int) -> None:
@@ -78,6 +79,7 @@ def main() -> int:
 
     _write_global_svh(out_inc / "global.svh", iccm, dccm)
     write_hw_config_svh(out_inc / "hw_config.svh", hw)
+    (out_inc / "mmio_map.svh").write_text(render_mmio_map_svh(hw.soc), encoding="utf-8")
 
     # types / decode headers stay shared from rtl/include
     for name in ("types.svh", "mul_pd_config.svh"):

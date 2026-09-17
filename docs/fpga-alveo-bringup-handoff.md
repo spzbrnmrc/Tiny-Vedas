@@ -33,7 +33,7 @@ We brought Tiny-Vedas up on an Alveo U280 over PCIe: one bitstream, host loads p
 | **B** | Glue Tiny-Vedas core + UART mailbox + EOT | Run real RV32 code from host-loaded memories |
 | **C** | `fpga_runner` over `tests/smoke.tlist` | Full regression on card, same list as `make smoke` |
 
-**Final FPGA map (B16):** BAR2 **128 KiB** — CTRL 4 KiB + **ICCM 32 KiB** + **DCCM 64 KiB**. VERSION `0x000B0010`.
+**Final FPGA map (B16):** BAR2 **128 KiB** — CTRL 4 KiB + **ICCM 32 KiB** + **DCCM 64 KiB**. VERSION `0x000B0011`.
 
 ---
 

@@ -31,6 +31,9 @@ jobs:
       - name: Regenerate decoder
         run: make decodes
 
+      - name: Regenerate SoC MMIO map
+        run: make soc
+
       - name: Run smoke regression (Verilator)
         run: make smoke-verilator
 

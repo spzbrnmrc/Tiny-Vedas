@@ -8,7 +8,7 @@ Automated Slice B smoke on Alveo U280.
   sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --prog uart
   sudo python3 fpga/alveo_u280/scripts/fpga_smoke.py --bin path/to/image.bin
 
-Requires: Slice B bitstream programmed (VERSION 0x000B0010, BAR2 128 KiB),
+Requires: Slice B bitstream programmed (VERSION 0x000B0011, BAR2 128 KiB),
 PCIe enumerated, root for BAR mmap. qdma-pf may be loaded or not.
 """
 

@@ -17,6 +17,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from hw import HwConfig, default_hw_config_path, load_hw_config
 from hw.rtl_config import write_hw_config_svh
+from hw.soc_config import write_soc_artifacts
 from elftools.elf.elffile import ELFFile
 import subprocess
 import shutil
@@ -57,13 +58,22 @@ def _pyvedas_python() -> str:
     return "python3"
 
 
+def _sw_include_dir() -> str:
+    return str(_REPO_ROOT / "sw" / "include")
+
+
 def _compile_riscv_elf(test: str, sources: List[str], include_dirs: List[str]) -> int:
     """Link *sources* into work/<test>/test.elf. Returns the reset vector."""
     compile_log = os.path.join("work", test, "compile.log")
-    inc_flags = " ".join(f"-I{inc}" for inc in include_dirs)
+    inc_dirs = list(include_dirs)
+    sw_inc = _sw_include_dir()
+    if sw_inc not in inc_dirs:
+        inc_dirs.append(sw_inc)
+    inc_flags = " ".join(f"-I{inc}" for inc in inc_dirs)
+    as_inc_flags = " ".join(f"-Wa,-I,{inc}" for inc in inc_dirs)
     source_list = " ".join(sources)
     cmd = (
-        f"riscv64-unknown-elf-gcc -O0 {inc_flags} "
+        f"riscv64-unknown-elf-gcc -O0 {inc_flags} {as_inc_flags} "
         f"-march=rv32im -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
         f"-fno-builtin-printf -fno-common -falign-functions=4 "
         f"{source_list} -lgcc "
@@ -132,7 +142,16 @@ def run_gen(test: str, hw_config: HwConfig) -> int:
             )
             return reset_vector
         elif extension == ".s":
-            os.system(f"riscv64-unknown-elf-gcc -O0 -I{os.path.join('tests', test_path[0])} -march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib {os.path.join('tests', test_path[0], test_path[1] + extension)} -Wl,-Ttext=0x100000 > {os.path.join('work', test, 'compile.log')}")
+            asm_src = os.path.join("tests", test_path[0], test_path[1] + extension)
+            asm_inc = os.path.join("tests", test_path[0])
+            sw_inc = _sw_include_dir()
+            os.system(
+                f"riscv64-unknown-elf-gcc -O0 -I{asm_inc} -I{sw_inc} "
+                f"-Wa,-I,{asm_inc} -Wa,-I,{sw_inc} "
+                f"-march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib "
+                f"{asm_src} -Wl,-Ttext=0x100000 "
+                f"> {os.path.join('work', test, 'compile.log')} 2>&1"
+            )
         elif extension == ".c":
             c_source = os.path.join('tests', test_path[0], test_path[1] + extension)
             eot_source = os.path.join('tests', test_path[0], 'asm_functions', 'eot_sequence.s')
@@ -162,7 +181,7 @@ def run_gen(test: str, hw_config: HwConfig) -> int:
         print(f"Error compiling test {test}: {e}")
         sys.exit(1)
 
-def run_iss(test: str, reset_vector: int) -> None:
+def run_iss(test: str, reset_vector: int, hw_config: HwConfig) -> None:
     """Run the ISS for a test."""
     # Create the folder for the test
     elf_path = os.path.join("work", test, "test.elf")
@@ -177,10 +196,12 @@ def run_iss(test: str, reset_vector: int) -> None:
     try:
         import subprocess
         cmd = ""
+        eot = hw_config.soc.require_role("eot")
+        eot_flags = f"--eot-addr {hex(eot.base)} --eot-size {hex(eot.size)}"
         if has_dmem:
-            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
+            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {eot_flags} -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
         else:
-            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 -o {os.path.join('work', test, 'iss.log')}"
+            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {eot_flags} -o {os.path.join('work', test, 'iss.log')}"
         result = subprocess.run(cmd, shell=True)
         if result.returncode != 0:
             print(f"ISS returned error code {result.returncode} for test {test}. See iss.log for details.")
@@ -543,7 +564,7 @@ def run_e2e(
     """Run a test through the entire pipeline."""
     try:
         reset_vector = run_gen(test, hw_config)
-        run_iss(test, reset_vector)
+        run_iss(test, reset_vector, hw_config)
         prepare_imem(test)
         if simulator == "verilator":
             run_verilator(test, reset_vector, enable_vcd=enable_vcd)
@@ -587,7 +608,14 @@ def main():
     args = parser.parse_args()
     hw_config = load_hw_config(args.hw_config)
     write_hw_config_svh(_REPO_ROOT / "rtl" / "include" / "hw_config.svh", hw_config)
+    write_soc_artifacts(
+        hw_config,
+        mmio_svh=_REPO_ROOT / "rtl" / "include" / "mmio_map.svh",
+        soc_h=_REPO_ROOT / "sw" / "include" / "soc_defines.h",
+        soc_inc=_REPO_ROOT / "sw" / "include" / "soc_defines.inc",
+    )
     safe_write(f"Hardware preset: {hw_config.name} ({hw_config.cpu.kind.value})")
+    safe_write(f"SoC map: {hw_config.soc.name}")
     
     # Create work directory
     os.makedirs("work", exist_ok=True)

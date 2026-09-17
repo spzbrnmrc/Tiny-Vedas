@@ -8,7 +8,7 @@ sudo python3 fpga/alveo_u280/scripts/program_fpga.py
 
 What it does: JTAG-program `work/tiny_vedas_u280.bit` → unload `qdma-pf` → PCIe remove/rescan → reload driver → check VERSION.
 
-Expect **BAR2 = 128 KiB**, VERSION `0x000B0010`.
+Expect **BAR2 = 128 KiB**, VERSION `0x000B0011`.
 
 ## Smoke / runner
 

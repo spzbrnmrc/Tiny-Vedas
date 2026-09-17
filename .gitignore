@@ -18,10 +18,13 @@ x*/
 *.elf
 *.bin
 *.dump
+*.o
+*.dis
 
 # Local toolchain installs (see `make deps`)
 .local/
 deps/
+.cache/
 
 # Generated environment (see `make deps`)
 scripts/env.sh
@@ -35,6 +38,11 @@ __pycache__/
 
 # Generated decode tables (regenerate with `make decodes`)
 open-decode-tables/gen/
+
+# Generated SoC MMIO map (regenerate with `make soc`)
+rtl/include/mmio_map.svh
+sw/include/soc_defines.h
+sw/include/soc_defines.inc
 
 # Local reference copy of the RISC-V ISA manual (not a project dependency)
 riscv-isa-manual/

@@ -28,12 +28,13 @@
 `include "axi4.svh"
 `endif
 
+`ifndef MMIO_MAP_SVH
+`include "mmio_map.svh"
+`endif
+
 module vedas_fpga_soc #(
-    parameter logic [31:0] VERSION = 32'h000B_0010,
+    parameter logic [31:0] VERSION = 32'h000B_0011,
     parameter int UART_FIFO_DEPTH = 256,
-    parameter logic [31:0] UART_ADDRESS = 32'h0020_0000,
-    parameter logic [31:0] EOT_ADDRESS = 32'h1000_0000,
-    parameter logic [31:0] EOT_MAGIC = 32'hDEAD_BEEF,
     parameter logic [XLEN-1:0] STACK_POINTER_INIT_VALUE = 32'h8000_0000
 ) (
     input  wire        s_axi_aclk,
@@ -208,20 +209,31 @@ module vedas_fpga_soc #(
   logic            dccm_wen       [LSU_DCCM_PORT_COUNT-1:0];
   logic [XLEN-1:0] dccm_wdata     [LSU_DCCM_PORT_COUNT-1:0];
   logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dccm_wen_hit   [LSU_DCCM_PORT_COUNT-1:0];
   logic            dccm_wen_mem   [LSU_DCCM_PORT_COUNT-1:0];
+  logic            mmio_dev_we    [MMIO_DEV_COUNT-1:0];
+  logic [XLEN-1:0] mmio_dev_addr  [MMIO_DEV_COUNT-1:0];
+  logic [XLEN-1:0] mmio_dev_wdata [MMIO_DEV_COUNT-1:0];
 
-  wire dccm_is_uart = (dccm_wen[1] && (dccm_waddr[1] == UART_ADDRESS)) ||
-                      (dccm_wen[0] && (dccm_waddr[0] == UART_ADDRESS));
-  wire dccm_is_eot  = (dccm_wen[1] && (dccm_waddr[1] == EOT_ADDRESS) && (dccm_wdata[1] == EOT_MAGIC)) ||
-                      (dccm_wen[0] && (dccm_waddr[0] == EOT_ADDRESS) && (dccm_wdata[0] == EOT_MAGIC));
-  wire [7:0] dccm_uart_byte = (dccm_wen[1] && (dccm_waddr[1] == UART_ADDRESS)) ?
-                              dccm_wdata[1][7:0] : dccm_wdata[0][7:0];
+  mmio_mux u_mmio (
+      .addr     (dccm_waddr),
+      .wen      (dccm_wen),
+      .wdata    (dccm_wdata),
+      .mem_wen  (dccm_wen_hit),
+      .dev_we   (mmio_dev_we),
+      .dev_addr (mmio_dev_addr),
+      .dev_wdata(mmio_dev_wdata)
+  );
+
+  wire dccm_is_uart = mmio_dev_we[MMIO_IDX_UART];
+  wire dccm_is_eot  = mmio_dev_we[MMIO_IDX_EOT] &&
+                      (mmio_dev_wdata[MMIO_IDX_EOT] == EOT_MAGIC);
+  wire [7:0] dccm_uart_byte = mmio_dev_wdata[MMIO_IDX_UART][7:0];
 
   genvar gp;
   generate
     for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_mmio
-      wire mmio = (dccm_waddr[gp] == UART_ADDRESS) || (dccm_waddr[gp] == EOT_ADDRESS);
-      assign dccm_wen_mem[gp] = dccm_wen[gp] && !mmio && core_rstn;
+      assign dccm_wen_mem[gp] = dccm_wen_hit[gp] && core_rstn;
     end
   endgenerate
 
