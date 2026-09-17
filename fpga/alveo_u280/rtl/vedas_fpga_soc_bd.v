@@ -30,7 +30,9 @@ module vedas_fpga_soc_bd (
     output wire [31:0] s_axi_rdata,
     output wire [1:0]  s_axi_rresp,
     output wire        s_axi_rvalid,
-    input  wire        s_axi_rready
+    input  wire        s_axi_rready,
+
+    output wire [15:0] gemm_ila
 );
 
   vedas_fpga_soc u_soc (
@@ -54,7 +56,8 @@ module vedas_fpga_soc_bd (
       .s_axi_rdata     (s_axi_rdata),
       .s_axi_rresp     (s_axi_rresp),
       .s_axi_rvalid    (s_axi_rvalid),
-      .s_axi_rready    (s_axi_rready)
+      .s_axi_rready    (s_axi_rready),
+      .gemm_ila        (gemm_ila)
   );
 
 endmodule

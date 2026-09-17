@@ -1,4 +1,4 @@
-current_design core_top
+current_design __DESIGN_NAME__
 
 set clk_name core_clock
 set clk_port_name clk

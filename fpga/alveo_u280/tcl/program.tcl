@@ -53,8 +53,11 @@ refresh_hw_device -update_hw_probes false $hw
 set_property PROGRAM.FILE $BIT $hw
 program_hw_devices $hw
 
-# Optional: confirm DONE
-refresh_hw_device -update_hw_probes false $hw
+# ILA is on core_clk (MMCM from QDMA axi_aclk). Right after JTAG the
+# PCIe clock may be down, so debug-core scan fails even when DONE is high.
+if {[catch {refresh_hw_device -update_hw_probes false $hw} err]} {
+  puts "WARNING: post-program refresh skipped ($err)"
+}
 puts "DONE: programmed $hw with $BIT"
 
 close_hw_target

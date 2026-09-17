@@ -32,6 +32,11 @@ echo "==> OpenROAD-flow-scripts (DESIGN_CONFIG=${ORFS_CONFIG}, WORK_HOME=${ORFS_
 # shellcheck disable=SC1090
 source "${ORFS_ENV}"
 
+# Kepler LEC in the public ORFS image is an AVX-512 binary. Skip it — OpenROAD
+# itself does not need AVX-512, and LEC is optional after CTS resizer.
+export LEC_CHECK="${LEC_CHECK:-0}"
+unset KEPLER_FORMAL_EXE
+
 # ORFS defaults WORK_HOME to the flow tree (read-only in Docker / system installs).
 export WORK_HOME="${ORFS_WORK_HOME}"
 make -C "${ORFS_FLOW}" DESIGN_CONFIG="${ORFS_CONFIG}" ${ORFS_TARGET:-all}

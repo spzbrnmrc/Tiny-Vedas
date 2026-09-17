@@ -71,7 +71,8 @@ module core_top #(
     output logic [XLEN-1:0] dccm_waddr     [LSU_DCCM_PORT_COUNT-1:0],
     output logic            dccm_wen       [LSU_DCCM_PORT_COUNT-1:0],
     output logic [XLEN-1:0] dccm_wdata     [LSU_DCCM_PORT_COUNT-1:0],
-    output logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0]
+    output logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0],
+    input  logic            accel_hold
 `ifdef TV_HAS_CORE_DEBUG
     ,
     output core_debug_lane_t debug[ISSUE_WIDTH-1:0]
@@ -168,7 +169,7 @@ module core_top #(
       .instr                (instr),
       .instr_valid          (instr_valid),
       .instr_tag            (instr_tag),
-      .pipe_stall           (pipe_stall | idu0_rsb_hit_stall),
+      .pipe_stall           (pipe_stall | idu0_rsb_hit_stall | accel_hold),
       .pc_exu               (pc_out),
       .pc_load              (pc_load)
   );
@@ -219,7 +220,7 @@ module core_top #(
       .instr      (instr[0]),
       .instr_valid(instr_valid[0]),
       .instr_tag  (instr_tag[0]),
-      .pipe_stall (pipe_stall | idu0_rsb_hit_stall),
+      .pipe_stall (pipe_stall | idu0_rsb_hit_stall | accel_hold),
       .idu0_out   (idu0_out),
       .pipe_flush (pc_load[0])
   );
@@ -248,6 +249,7 @@ module core_top #(
       .exu_div_busy      (exu_div_busy[0]),
       .exu_lsu_busy      (exu_lsu_busy[0]),
       .exu_lsu_stall     (exu_lsu_stall[0]),
+      .accel_hold        (accel_hold),
       .pipe_stall        (pipe_stall),
       .idu0_rsb_hit_stall(idu0_rsb_hit_stall),
       .pipe_flush        (pc_load)

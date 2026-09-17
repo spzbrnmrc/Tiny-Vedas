@@ -11,7 +11,13 @@ from __future__ import annotations
 
 import torch.fx as fx
 
-from .memory import MemoryPlan, StaticBuffer, format_shape
+from .memory import (
+    BufferLayout,
+    ElementType,
+    MemoryPlan,
+    StaticBuffer,
+    format_shape,
+)
 from .registry import RegistryError, RuntimeOp
 
 
@@ -53,6 +59,49 @@ def emit_elementwise_binary(
     return f"{op.symbol}({lhs}, {rhs}, {out}, {lhs_buf.numel});"
 
 
+def emit_gemm_mmio(
+    op: RuntimeOp,
+    node: fx.Node,
+    memory: MemoryPlan,
+) -> str:
+    if len(node.args) != 2:
+        raise RegistryError(
+            f"{op.graph_target} expects A, B (node {node.name})"
+        )
+
+    lhs = _buffer_name(node.args[0])
+    rhs = _buffer_name(node.args[1])
+    out = _buffer_name(node)
+
+    try:
+        lhs_buf = memory.get(lhs)
+        rhs_buf = memory.get(rhs)
+    except KeyError as exc:
+        raise RegistryError(
+            f"Missing buffer for {op.graph_target} (node {node.name})"
+        ) from exc
+
+    if len(lhs_buf.shape) != 2 or len(rhs_buf.shape) != 2:
+        raise RegistryError(f"{op.graph_target} requires 2-D A and B")
+    m, k = lhs_buf.shape
+    k2, n = rhs_buf.shape
+    if k != k2:
+        raise RegistryError(
+            f"{op.graph_target} inner dims differ ({k} vs {k2})"
+        )
+
+    memory.add(
+        StaticBuffer(
+            name=out,
+            shape=(m, n),
+            element=ElementType(c_type="int32_t", size_bytes=4),
+            layout=BufferLayout.flat_row_major(m * n),
+        )
+    )
+    return f"{op.symbol}({lhs}, {rhs}, {out}, {m}, {n}, {k});"
+
+
 CODEGEN_HANDLERS = {
     "elementwise_binary": emit_elementwise_binary,
+    "gemm_mmio": emit_gemm_mmio,
 }

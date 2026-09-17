@@ -81,8 +81,8 @@ def main() -> int:
     write_hw_config_svh(out_inc / "hw_config.svh", hw)
     (out_inc / "mmio_map.svh").write_text(render_mmio_map_svh(hw.soc), encoding="utf-8")
 
-    # types / decode headers stay shared from rtl/include
-    for name in ("types.svh", "mul_pd_config.svh"):
+    # types / decode / GEMM headers stay shared from rtl/include
+    for name in ("types.svh", "mul_pd_config.svh", "gemm_csrs.svh"):
         src = _REPO / "rtl" / "include" / name
         if src.exists():
             shutil.copy2(src, out_inc / name)

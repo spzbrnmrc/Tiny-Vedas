@@ -21,3 +21,11 @@ ops:
     sources:
       - kind: c
         path: runtime/c/aten_mul_Tensor.c
+
+  pyvedas.gemm_mmio.default:
+    codegen: gemm_mmio
+    symbol: pyvedas_gemm_mmio
+    signature: "void pyvedas_gemm_mmio(const int32_t *a, const int32_t *b, int32_t *out, size_t m, size_t n, size_t k)"
+    sources:
+      - kind: c
+        path: runtime/c/gemm_mmio.c

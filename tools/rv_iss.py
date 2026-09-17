@@ -12,6 +12,12 @@ import sys
 import struct
 import argparse
 from typing import Dict, List, Tuple, Optional
+from pathlib import Path
+
+_TOOLS = Path(__file__).resolve().parent
+if str(_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_TOOLS))
+from gemm_ref import gemm_int8  # noqa: E402
 
 try:
     from elftools.elf.elffile import ELFFile
@@ -88,7 +94,8 @@ class RISC_V_ISS:
     """RISC-V Instruction Set Simulator"""
     
     def __init__(self, text_start: int, stack_base: int, stack_size: int,
-                 eot_addr: int = 0x10000000, eot_size: int = 4):
+                 eot_addr: int = 0x10000000, eot_size: int = 4,
+                 gemm_addr: int = 0x00300000, gemm_size: int = 0x1000):
         self.regs = RegisterFile()
         self.mem = Memory()
         self.pc = text_start
@@ -97,9 +104,42 @@ class RISC_V_ISS:
         self.stack_size = stack_size
         self.eot_addr = eot_addr & 0xFFFFFFFF
         self.eot_size = max(1, eot_size)
-        
+        self.gemm_addr = gemm_addr & 0xFFFFFFFF
+        self.gemm_size = max(1, gemm_size)
+        self.gemm_csr = {
+            0x00: 0,
+            0x04: 0,
+            0x08: 0,
+            0x0C: 0,
+            0x10: 0,
+            0x14: 0,
+            0x18: 0,
+            0x1C: 0,
+        }
+
         # Initialize stack pointer
         self.regs.write(2, stack_base + stack_size)  # x2 is stack pointer
+
+    def _gemm_hit(self, addr: int) -> bool:
+        a = addr & 0xFFFFFFFF
+        return self.gemm_addr <= a < (self.gemm_addr + self.gemm_size)
+
+    def _run_gemm(self) -> None:
+        base_a = self.gemm_csr[0x00] & 0xFFFFFFFF
+        base_b = self.gemm_csr[0x04] & 0xFFFFFFFF
+        base_c = self.gemm_csr[0x08] & 0xFFFFFFFF
+        m = self.gemm_csr[0x0C] & 0xFFFFFFFF
+        n = self.gemm_csr[0x10] & 0xFFFFFFFF
+        k = self.gemm_csr[0x14] & 0xFFFFFFFF
+        if m == 0 or n == 0 or k == 0:
+            self.gemm_csr[0x1C] = 0x2  # done
+            return
+        a = [self.mem.read_byte(base_a + i) for i in range(m * k)]
+        b = [self.mem.read_byte(base_b + i) for i in range(k * n)]
+        c = gemm_int8(a, b, m, n, k)
+        for i, val in enumerate(c):
+            self.mem.write_word(base_c + 4 * i, val & 0xFFFFFFFF)
+        self.gemm_csr[0x1C] = 0x2  # done, not busy
     
     def sign_extend(self, value: int, bits: int) -> int:
         """Sign extend value to 32 bits"""
@@ -393,8 +433,12 @@ class RISC_V_ISS:
         elif opcode == 0x03:
             base = self.regs.read(rs1)
             addr = (base + imm) & 0xFFFFFFFF
-            
-            if funct3 == 0:  # LB
+
+            if self._gemm_hit(addr):
+                off = (addr - self.gemm_addr) & 0xFF
+                off = off & ~3
+                val = self.gemm_csr.get(off, 0) & 0xFFFFFFFF
+            elif funct3 == 0:  # LB
                 val = self.mem.read_byte(addr)
                 val = self.sign_extend(val, 8)
             elif funct3 == 1:  # LH
@@ -408,29 +452,45 @@ class RISC_V_ISS:
                 val = self.mem.read_half(addr)
             else:
                 val = 0
-            
+
             self.regs.write(rd, val)
             resources.append(f"{self.regs.get_name(rd)}=0x{self.regs.read(rd):08X} // Loading from 0x{addr:08X}")
-        
+
         # Store
         elif opcode == 0x23:
             base = self.regs.read(rs1)
             addr = (base + imm) & 0xFFFFFFFF
             val = self.regs.read(rs2)
-            
-            if funct3 == 0:  # SB
-                self.mem.write_byte(addr, val)
-                stored_val = val & 0xFF
+
+            if self._gemm_hit(addr):
+                off = (addr - self.gemm_addr) & 0xFF
+                off = off & ~3
+                if funct3 == 2:  # SW
+                    stored_val = val & 0xFFFFFFFF
+                    self.gemm_csr[off] = stored_val
+                    if off == 0x18 and (stored_val & 1):
+                        self._run_gemm()
+                    elif off == 0x18 and (stored_val & 2):
+                        self.gemm_csr[0x1C] = 0
+                elif funct3 == 0:
+                    stored_val = val & 0xFF
+                else:
+                    stored_val = val & 0xFFFF
                 resources.append(f"mem[0x{addr:08X}]=0x{stored_val:08X}")
-            elif funct3 == 1:  # SH
-                self.mem.write_half(addr, val)
-                stored_val = val & 0xFFFF
-                resources.append(f"mem[0x{addr:08X}]=0x{stored_val:08X}")
-            elif funct3 == 2:  # SW
-                self.mem.write_word(addr, val)
-                stored_val = val & 0xFFFFFFFF
-                resources.append(f"mem[0x{addr:08X}]=0x{stored_val:08X}")
-            
+            else:
+                if funct3 == 0:  # SB
+                    self.mem.write_byte(addr, val)
+                    stored_val = val & 0xFF
+                    resources.append(f"mem[0x{addr:08X}]=0x{stored_val:08X}")
+                elif funct3 == 1:  # SH
+                    self.mem.write_half(addr, val)
+                    stored_val = val & 0xFFFF
+                    resources.append(f"mem[0x{addr:08X}]=0x{stored_val:08X}")
+                elif funct3 == 2:  # SW
+                    self.mem.write_word(addr, val)
+                    stored_val = val & 0xFFFFFFFF
+                    resources.append(f"mem[0x{addr:08X}]=0x{stored_val:08X}")
+
             # Check for termination address after executing the store
             if self.eot_addr <= addr < (self.eot_addr + self.eot_size):
                 should_continue = False
@@ -805,6 +865,19 @@ Examples:
         help='MMIO end-of-test region size in bytes (default: 4)'
     )
     
+    parser.add_argument(
+        '--gemm-addr',
+        default='0x00300000',
+        type=lambda x: int(x, 0),
+        help='MMIO GEMM CSR base (default: 0x00300000)'
+    )
+    parser.add_argument(
+        '--gemm-size',
+        default='0x1000',
+        type=lambda x: int(x, 0),
+        help='MMIO GEMM CSR size (default: 0x1000)'
+    )
+    
     args = parser.parse_args()
     
     iss = RISC_V_ISS(
@@ -813,6 +886,8 @@ Examples:
         args.stack_size,
         eot_addr=args.eot_addr,
         eot_size=args.eot_size,
+        gemm_addr=args.gemm_addr,
+        gemm_size=args.gemm_size,
     )
     iss.run(args.elf_file, args.output, args.mem_file)
 

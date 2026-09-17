@@ -18,12 +18,15 @@ asm.basic_beq
 asm.basic_bne
 asm.basic_blt
 asm.basic_bge
+asm.gemm_8x8
 c.helloworld
 c.iaxpy
+c.gemm_8x8
 pyvedas.vector_add
 pyvedas.matrix_add
 pyvedas.tensor_add
 pyvedas.vector_mul
 pyvedas.matrix_mul
 pyvedas.tensor_mul
+pyvedas.gemm_mmio
 elf.dhrystone

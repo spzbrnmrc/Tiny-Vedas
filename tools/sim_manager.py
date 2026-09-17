@@ -198,10 +198,15 @@ def run_iss(test: str, reset_vector: int, hw_config: HwConfig) -> None:
         cmd = ""
         eot = hw_config.soc.require_role("eot")
         eot_flags = f"--eot-addr {hex(eot.base)} --eot-size {hex(eot.size)}"
+        gemm_hits = hw_config.soc.devices_by_role("accelerator")
+        gemm_flags = ""
+        if gemm_hits:
+            gemm_flags = f"--gemm-addr {hex(gemm_hits[0].base)} --gemm-size {hex(gemm_hits[0].size)}"
+        extra = f"{eot_flags} {gemm_flags}".strip()
         if has_dmem:
-            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {eot_flags} -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
+            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {extra} -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
         else:
-            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {eot_flags} -o {os.path.join('work', test, 'iss.log')}"
+            cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {extra} -o {os.path.join('work', test, 'iss.log')}"
         result = subprocess.run(cmd, shell=True)
         if result.returncode != 0:
             print(f"ISS returned error code {result.returncode} for test {test}. See iss.log for details.")
@@ -469,9 +474,11 @@ def process_rtl_log(test: str, show_progress: bool = True):
         line_parts = rtl_lines[line_idx].split(";")
         nxt_line_parts = rtl_lines[line_idx + 1].split(";")
         
-        # Check if we need to merge (same PC and instruction, both have memory effects)
-        if (len(line_parts) > 3 and len(nxt_line_parts) > 3 and 
-            line_parts[1] == nxt_line_parts[1] and 
+        # Unaligned stores log two mem[] lines in the same cycle. Consecutive
+        # loop stores share PC/encoding but have different cycle numbers.
+        if (len(line_parts) > 3 and len(nxt_line_parts) > 3 and
+            line_parts[0] == nxt_line_parts[0] and
+            line_parts[1] == nxt_line_parts[1] and
             line_parts[2] == nxt_line_parts[2] and
             "mem[" in line_parts[3] and "mem[" in nxt_line_parts[3]):
             

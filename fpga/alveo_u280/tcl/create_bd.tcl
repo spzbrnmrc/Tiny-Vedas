@@ -27,16 +27,16 @@ proc tv_create_pcie_bd {} {
     CONFIG.axisten_freq {250} \
   ] $qdma
 
-  # 128 KiB AXI-Lite BAR2: CTRL + ICCM + DCCM (see vedas_fpga_soc.sv)
+  # 2 MiB AXI-Lite BAR2: CTRL + ICCM + 1 MiB DCCM (see vedas_fpga_soc.sv)
   set_property CONFIG.pf0_bar2_enabled_qdma {false} $qdma
   set_property -dict [list \
     CONFIG.axilite_master_en {true} \
     CONFIG.pf0_bar2_enabled_qdma {true} \
     CONFIG.pf0_bar2_type_qdma {AXI_Lite_Master} \
-    CONFIG.pf0_bar2_scale_qdma {Kilobytes} \
-    CONFIG.pf0_bar2_size_qdma {128} \
-    CONFIG.axilite_master_scale {Kilobytes} \
-    CONFIG.axilite_master_size {128} \
+    CONFIG.pf0_bar2_scale_qdma {Megabytes} \
+    CONFIG.pf0_bar2_size_qdma {2} \
+    CONFIG.axilite_master_scale {Megabytes} \
+    CONFIG.axilite_master_size {2} \
     CONFIG.barlite2 {2} \
   ] $qdma
 
@@ -125,10 +125,22 @@ proc tv_create_pcie_bd {} {
   connect_bd_net [get_bd_pins qdma_0/axi_aresetn] [get_bd_pins axi_bram_ctrl_mm/s_axi_aresetn]
   connect_bd_intf_net [get_bd_intf_pins axi_bram_ctrl_mm/BRAM_PORTA] [get_bd_intf_pins blk_mem_gen_mm/BRAM_PORTA]
 
-  assign_bd_address -offset 0x00000000 -range 0x00010000 -target_address_space \
+  assign_bd_address -offset 0x00000000 -range 0x00200000 -target_address_space \
     [get_bd_addr_spaces qdma_0/M_AXI_LITE] [get_bd_addr_segs vedas_fpga_soc_0/s_axi/reg0] -force
   assign_bd_address -offset 0x00000000 -range 0x00040000 -target_address_space \
     [get_bd_addr_spaces qdma_0/M_AXI] [get_bd_addr_segs axi_bram_ctrl_mm/S_AXI/Mem0] -force
+
+  # ILA on core_clk: GEMM CSR/DMA/PE/status (capture a 128x128x128 run)
+  set ila [create_bd_cell -type ip -vlnv xilinx.com:ip:ila:6.2 ila_gemm]
+  set_property -dict [list \
+    CONFIG.C_NUM_OF_PROBES {1} \
+    CONFIG.C_DATA_DEPTH {4096} \
+    CONFIG.C_PROBE0_WIDTH {16} \
+    CONFIG.C_TRIGOUT_EN {false} \
+    CONFIG.C_INPUT_PIPE_STAGES {1} \
+  ] $ila
+  connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins ila_gemm/clk]
+  connect_bd_net [get_bd_pins vedas_fpga_soc_0/gemm_ila] [get_bd_pins ila_gemm/probe0]
 
   validate_bd_design
   save_bd_design
