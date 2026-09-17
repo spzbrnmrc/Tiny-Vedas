@@ -87,16 +87,16 @@ class Memory:
 class RISC_V_ISS:
     """RISC-V Instruction Set Simulator"""
     
-    # Termination address: writing to this address terminates simulation
-    TERMINATION_ADDR = 0x10000000
-    
-    def __init__(self, text_start: int, stack_base: int, stack_size: int):
+    def __init__(self, text_start: int, stack_base: int, stack_size: int,
+                 eot_addr: int = 0x10000000, eot_size: int = 4):
         self.regs = RegisterFile()
         self.mem = Memory()
         self.pc = text_start
         self.text_start = text_start
         self.stack_base = stack_base
         self.stack_size = stack_size
+        self.eot_addr = eot_addr & 0xFFFFFFFF
+        self.eot_size = max(1, eot_size)
         
         # Initialize stack pointer
         self.regs.write(2, stack_base + stack_size)  # x2 is stack pointer
@@ -432,7 +432,7 @@ class RISC_V_ISS:
                 resources.append(f"mem[0x{addr:08X}]=0x{stored_val:08X}")
             
             # Check for termination address after executing the store
-            if addr == self.TERMINATION_ADDR:
+            if self.eot_addr <= addr < (self.eot_addr + self.eot_size):
                 should_continue = False
         
         # ALU immediate
@@ -792,9 +792,28 @@ Examples:
         help='Hex file to preload data memory (one 32-bit word per line, starting at address 0x0)'
     )
     
+    parser.add_argument(
+        '--eot-addr',
+        default='0x10000000',
+        type=lambda x: int(x, 0),
+        help='MMIO end-of-test base address (default: 0x10000000)'
+    )
+    parser.add_argument(
+        '--eot-size',
+        default='4',
+        type=lambda x: int(x, 0),
+        help='MMIO end-of-test region size in bytes (default: 4)'
+    )
+    
     args = parser.parse_args()
     
-    iss = RISC_V_ISS(args.text_start, args.stack_base, args.stack_size)
+    iss = RISC_V_ISS(
+        args.text_start,
+        args.stack_base,
+        args.stack_size,
+        eot_addr=args.eot_addr,
+        eot_size=args.eot_size,
+    )
     iss.run(args.elf_file, args.output, args.mem_file)
 
 

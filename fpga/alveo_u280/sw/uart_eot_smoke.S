@@ -1,8 +1,10 @@
+#include "soc_defines.h"
+
   .section .text
   .globl _start
 _start:
   /* UART + taken-bne canary — reuses t0 across delays (flush hazard stress). */
-  li   x31, 0x00200000
+  li   x31, MMIO_UART_ADDR
   li   x30, 'O'
   sw   x30, 0(x31)
   li   t0, 64
@@ -21,7 +23,7 @@ _start:
 3:
   addi t0, t0, -1
   bnez t0, 3b
-  li   x31, 0x10000000
-  li   x30, 0xdeadbeef
+  li   x31, MMIO_EOT_ADDR
+  li   x30, EOT_MAGIC
   sw   x30, 0(x31)
 4: j 4b

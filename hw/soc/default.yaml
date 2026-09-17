@@ -1,0 +1,36 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+#
+# SoC device map — source of truth for MMIO decode (RTL mux) and software
+# addresses (`sw/include/soc_defines.h`). CPU presets select this file via
+# `soc: default`. Add accelerators as extra devices with base+size; regenerate
+# with `make soc`.
+
+name: default
+version: 1
+description: >
+  Simulation and FPGA-overlay MMIO map. Stores in these ranges are steered
+  away from DCCM. UART and EOT are intercept-only (no core-side module);
+  datapath accelerators add `module:` when their RTL lands.
+
+devices:
+  - name: uart
+    compatible: tv,uart-tx
+    role: uart
+    base: 0x00200000
+    size: 4
+    access: [write]
+    sw:
+      addr_macro: MMIO_UART_ADDR
+
+  - name: eot
+    compatible: tv,eot
+    role: eot
+    base: 0x10000000
+    size: 4
+    access: [write]
+    params:
+      magic: 0xdeadbeef
+    sw:
+      addr_macro: MMIO_EOT_ADDR
+      magic_macro: EOT_MAGIC

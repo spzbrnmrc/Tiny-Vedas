@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 SW_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+REPO_ROOT := $(abspath $(SW_DIR)/../../..)
 PREBUILT := $(SW_DIR)/prebuilt
 
 RISCV_PREFIX ?= /tools/Xilinx/Vitis/2023.2/gnu/riscv/lin/riscv64-unknown-elf/bin/riscv64-unknown-elf-
@@ -9,7 +10,7 @@ CC      := $(RISCV_PREFIX)gcc
 OBJCOPY := $(RISCV_PREFIX)objcopy
 OBJDUMP := $(RISCV_PREFIX)objdump
 
-CFLAGS := -march=rv32im -mabi=ilp32 -nostdlib -Wl,-Ttext=0x00100000
+CFLAGS := -march=rv32im -mabi=ilp32 -nostdlib -I$(REPO_ROOT)/sw/include -Wl,-Ttext=0x00100000
 
 .PHONY: all clean
 

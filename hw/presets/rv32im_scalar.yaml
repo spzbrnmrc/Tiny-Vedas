@@ -25,12 +25,12 @@ vector:
   lanes: 0
   local_mem_bytes: 0
 
+soc: default                 # hw/soc/default.yaml — MMIO mux + soc_defines.h
+
 memory:
   iccm_depth_words: 262144   # 2^18
   dccm_depth_words: 262144   # 2^18
   link_address: 0x00100000
-  uart_address: 0x00200000
-  eot_address: 0x10000000
 
 software:
   vliw_compiler: false

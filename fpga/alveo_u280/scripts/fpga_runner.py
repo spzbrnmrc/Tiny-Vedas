@@ -35,6 +35,7 @@ if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
 from hw import default_hw_config_path, load_hw_config  # noqa: E402
+from hw.soc_config import write_soc_artifacts  # noqa: E402
 from tools.sim_manager import read_task_list, run_gen  # noqa: E402
 
 from vedas_host import (  # noqa: E402
@@ -259,6 +260,12 @@ def main() -> int:
 
     os.chdir(_REPO_ROOT)
     hw_config = load_hw_config(args.hw_config)
+    write_soc_artifacts(
+        hw_config,
+        mmio_svh=_REPO_ROOT / "rtl" / "include" / "mmio_map.svh",
+        soc_h=_REPO_ROOT / "sw" / "include" / "soc_defines.h",
+        soc_inc=_REPO_ROOT / "sw" / "include" / "soc_defines.inc",
+    )
 
     if args.test:
         tests = [args.test]

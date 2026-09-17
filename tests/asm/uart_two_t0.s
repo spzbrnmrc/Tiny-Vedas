@@ -2,7 +2,8 @@
     .globl   _start
     .section .text
 _start:
-    li       x31, 0x00200000
+    .include "soc_defines.inc"
+    li       x31, MMIO_UART_ADDR
     li       x30, 'O'
     sw       x30, 0(x31)
     li       t0, 64

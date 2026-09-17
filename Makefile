@@ -1,4 +1,4 @@
-.PHONY: deps smoke smoke-verilator decodes clean clean-sim clean-pd clean-pyvedas clean-fpga config sv2v rtl2gds pd-report timing mul-sweep pd-synth fpga fpga_smoke
+.PHONY: deps smoke smoke-verilator decodes soc clean clean-sim clean-pd clean-pyvedas clean-fpga config sv2v rtl2gds pd-report timing mul-sweep pd-synth fpga fpga_smoke
 
 RUN = ./scripts/with_env.sh
 
@@ -31,6 +31,9 @@ smoke-verilator:
 
 decodes:
 	$(RUN) python3 open-decode-tables/src/main.py -t open-decode-tables/tables/rv32im.yaml -o rtl/idu
+
+soc:
+	$(RUN) python3 hw/scripts/gen_soc.py
 
 config:
 	python3 pd/scripts/gen_active_config.py --hw $(HW_CONFIG) --platform $(PD_PLATFORM)

@@ -18,6 +18,7 @@ $PROJ/SVLib/src/arith/kogge_stone_adder.sv
 $PROJ/SVLib/src/arith/mul.sv
 $PROJ/rtl/include/global.svh
 $PROJ/rtl/include/hw_config.svh
+$PROJ/rtl/include/mmio_map.svh
 $PROJ/rtl/include/types.svh
 $PROJ/rtl/include/mul_pd_config.svh
 $PROJ/rtl/idu/decode_out_t.svh
@@ -43,6 +44,7 @@ $PROJ/rtl/lib/mem_lib.sv
 $PROJ/rtl/include/axi4.svh
 $PROJ/rtl/bus/imem_to_axi4.sv
 $PROJ/rtl/bus/dmem_to_axi4.sv
+$PROJ/rtl/bus/mmio_mux.sv
 $PROJ/rtl/bus/axi4_tdp_port.sv
 $PROJ/rtl/bus/axi4_iccm.sv
 $PROJ/rtl/bus/axi4_dccm.sv

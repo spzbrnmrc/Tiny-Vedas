@@ -25,6 +25,7 @@ $PROJ/SVLib/src/arith/kogge_stone_adder.sv
 $PROJ/SVLib/src/arith/mul.sv
 $FPGA_INC/global.svh
 $FPGA_INC/hw_config.svh
+$FPGA_INC/mmio_map.svh
 $FPGA_INC/types.svh
 $FPGA_INC/mul_pd_config.svh
 $PROJ/rtl/idu/decode_out_t.svh
@@ -48,6 +49,7 @@ $PROJ/rtl/lib/mem_lib.sv
 $PROJ/rtl/include/axi4.svh
 $PROJ/rtl/bus/imem_to_axi4.sv
 $PROJ/rtl/bus/dmem_to_axi4.sv
+$PROJ/rtl/bus/mmio_mux.sv
 $PROJ/rtl/bus/axi4_tdp_port.sv
 $PROJ/rtl/bus/axi4_iccm.sv
 $PROJ/rtl/bus/axi4_dccm.sv
