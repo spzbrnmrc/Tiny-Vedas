@@ -27,6 +27,7 @@ def compile_model(
     *,
     target: bool = False,
     hw_config: HwConfig | None = None,
+    gemm_scratch_bytes: int | None = None,
 ) -> Path:
     pyvedas_root = pyvedas_root.resolve()
     out_dir = out_dir.resolve()
@@ -45,6 +46,7 @@ def compile_model(
         registry,
         trace_inputs,
         materializer=materializer,
+        gemm_scratch_bytes=gemm_scratch_bytes,
     )
 
     if target and plan.result_name:
@@ -108,6 +110,7 @@ def main() -> None:
 
     model = namespace["MODEL"]
     trace_inputs = namespace["TRACE_INPUTS"]
+    gemm_scratch = namespace.get("GEMM_SCRATCH_BYTES")
     pyvedas_root = Path(__file__).resolve().parents[1]
 
     hw = resolve_hw_config(args.hw_config)
@@ -118,6 +121,7 @@ def main() -> None:
         Path(args.out_dir),
         target=args.target,
         hw_config=hw,
+        gemm_scratch_bytes=None if gemm_scratch is None else int(gemm_scratch),
     )
     print(f"Generated {out}")
 

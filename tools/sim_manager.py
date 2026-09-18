@@ -75,7 +75,7 @@ def _compile_riscv_elf(test: str, sources: List[str], include_dirs: List[str]) -
     cmd = (
         f"riscv64-unknown-elf-gcc -O0 {inc_flags} {as_inc_flags} "
         f"-march=rv32im -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
-        f"-fno-builtin-printf -fno-common -falign-functions=4 "
+        f"-fno-builtin-printf -fno-common -falign-functions=4 -msmall-data-limit=0 "
         f"{source_list} -lgcc "
         f"-Wl,-Ttext=0x100000 -Wl,--defsym,_start=main "
         f"> {compile_log} 2>&1"
@@ -297,8 +297,35 @@ def read_task_list(filename: str) -> List[str]:
         print(f"Error reading task list file: {e}")
         return []
 
+def _unlink_sim_logs(test: str) -> None:
+    """Drop leftover simulator logs. XSim $fopen(\"w\") does not always truncate."""
+    work = os.path.join("work", test)
+    for name in ("rtl.log", "console.log"):
+        path = os.path.join(work, name)
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+
+
+def _iter_rtl_log_lines(test: str):
+    """Yield valid RTL debug lines; stop at NULs left by an untruncated file."""
+    path = os.path.join("work", test, "rtl.log")
+    with open(path, "r", errors="replace") as f:
+        for raw in f:
+            if "\0" in raw:
+                raw = raw.split("\0", 1)[0]
+                if raw.strip():
+                    yield raw.rstrip("\n")
+                break
+            line = raw.rstrip("\n")
+            if line.strip():
+                yield line
+
+
 def run_verilator(test: str, reset_vector: int, enable_vcd: bool = False) -> None:
     """Execute Verilator simulation. VCD is opt-in — tracing Dhrystone is multi-GB."""
+    _unlink_sim_logs(test)
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
     trace_flags = "--trace --trace-structs " if enable_vcd else ""
     verilator_cmd = (
@@ -337,6 +364,7 @@ def run_verilator(test: str, reset_vector: int, enable_vcd: bool = False) -> Non
     
 def run_xsim(test: str, reset_vector: int) -> None:
     """Execute XSim simulation."""
+    _unlink_sim_logs(test)
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
     xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -i $PROJ/rtl/include -i $PROJ/rtl/idu -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
     if has_dmem:
@@ -375,21 +403,21 @@ def read_iss_log(test: str):
 
 def read_rtl_log(test: str):
     """Read and parse RTL log file."""
-    with open(os.path.join("work", test, "rtl.log"), "r") as f:
-        rtl_log = f.read()
     rtl_exe = []
-    for line in rtl_log.split("\n"):
-        if line != "":
-            line = line.split(";")
-            rtl_exe.append({
-                'pc': line[1],
-                'instr': line[2],
-                'touch': line[3:]
-            })
+    for line in _iter_rtl_log_lines(test):
+        parts = line.split(";")
+        if len(parts) < 4:
+            continue
+        rtl_exe.append({
+            'pc': parts[1],
+            'instr': parts[2],
+            'touch': parts[3:]
+        })
     return rtl_exe
 
 def compare_results(test: str, show_progress: bool = True) -> None:
     # Read both log files in parallel using threads
+    sim_log_path = os.path.join('work', test, 'sim.log')
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             iss_future = executor.submit(read_iss_log, test)
@@ -401,9 +429,14 @@ def compare_results(test: str, show_progress: bool = True) -> None:
 
         # Compare the logs
         test_passed = True
-        sim_log_path = os.path.join('work', test, 'sim.log')
         with open(sim_log_path, 'a') as sim_log:
-            indices = range(len(iss_exe))
+            if len(rtl_exe) < len(iss_exe):
+                sim_log.write(
+                    f"Error: RTL log shorter than ISS "
+                    f"({len(rtl_exe)} vs {len(iss_exe)} instructions)\n"
+                )
+                test_passed = False
+            indices = range(len(iss_exe) if test_passed else 0)
             pbar = tqdm(
                 indices,
                 desc=f"Comparing {test}",
@@ -443,19 +476,20 @@ def compare_results(test: str, show_progress: bool = True) -> None:
                             test_passed = False
                 if not test_passed:
                     break
-    except:
+    except Exception as e:
         test_passed = False
+        try:
+            with open(sim_log_path, 'a') as sim_log:
+                sim_log.write(f"Error: compare_results exception: {e}\n")
+        except OSError:
+            pass
 
     status = "\033[92mPASSED\033[0m" if test_passed else "\033[91mFAILED\033[0m"
     safe_write(f"{test} {'.' * (50 - len(test))}. {status}")
 
 def process_rtl_log(test: str, show_progress: bool = True):
     """Process the RTL log file."""
-    with open(os.path.join("work", test, "rtl.log"), "r") as f:
-        rtl_lines = f.readlines()
-    
-    # Remove newlines and filter empty lines
-    rtl_lines = [line.rstrip('\n') for line in rtl_lines if line.strip()]
+    rtl_lines = list(_iter_rtl_log_lines(test))
     total_lines = len(rtl_lines) - 1
     line_idx = 0
     pbar = tqdm(

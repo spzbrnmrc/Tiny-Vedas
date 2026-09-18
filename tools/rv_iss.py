@@ -741,64 +741,61 @@ class RISC_V_ISS:
         text_end_addr = text_section_addr + text_size
         
         # Execute instructions
-        trace_lines = []
-        max_instructions = 1000000  # Safety limit
+        max_instructions = 20000000  # Pack loops at -O0 exceed 1M on large GEMMs
         instruction_count = 0
-        
-        while instruction_count < max_instructions:
-            # Check if PC is within text section bounds before fetching
-            # Only execute instructions from the actual text section address range
-            if self.pc < text_start_addr or self.pc >= text_end_addr:
-                # PC is outside the text section, stop execution
-                break
-            
-            # Fetch instruction
-            if self.pc % 4 != 0:
-                raise ValueError(f"Misaligned PC: 0x{self.pc:08X}")
-            
-            # Save PC immediately after checking alignment (before fetching)
-            instruction_pc = self.pc
-            
-            inst = self.mem.read_word(self.pc)
-            
-            # Check for invalid instruction (all zeros or all ones) - but only warn if within bounds
-            if inst == 0 or inst == 0xFFFFFFFF:
-                # This might be padding or end of program, silently stop
-                break
-            
-            # Check for NOP (ADDI x0, x0, 0 = 0x00000013)
-            # NOPs don't touch microarchitectural state, so skip tracing
-            if inst == 0x00000013:
-                # Execute NOP (just updates PC)
+
+        with open(output_file, 'w') as trace_file:
+            while instruction_count < max_instructions:
+                # Check if PC is within text section bounds before fetching
+                # Only execute instructions from the actual text section address range
+                if self.pc < text_start_addr or self.pc >= text_end_addr:
+                    # PC is outside the text section, stop execution
+                    break
+
+                # Fetch instruction
+                if self.pc % 4 != 0:
+                    raise ValueError(f"Misaligned PC: 0x{self.pc:08X}")
+
+                # Save PC immediately after checking alignment (before fetching)
+                instruction_pc = self.pc
+
+                inst = self.mem.read_word(self.pc)
+
+                # Check for invalid instruction (all zeros or all ones) - but only warn if within bounds
+                if inst == 0 or inst == 0xFFFFFFFF:
+                    # This might be padding or end of program, silently stop
+                    break
+
+                # Check for NOP (ADDI x0, x0, 0 = 0x00000013)
+                # NOPs don't touch microarchitectural state, so skip tracing
+                if inst == 0x00000013:
+                    # Execute NOP (just updates PC)
+                    opcode, fields = self.decode_instruction(inst)
+                    should_continue, _ = self.execute_instruction(inst, fields)
+                    if not should_continue:
+                        break
+                    instruction_count += 1
+                    continue
+
+                # Decode
                 opcode, fields = self.decode_instruction(inst)
-                should_continue, _ = self.execute_instruction(inst, fields)
+
+                # Disassemble
+                disasm = self.disassemble(inst, fields)
+
+                # Execute
+                should_continue, resources = self.execute_instruction(inst, fields)
+
+                # Generate trace line using the saved PC (before execution)
+                resources_str = ";".join(resources) if resources else ""
+                trace_file.write(
+                    f"0x{instruction_pc:08X};0x{inst:08X};{disasm};{resources_str}\n"
+                )
+
                 if not should_continue:
                     break
+
                 instruction_count += 1
-                continue
-            
-            # Decode
-            opcode, fields = self.decode_instruction(inst)
-            
-            # Disassemble
-            disasm = self.disassemble(inst, fields)
-            
-            # Execute
-            should_continue, resources = self.execute_instruction(inst, fields)
-            
-            # Generate trace line using the saved PC (before execution)
-            resources_str = ";".join(resources) if resources else ""
-            trace_line = f"0x{instruction_pc:08X};0x{inst:08X};{disasm};{resources_str}"
-            trace_lines.append(trace_line)
-            
-            if not should_continue:
-                break
-            
-            instruction_count += 1
-        
-        # Write trace file
-        with open(output_file, 'w') as f:
-            f.write('\n'.join(trace_lines))
 
 def main():
     parser = argparse.ArgumentParser(

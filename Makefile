@@ -1,4 +1,4 @@
-.PHONY: deps smoke smoke-verilator decodes soc clean clean-sim clean-pd clean-pyvedas clean-fpga config sv2v rtl2gds pd-report timing mul-sweep pd-synth fpga fpga_smoke gemm-directed gemm-cosim gemm-perf
+.PHONY: deps smoke smoke-verilator decodes soc clean clean-sim clean-pd clean-pyvedas clean-fpga config sv2v rtl2gds pd-report timing mul-sweep pd-synth fpga fpga_smoke gemm-directed gemm-cosim gemm-perf unit
 
 RUN = ./scripts/with_env.sh
 
@@ -37,6 +37,9 @@ gemm-cosim:
 
 gemm-perf:
 	$(RUN) python3 tools/gemm_cosim.py --perf
+
+unit:
+	$(RUN) python3 -m unittest discover -s tests/unit -v
 
 decodes:
 	$(RUN) python3 open-decode-tables/src/main.py -t open-decode-tables/tables/rv32im.yaml -o rtl/idu
