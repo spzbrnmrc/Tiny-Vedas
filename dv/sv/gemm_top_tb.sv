@@ -79,84 +79,114 @@ module gemm_top_tb;
     word_addr = (byte_addr >> 2) % MEM_WORDS;
   endfunction
 
-  task automatic axi_rd(input int port, input logic [31:0] addr, output logic [31:0] data);
-    int idx;
-    idx = word_addr(addr);
-    if (port == 0) begin
-      @(posedge clk);
-      wait (m0_arvalid);
-      m0_arready <= 1'b1;
-      @(posedge clk);
-      m0_arready <= 1'b0;
-      m0_rid     <= m0_arid;
-      m0_rdata   <= mem[idx];
-      m0_rresp   <= AXI_RESP_OKAY;
-      m0_rlast   <= 1'b1;
-      m0_rvalid  <= 1'b1;
-      do @(posedge clk); while (!m0_rready);
-      m0_rvalid <= 1'b0;
-      data = m0_rdata;
-    end else begin
-      @(posedge clk);
-      wait (m1_arvalid);
-      m1_arready <= 1'b1;
-      @(posedge clk);
-      m1_arready <= 1'b0;
-      m1_rid     <= m1_arid;
-      m1_rdata   <= mem[idx];
-      m1_rresp   <= AXI_RESP_OKAY;
-      m1_rlast   <= 1'b1;
-      m1_rvalid  <= 1'b1;
-      do @(posedge clk); while (!m1_rready);
-      m1_rvalid <= 1'b0;
-      data = m1_rdata;
-    end
-  endtask
+  /* AXI4 INCR slave (SIZE=4B), one outstanding burst per port. */
+  logic        m0_rd_act, m1_rd_act, m0_wr_act;
+  logic [31:0] m0_rd_addr, m1_rd_addr, m0_wr_addr, m0_waddr_now;
+  logic [7:0]  m0_rd_len, m1_rd_len, m0_rd_beat, m1_rd_beat;
 
-  /* Simple always-ready AXI slave */
+  assign m0_waddr_now = m0_wr_act ? m0_wr_addr : m0_awaddr;
+
+  assign m0_arready = rstn && !m0_rd_act;
+  assign m1_arready = rstn && !m1_rd_act;
+  assign m0_awready = rstn && !m0_wr_act;
+  assign m0_wready  = rstn && (m0_wr_act || m0_awvalid);
+  assign m1_awready = 1'b1;
+  assign m1_wready  = 1'b1;
+
   always_ff @(posedge clk) begin
     if (!rstn) begin
-      m0_arready <= 1'b1;
-      m1_arready <= 1'b1;
-      m0_awready <= 1'b1;
-      m0_wready  <= 1'b1;
-      m1_awready <= 1'b1;
-      m1_wready  <= 1'b1;
+      m0_rd_act  <= 1'b0;
+      m1_rd_act  <= 1'b0;
+      m0_wr_act  <= 1'b0;
+      m0_rd_addr <= '0;
+      m1_rd_addr <= '0;
+      m0_wr_addr <= '0;
+      m0_rd_len  <= '0;
+      m1_rd_len  <= '0;
+      m0_rd_beat <= '0;
+      m1_rd_beat <= '0;
       m0_rvalid  <= 1'b0;
       m1_rvalid  <= 1'b0;
+      m0_rlast   <= 1'b0;
+      m1_rlast   <= 1'b0;
       m0_bvalid  <= 1'b0;
       m1_bvalid  <= 1'b0;
+      m0_rdata   <= '0;
+      m1_rdata   <= '0;
+      m0_rid     <= '0;
+      m1_rid     <= '0;
+      m0_rresp   <= AXI_RESP_OKAY;
+      m1_rresp   <= AXI_RESP_OKAY;
+      m0_bid     <= '0;
+      m0_bresp   <= AXI_RESP_OKAY;
+      m1_bid     <= '0;
+      m1_bresp   <= AXI_RESP_OKAY;
     end else begin
       if (m0_arvalid && m0_arready) begin
-        m0_rdata  <= mem[word_addr(m0_araddr)];
-        m0_rid    <= m0_arid;
-        m0_rresp  <= AXI_RESP_OKAY;
-        m0_rlast  <= 1'b1;
-        m0_rvalid <= 1'b1;
+        m0_rd_act  <= 1'b1;
+        m0_rd_addr <= m0_araddr + 32'd4;
+        m0_rd_len  <= m0_arlen;
+        m0_rd_beat <= '0;
+        m0_rid     <= m0_arid;
+        m0_rdata   <= mem[word_addr(m0_araddr)];
+        m0_rresp   <= AXI_RESP_OKAY;
+        m0_rlast   <= (m0_arlen == 8'd0);
+        m0_rvalid  <= 1'b1;
       end else if (m0_rvalid && m0_rready) begin
-        m0_rvalid <= 1'b0;
+        if (m0_rlast) begin
+          m0_rd_act <= 1'b0;
+          m0_rvalid <= 1'b0;
+          m0_rlast  <= 1'b0;
+        end else begin
+          m0_rdata   <= mem[word_addr(m0_rd_addr)];
+          m0_rd_addr <= m0_rd_addr + 32'd4;
+          m0_rd_beat <= m0_rd_beat + 8'd1;
+          m0_rlast   <= (m0_rd_beat + 8'd1 == m0_rd_len);
+        end
       end
 
       if (m1_arvalid && m1_arready) begin
-        m1_rdata  <= mem[word_addr(m1_araddr)];
-        m1_rid    <= m1_arid;
-        m1_rresp  <= AXI_RESP_OKAY;
-        m1_rlast  <= 1'b1;
-        m1_rvalid <= 1'b1;
+        m1_rd_act  <= 1'b1;
+        m1_rd_addr <= m1_araddr + 32'd4;
+        m1_rd_len  <= m1_arlen;
+        m1_rd_beat <= '0;
+        m1_rid     <= m1_arid;
+        m1_rdata   <= mem[word_addr(m1_araddr)];
+        m1_rresp   <= AXI_RESP_OKAY;
+        m1_rlast   <= (m1_arlen == 8'd0);
+        m1_rvalid  <= 1'b1;
       end else if (m1_rvalid && m1_rready) begin
-        m1_rvalid <= 1'b0;
+        if (m1_rlast) begin
+          m1_rd_act <= 1'b0;
+          m1_rvalid <= 1'b0;
+          m1_rlast  <= 1'b0;
+        end else begin
+          m1_rdata   <= mem[word_addr(m1_rd_addr)];
+          m1_rd_addr <= m1_rd_addr + 32'd4;
+          m1_rd_beat <= m1_rd_beat + 8'd1;
+          m1_rlast   <= (m1_rd_beat + 8'd1 == m1_rd_len);
+        end
       end
 
-      if (m0_awvalid && m0_awready && m0_wvalid && m0_wready) begin
-        if (m0_wstrb[0]) mem[word_addr(m0_awaddr)][7:0]   <= m0_wdata[7:0];
-        if (m0_wstrb[1]) mem[word_addr(m0_awaddr)][15:8]  <= m0_wdata[15:8];
-        if (m0_wstrb[2]) mem[word_addr(m0_awaddr)][23:16] <= m0_wdata[23:16];
-        if (m0_wstrb[3]) mem[word_addr(m0_awaddr)][31:24] <= m0_wdata[31:24];
-        m0_bvalid <= 1'b1;
-        m0_bresp  <= AXI_RESP_OKAY;
-        m0_bid    <= m0_awid;
-      end else if (m0_bvalid && m0_bready) begin
-        m0_bvalid <= 1'b0;
+      if (m0_bvalid && m0_bready) m0_bvalid <= 1'b0;
+
+      if (m0_awvalid && m0_awready) begin
+        m0_wr_act  <= 1'b1;
+        m0_wr_addr <= m0_awaddr;
+        m0_bid     <= m0_awid;
+      end
+
+      if (m0_wvalid && m0_wready) begin
+        if (m0_wstrb[0]) mem[word_addr(m0_waddr_now)][7:0]   <= m0_wdata[7:0];
+        if (m0_wstrb[1]) mem[word_addr(m0_waddr_now)][15:8]  <= m0_wdata[15:8];
+        if (m0_wstrb[2]) mem[word_addr(m0_waddr_now)][23:16] <= m0_wdata[23:16];
+        if (m0_wstrb[3]) mem[word_addr(m0_waddr_now)][31:24] <= m0_wdata[31:24];
+        m0_wr_addr <= m0_waddr_now + 32'd4;
+        if (m0_wlast) begin
+          m0_wr_act <= 1'b0;
+          m0_bvalid <= 1'b1;
+          m0_bresp  <= AXI_RESP_OKAY;
+        end
       end
     end
   end

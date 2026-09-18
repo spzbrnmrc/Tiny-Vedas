@@ -46,7 +46,7 @@ software:
   vectorize_min_numel: <int>     # 0 = always scalar loops
 ```
 
-UART/EOT (and later GEMM-class accelerators) live in the **SoC device map**, not the CPU preset. `memory.uart_address` / `eot_address` on the loaded `HwConfig` are derived from that map.
+UART, EOT, and GEMM live in the **SoC device map**, not the CPU preset. `memory.uart_address` / `eot_address` on the loaded `HwConfig` are derived from that map.
 
 ## SoC device map (`hw/soc/`)
 
@@ -68,9 +68,17 @@ devices:
     base: 0x00200000
     size: 4                    # bytes; decode is [base, base+size)
     access: [write]
-    # module: gemm_top         # optional RTL instance name (future)
     sw:
       addr_macro: MMIO_UART_ADDR
+  - name: gemm
+    compatible: tv,gemm
+    role: accelerator
+    base: 0x00300000
+    size: 4096
+    access: [read, write]
+    module: gemm_top           # RTL instance in soc_top
+    sw:
+      addr_macro: MMIO_GEMM_ADDR
 ```
 
 Stores in any mapped range are stripped from DCCM. `role: uart` and `role: eot` are required today (TB console, sim finish, FPGA FIFO/sticky).
@@ -106,4 +114,4 @@ assert cfg.cpu.kind.value == "ooo"
 |----------|-------------|---------------|
 | **PyVedas** | `software.materializer`, `vectorize_min_numel` | tiled layouts, vector intrinsics |
 | **sim_manager** | SoC map → `soc_defines.h`, ISS EOT address | ICCM/DCCM depths, RTL plusargs |
-| **RTL** | `mmio_mux` + `mmio_map.svh` from SoC YAML | instantiate `module:` accelerators |
+| **RTL** | `mmio_mux` + `mmio_map.svh`; `soc_top` instantiates `module: gemm_top` | additional `module:` accelerators |

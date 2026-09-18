@@ -2,7 +2,7 @@
 //     Copyright (c) 2025 Siliscale Consulting, LLC
 //     Licensed under the Apache License, Version 2.0 (the "License");
 ///////////////////////////////////////////////////////////////////////////////
-// One AXI4 slave bound to a single TDP RAM port (RW). LEN=0 and LEN=1 INCR.
+// One AXI4 slave bound to a single TDP RAM port (RW). INCR bursts, SIZE=4B.
 
 `ifndef GLOBAL_SVH
 `include "global.svh"
