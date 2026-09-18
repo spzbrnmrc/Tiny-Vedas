@@ -22,6 +22,7 @@ asm.gemm_8x8
 c.helloworld
 c.iaxpy
 c.gemm_8x8
+c.gemm_multi
 pyvedas.vector_add
 pyvedas.matrix_add
 pyvedas.tensor_add

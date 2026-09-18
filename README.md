@@ -10,17 +10,17 @@ It is also used as a reference for the [free course on RISC-V Processor Design](
 
 | Layer | Role |
 |-------|------|
-| **RTL** | Synthesizable RISC-V cores and SoC integration (`rtl/`) |
-| **Verification** | Python ISS + RTL trace comparison (`tools/rv_iss.py`, `sim_manager.py`) |
+| **RTL** | Synthesizable RISC-V cores, GEMM accelerator, and SoC integration (`rtl/`) |
+| **Verification** | Python ISS + RTL trace comparison (`tools/rv_iss.py`, `sim_manager.py`); GEMM directed/random co-sim (`tools/gemm_cosim.py`) |
 | **Decode** | YAML-driven instruction tables → SystemVerilog (`open-decode-tables/`) |
 | **Primitives** | Reusable arithmetic and register blocks (`SVLib/`) |
 | **Software** | Bare-metal runtime, printf, assembly/C/PyTorch tests |
 | **PyVedas** | `torch.compile` → C → RV32 ELF for on-core inference kernels |
-| **PD** | Optional ASIC flow: sv2v + OpenROAD (`pd/`) |
+| **PD** | Optional ASIC flow: sv2v + OpenROAD (`pd/`) — `core_gemm_top` (CPU + GEMM) |
 
 ## Current focus: RV32IM
 
-The shipping RTL is a **4-stage pipelined RV32IM** processor written in SystemVerilog. It is the baseline CPU flavor (`hw/presets/rv32im_scalar.yaml`) used by CI, examples, and the course.
+The shipping RTL is a **4-stage pipelined RV32IM** processor written in SystemVerilog, plus an **8×8 int8 GEMM** MMIO accelerator that shares DCCM over AXI4. The CPU flavor (`hw/presets/rv32im_scalar.yaml`) is the baseline used by CI, examples, and the course.
 
 ## Roadmap: microarchitectures and vector
 
@@ -32,7 +32,8 @@ Tiny Vedas is built to support **multiple CPU organizations** behind one hardwar
 
 - **ISA**: RISC-V RV32IM (32-bit integer + multiply/divide)
 - **Pipeline**: 4-stage (IFU → IDU0 → IDU1 → EXU)
-- **Memory**: Harvard architecture — separate ICCM and DCCM (true dual-port, both ports RW). The core keeps custom fetch/LSU ports; `soc_top` and the FPGA SoC convert those to **AXI4** (32-bit, ID width 4, two DCCM masters) into on-chip CCM slaves. FPGA muxes DCCM port B between the core and the host (halt-and-load). ASIC PD still synthesizes `core_top` only.
+- **Memory**: Harvard architecture — separate ICCM and DCCM (true dual-port, both ports RW). The core keeps custom fetch/LSU ports; `soc_top` and the FPGA SoC convert those to **AXI4** (32-bit, ID width 4, two DCCM masters) into on-chip CCM slaves. FPGA muxes DCCM port B between the core and the host (halt-and-load). ASIC PD synthesizes `core_gemm_top` (CPU + GEMM; memories stay off-chip IOs).
+- **GEMM**: Output-stationary 8×8 PE array (`int8 × int8 → int32`, K-tile 32) at `MMIO_GEMM_ADDR` (`0x00300000`). Packed AXI4 INCR DMA loads A/B from DCCM and writes C; the core is held via `accel_hold` for the duration of one START job (software does not poll DONE).
 - **Decode**: Spec-driven via the `open-decode-tables` submodule (YAML → SystemVerilog)
 - **Verification**: Python instruction-set simulator (ISS) compared against RTL traces
 
@@ -58,40 +59,66 @@ Tiny Vedas is built to support **multiple CPU organizations** behind one hardwar
 - Non-restoring divider with combinational Kogge-Stone adders on the iteration path
 - Unaligned load/store support with byte-strobe DCCM writes (no store RMW) and strobe-aware store-to-load forwarding. Dual RW DCCM ports complete both beats of an unaligned access in one cycle (stall only on a same-cycle load/store port conflict).
 
+### GEMM accelerator (`rtl/accel/`)
+
+One START programs a single 2-D DCCM matrix multiply `C = A × B`:
+
+| Item | Value |
+|------|-------|
+| Array | 8×8 output-stationary PEs |
+| Datatypes | `int8 × int8 → int32` accumulators |
+| K tiling | 32-element tiles, dual ping-pong A/B buffers |
+| DMA | 32-bit AXI4 INCR bursts (A along K, B along N, C int32 along N) |
+| Wait | Core `accel_hold` for the job; tests must not poll STATUS before reading C |
+
+CSRs (`rtl/include/gemm_csrs.svh`): `BASE_A/B/C`, `M`, `N`, `K`, `CTRL` (START / soft reset), `STATUS` (BUSY / DONE). DONE is sticky until the next START. Firmware examples: `tests/asm/gemm_8x8.s`, `tests/c/gemm_8x8.c`, `tests/c/gemm_multi.c`.
+
 ## Project Structure
 
 ```
 Tiny-Vedas/
-├── rtl/                     # Processor RTL
+├── rtl/                     # Processor + accelerator RTL
 │   ├── core_top.sv          # CPU pipeline (memory ports exposed)
-│   ├── soc_top.sv           # core_top + AXI4 adapters + ICCM/DCCM
-│   ├── core_top.flist       # Sim file list (core + SoC + bus)
-│   ├── bus/                 # AXI4 fetch/LSU masters and CCM slaves
+│   ├── soc_top.sv           # core_top + GEMM + AXI4 adapters + ICCM/DCCM
+│   ├── core_top.flist       # Sim file list (core + SoC + bus + GEMM)
+│   ├── accel/               # GEMM MMIO engine (CSR, DMA, 8×8 PE array)
+│   │   ├── gemm_top.sv      # Job FSM + ping-pong tile orchestration
+│   │   ├── gemm_csr.sv      # AXI-Lite CSRs at 0x00300000
+│   │   ├── gemm_dma.sv      # Packed AXI4 INCR bursts to DCCM
+│   │   ├── gemm_datapath.sv # Systolic array + accumulators
+│   │   └── gemm_pe.sv       # int8 MAC PE
+│   ├── bus/                 # AXI4 fetch/LSU masters, CCM slaves, master mux
 │   ├── ifu/                 # Instruction fetch unit
 │   ├── idu/                 # Decode stages, regfile, scoreboard
 │   │   ├── rv32im_decoder.sv   # Generated — do not hand-edit
 │   │   └── decode_out_t.svh      # Generated — do not hand-edit
 │   ├── exu/                 # ALU, MUL, DIV, LSU
-│   ├── include/             # global.svh, types.svh, axi4.svh, mmio_map.svh (generated)
+│   ├── include/             # global.svh, types.svh, axi4.svh, gemm_csrs.svh, mmio_map.svh
 │   └── lib/                 # Byte-write ICCM/DCCM (`sync_tdp_mem`)
 ├── fpga/alveo_u280/         # Alveo U280 bitstream, host load, card smoke
+├── pd/                      # ASIC PD: sv2v + OpenROAD (`core_gemm_top`)
+│   ├── rtl/core_gemm_top.sv # PD wrapper: core_top + gemm_top
+│   ├── platforms/           # ASAP7 / sky130 YAML
+│   └── README.md
 ├── dv/
-│   ├── sv/                  # core_top_tb.sv, lsu_tb.sv
+│   ├── sv/                  # core_top_tb.sv, gemm_top_tb.sv, lsu_tb.sv
 │   └── verilator/           # Verilator C++ harness
 ├── hw/                      # Hardware presets (scalar, VLIW, OoO + vector)
 │   ├── presets/             # YAML configs shared by RTL/SW (see hw/README.md)
-│   ├── soc/                 # SoC device map (MMIO mux + soc_defines.h)
+│   ├── soc/                 # SoC device map (UART, GEMM, EOT)
 │   └── types.py             # Typed HwConfig loader
 ├── tests/
-│   ├── asm/                 # Assembly test programs
-│   ├── c/                   # C benchmarks (helloworld, iaxpy)
+│   ├── asm/                 # Assembly test programs (incl. gemm_8x8)
+│   ├── c/                   # C tests (helloworld, iaxpy, gemm_8x8, gemm_multi)
 │   ├── elf/                 # Prebuilt ELF binaries (dhrystone)
-│   ├── pyvedas/             # PyTorch → JIT model specs
-│   └── smoke.tlist          # Regression test list
+│   ├── pyvedas/             # PyTorch → JIT model specs (incl. gemm_mmio)
+│   ├── smoke.tlist          # Regression test list
+│   └── gemm.tlist           # GEMM-only regression
 ├── pyvedas/                 # PyTorch → Tiny-Vedas JIT
 ├── tools/
 │   ├── sim_manager.py       # Main test runner (compile → ISS → RTL → compare)
-│   └── rv_iss.py            # Reference instruction-set simulator
+│   ├── rv_iss.py            # Reference instruction-set simulator
+│   └── gemm_cosim.py        # Directed / random GEMM co-simulation
 ├── sw/
 │   ├── include/             # soc_defines.h (generated — do not hand-edit)
 │   └── vedas_printf/        # Bare-metal printf library for C tests
@@ -100,7 +127,8 @@ Tiny-Vedas/
 ├── scripts/
 │   ├── install_deps.sh      # Dependency installer (`make deps`)
 │   ├── env.sh               # Generated PATH + venv (by `make deps`)
-│   └── with_env.sh          # Wrapper used by Makefile targets
+│   ├── with_env.sh          # Wrapper used by Makefile targets
+│   └── pd_docker.sh         # OpenROAD Docker wrapper for rtl2gds
 ├── .github/workflows/ci.yml # GitHub Actions CI pipeline
 ├── Makefile
 ├── requirements.txt
@@ -267,6 +295,9 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
 | `make smoke` | Run the smoke regression via XSim (requires Vivado) |
 | `make fpga alveo_u280` | Build the Alveo U280 bitstream (Vivado 2023.2) |
 | `make fpga_smoke alveo_u280` | Run `tests/smoke.tlist` on the programmed Alveo (needs sudo) |
+| `make gemm-directed` | Directed GEMM RTL vs golden (`tools/gemm_cosim.py`) |
+| `make gemm-cosim` | Directed + 100 random GEMM seeds |
+| `make rtl2gds` | ASIC PD: sv2v + OpenROAD (`core_gemm_top`; see [pd/README.md](pd/README.md)) |
 | `make decodes` | Regenerate `rtl/idu/rv32im_decoder.sv` from YAML |
 | `make soc` | Regenerate `mmio_map.svh` and `sw/include/soc_defines.h` from `hw/soc/` |
 | `make clean` | Remove build artifacts (`work/`, `obj_dir/`, logs, VCDs) |
@@ -350,7 +381,9 @@ See [SVLib/README.md](SVLib/README.md) for the full library inventory.
 
 Smoke tests cover ALU, forwarding, multiply, divide (`asm.basic_div`,
 `asm.div_regression`), load/store, branches, jumps, C programs, PyVedas JIT tests
-(`pyvedas.{vector,matrix,tensor}_{add,mul}`), and Dhrystone.
+(`pyvedas.{vector,matrix,tensor}_{add,mul}`), GEMM (`asm.gemm_8x8`, `c.gemm_8x8`,
+`c.gemm_multi`, `pyvedas.gemm_mmio`), and Dhrystone. `tests/gemm.tlist` runs the
+GEMM subset alone.
 
 ## Memory Map
 
@@ -361,7 +394,7 @@ Smoke tests cover ALU, forwarding, multiply, divide (`asm.basic_div`,
 | ICCM (instructions) | 2^18 words | 32-bit | Loaded from ELF `.text` section |
 | DCCM (data) | 2^18 words | 32-bit | Dual RW ports (byte strobes); loaded from `.data`, `.rodata`, `.bss`, etc. |
 
-Configured in `rtl/include/global.svh`. The Alveo overlay uses smaller windows (32 KiB ICCM / 64 KiB DCCM); see [fpga/alveo_u280/README.md](fpga/alveo_u280/README.md). UART (`0x00200000`) and EOT (`0x10000000`) writes are decoded on the core store path and do not enter DCCM. Addresses come from [`hw/soc/default.yaml`](hw/soc/default.yaml); software uses generated [`sw/include/soc_defines.h`](sw/include/soc_defines.h).
+Configured in `rtl/include/global.svh`. The Alveo overlay uses smaller windows (32 KiB ICCM / 1 MiB DCCM, BAR2 2 MiB); see [fpga/alveo_u280/README.md](fpga/alveo_u280/README.md). UART (`0x00200000`), GEMM (`0x00300000`), and EOT (`0x10000000`) writes are decoded on the core store path and do not enter DCCM as MMIO. Addresses come from [`hw/soc/default.yaml`](hw/soc/default.yaml); software uses generated [`sw/include/soc_defines.h`](sw/include/soc_defines.h).
 
 ### Software-visible addresses
 
@@ -369,6 +402,7 @@ Configured in `rtl/include/global.svh`. The Alveo overlay uses smaller windows (
 |---------|---------|
 | `SOC_LINK_ADDRESS` (`0x00100000`) | Default link address for test programs (`-Wl,-Ttext=0x100000`) |
 | `MMIO_UART_ADDR` (`0x00200000`) | MMIO UART — bare-metal `printf` output (`sw/vedas_printf`) |
+| `MMIO_GEMM_ADDR` (`0x00300000`) | GEMM CSRs (BASE_A/B/C, M/N/K, CTRL, STATUS) — see `rtl/include/gemm_csrs.svh` |
 | `MMIO_EOT_ADDR` (`0x10000000`) | End-of-test flag — write `EOT_MAGIC` to halt simulation |
 | `0x80000000` | Default initial stack pointer (register x2) |
 
@@ -391,7 +425,7 @@ To add or modify instructions, edit the YAML in the `open-decode-tables` submodu
 
 ## SoC device map
 
-MMIO devices (UART, EOT, later accelerators) are described in `hw/soc/default.yaml`, not hardcoded in RTL or C. CPU presets select the map with `soc: default`.
+MMIO devices (UART, GEMM, EOT) are described in `hw/soc/default.yaml`, not hardcoded in RTL or C. CPU presets select the map with `soc: default`.
 
 ```bash
 make soc
@@ -488,10 +522,11 @@ pyvedas.my_add
 Inspect JIT output on failure: `work/pyvedas.my_add/jit.log`, `compile.log`, `sim.log`.
 
 
-The core is synthesizable. Simulation and FPGA SoCs sit **outside** `core_top`:
-AXI4 adapters plus ICCM/DCCM slaves (`rtl/bus/`, `rtl/soc_top.sv`,
-`fpga/alveo_u280/rtl/`). ASIC PD still nets `core_top` only — see
-[pd/README.md](pd/README.md). FPGA build/program/smoke:
+The core and GEMM are synthesizable. Simulation and FPGA SoCs sit **outside**
+`core_top`: AXI4 adapters, ICCM/DCCM slaves, and `gemm_top` (`rtl/bus/`,
+`rtl/accel/`, `rtl/soc_top.sv`, `fpga/alveo_u280/rtl/`). ASIC PD nets
+`core_gemm_top` (CPU + GEMM, memories as IOs) — see [pd/README.md](pd/README.md).
+FPGA build/program/smoke:
 
 ```bash
 make fpga alveo_u280          # bitstream (Vivado 2023.2)
@@ -507,6 +542,9 @@ make config                    # CPU flavor + PDK platform
 make sv2v                      # convert RTL only
 make rtl2gds                   # sv2v + synthesis/place/route/GDS
 make rtl2gds ORFS_TARGET=synth # stop after synthesis
+
+# Docker (ORFS image; used when host Yosys/OpenROAD is missing)
+ORFS_TARGET=all PD_PLATFORM=ci-asap7 ./scripts/pd_docker.sh make rtl2gds
 ```
 
 ```bash

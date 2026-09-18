@@ -2,13 +2,20 @@
 //     Copyright (c) 2025 Siliscale Consulting, LLC
 //     Licensed under the Apache License, Version 2.0 (the "License");
 ///////////////////////////////////////////////////////////////////////////////
-// Select between two AXI4 masters onto one slave. sel=1 uses master B.
+// Select between two AXI4 masters onto one slave. sel_b=1 uses master B.
+//
+// Select is sticky until the granted master's outstanding AR/R and AW/B
+// complete. A combinational cutover (old GEMM mux) lets the new master
+// rready=1 drain the slave beat that still belongs to the old master —
+// LSU hangs forever, GEMM deadlocks on a leftover wr_have_aw.
 
 `ifndef AXI4_SVH
 `include "axi4.svh"
 `endif
 
 module axi4_mst_sel (
+    input logic clk,
+    input logic rstn,
     input logic sel_b,
 
     input  logic [   AXI_ID_WIDTH-1:0] a_arid,
@@ -102,49 +109,76 @@ module axi4_mst_sel (
     output logic                        s_bready
 );
 
-  assign s_arid    = sel_b ? b_arid : a_arid;
-  assign s_araddr  = sel_b ? b_araddr : a_araddr;
-  assign s_arlen   = sel_b ? b_arlen : a_arlen;
-  assign s_arsize  = sel_b ? b_arsize : a_arsize;
-  assign s_arburst = sel_b ? b_arburst : a_arburst;
-  assign s_arvalid = sel_b ? b_arvalid : a_arvalid;
-  assign a_arready = sel_b ? 1'b0 : s_arready;
-  assign b_arready = sel_b ? s_arready : 1'b0;
+  logic sel;
+  logic rd_busy;
+  logic wr_busy;
+  logic rd_start, rd_done;
+  logic wr_start, wr_done;
+
+  assign rd_start = s_arvalid & s_arready;
+  assign rd_done  = s_rvalid & s_rready & s_rlast;
+  assign wr_start = s_awvalid & s_awready;
+  assign wr_done  = s_bvalid & s_bready;
+
+  always_ff @(posedge clk) begin
+    if (!rstn) begin
+      sel     <= 1'b0;
+      rd_busy <= 1'b0;
+      wr_busy <= 1'b0;
+    end else begin
+      if (rd_start && !rd_done) rd_busy <= 1'b1;
+      else if (rd_done && !rd_start) rd_busy <= 1'b0;
+
+      if (wr_start && !wr_done) wr_busy <= 1'b1;
+      else if (wr_done && !wr_start) wr_busy <= 1'b0;
+
+      if (!rd_busy && !wr_busy && !rd_start && !wr_start) sel <= sel_b;
+    end
+  end
+
+  assign s_arid    = sel ? b_arid : a_arid;
+  assign s_araddr  = sel ? b_araddr : a_araddr;
+  assign s_arlen   = sel ? b_arlen : a_arlen;
+  assign s_arsize  = sel ? b_arsize : a_arsize;
+  assign s_arburst = sel ? b_arburst : a_arburst;
+  assign s_arvalid = sel ? b_arvalid : a_arvalid;
+  assign a_arready = sel ? 1'b0 : s_arready;
+  assign b_arready = sel ? s_arready : 1'b0;
 
   assign a_rid   = s_rid;
   assign a_rdata = s_rdata;
   assign a_rresp = s_rresp;
   assign a_rlast = s_rlast;
-  assign a_rvalid = sel_b ? 1'b0 : s_rvalid;
+  assign a_rvalid = sel ? 1'b0 : s_rvalid;
   assign b_rid   = s_rid;
   assign b_rdata = s_rdata;
   assign b_rresp = s_rresp;
   assign b_rlast = s_rlast;
-  assign b_rvalid = sel_b ? s_rvalid : 1'b0;
-  assign s_rready = sel_b ? b_rready : a_rready;
+  assign b_rvalid = sel ? s_rvalid : 1'b0;
+  assign s_rready = sel ? b_rready : a_rready;
 
-  assign s_awid    = sel_b ? b_awid : a_awid;
-  assign s_awaddr  = sel_b ? b_awaddr : a_awaddr;
-  assign s_awlen   = sel_b ? b_awlen : a_awlen;
-  assign s_awsize  = sel_b ? b_awsize : a_awsize;
-  assign s_awburst = sel_b ? b_awburst : a_awburst;
-  assign s_awvalid = sel_b ? b_awvalid : a_awvalid;
-  assign a_awready = sel_b ? 1'b0 : s_awready;
-  assign b_awready = sel_b ? s_awready : 1'b0;
+  assign s_awid    = sel ? b_awid : a_awid;
+  assign s_awaddr  = sel ? b_awaddr : a_awaddr;
+  assign s_awlen   = sel ? b_awlen : a_awlen;
+  assign s_awsize  = sel ? b_awsize : a_awsize;
+  assign s_awburst = sel ? b_awburst : a_awburst;
+  assign s_awvalid = sel ? b_awvalid : a_awvalid;
+  assign a_awready = sel ? 1'b0 : s_awready;
+  assign b_awready = sel ? s_awready : 1'b0;
 
-  assign s_wdata  = sel_b ? b_wdata : a_wdata;
-  assign s_wstrb  = sel_b ? b_wstrb : a_wstrb;
-  assign s_wlast  = sel_b ? b_wlast : a_wlast;
-  assign s_wvalid = sel_b ? b_wvalid : a_wvalid;
-  assign a_wready = sel_b ? 1'b0 : s_wready;
-  assign b_wready = sel_b ? s_wready : 1'b0;
+  assign s_wdata  = sel ? b_wdata : a_wdata;
+  assign s_wstrb  = sel ? b_wstrb : a_wstrb;
+  assign s_wlast  = sel ? b_wlast : a_wlast;
+  assign s_wvalid = sel ? b_wvalid : a_wvalid;
+  assign a_wready = sel ? 1'b0 : s_wready;
+  assign b_wready = sel ? s_wready : 1'b0;
 
   assign a_bid   = s_bid;
   assign a_bresp = s_bresp;
-  assign a_bvalid = sel_b ? 1'b0 : s_bvalid;
+  assign a_bvalid = sel ? 1'b0 : s_bvalid;
   assign b_bid   = s_bid;
   assign b_bresp = s_bresp;
-  assign b_bvalid = sel_b ? s_bvalid : 1'b0;
-  assign s_bready = sel_b ? b_bready : a_bready;
+  assign b_bvalid = sel ? s_bvalid : 1'b0;
+  assign s_bready = sel ? b_bready : a_bready;
 
 endmodule

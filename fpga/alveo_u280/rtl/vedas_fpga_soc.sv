@@ -585,6 +585,8 @@ module vedas_fpga_soc #(
   );
 
   axi4_mst_sel u_mux0 (
+      .clk       (core_clk),
+      .rstn      (core_rstn),
       .sel_b     (gemm_busy_w),
       .a_arid    (dmem_arid[0]),
       .a_araddr  (dmem_araddr[0]),
@@ -676,6 +678,8 @@ module vedas_fpga_soc #(
   );
 
   axi4_mst_sel u_mux1 (
+      .clk       (core_clk),
+      .rstn      (core_rstn),
       .sel_b     (gemm_busy_w),
       .a_arid    (dmem_arid[1]),
       .a_araddr  (dmem_araddr[1]),
@@ -786,7 +790,7 @@ module vedas_fpga_soc #(
       .INIT_FILE("")
   ) u_dccm (
       .clk          (core_clk),
-      .rstn         (axi_rstn_c),
+      .rstn         (core_rstn),
       .s_axi_arid   (s0_arid),
       .s_axi_araddr (s0_araddr),
       .s_axi_arlen  (s0_arlen),

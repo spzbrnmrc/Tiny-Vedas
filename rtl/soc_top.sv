@@ -453,6 +453,8 @@ module soc_top #(
   );
 
   axi4_mst_sel u_mux0 (
+      .clk       (clk),
+      .rstn      (rstn),
       .sel_b     (gemm_busy_w),
       .a_arid    (dmem_arid[0]),
       .a_araddr  (dmem_araddr[0]),
@@ -544,6 +546,8 @@ module soc_top #(
   );
 
   axi4_mst_sel u_mux1 (
+      .clk       (clk),
+      .rstn      (rstn),
       .sel_b     (gemm_busy_w),
       .a_arid    (dmem_arid[1]),
       .a_araddr  (dmem_araddr[1]),
