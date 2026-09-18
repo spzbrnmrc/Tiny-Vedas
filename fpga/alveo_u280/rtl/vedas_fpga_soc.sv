@@ -37,7 +37,7 @@
 `endif
 
 module vedas_fpga_soc #(
-    parameter logic [31:0] VERSION = 32'h000B_0012,
+    parameter logic [31:0] VERSION = 32'h000B_0013,
     parameter int UART_FIFO_DEPTH = 256,
     parameter logic [XLEN-1:0] STACK_POINTER_INIT_VALUE = 32'h8000_0000
 ) (
@@ -126,6 +126,14 @@ module vedas_fpga_soc #(
   wire        uart_req_a;
   wire [7:0]  uart_data_a;
   wire        uart_ack_c;
+
+  /* LSU wen is a level (dc2 can stall). One store must be one TX byte. */
+  localparam int UART_TXQ = 64;
+  localparam int UART_TXW = $clog2(UART_TXQ);
+  reg                  dccm_uart_q;
+  reg [7:0]            uart_txq[UART_TXQ];
+  reg [UART_TXW:0]     uart_tx_w;
+  reg [UART_TXW:0]     uart_tx_r;
 
   cdc_sync #(.N(3), .WIDTH(1))  u_cdc_run    (.clk(core_clk),   .din(core_run),                        .dout(core_run_c));
   cdc_sync #(.N(3), .WIDTH(1))  u_cdc_arstn  (.clk(core_clk),   .din(s_axi_aresetn & core_clk_locked), .dout(axi_rstn_c));
@@ -235,6 +243,10 @@ module vedas_fpga_soc #(
   wire dccm_is_eot  = mmio_dev_we[MMIO_IDX_EOT] &&
                       (mmio_dev_wdata[MMIO_IDX_EOT] == EOT_MAGIC);
   wire [7:0] dccm_uart_byte = mmio_dev_wdata[MMIO_IDX_UART][7:0];
+  wire uart_tx_empty = (uart_tx_w == uart_tx_r);
+  wire uart_tx_full  = (uart_tx_w[UART_TXW] != uart_tx_r[UART_TXW]) &&
+                       (uart_tx_w[UART_TXW-1:0] == uart_tx_r[UART_TXW-1:0]);
+  wire uart_tx_push  = dccm_is_uart && !dccm_uart_q && core_rstn;
 
   genvar gp;
   generate
@@ -907,24 +919,40 @@ module vedas_fpga_soc #(
     else if (dccm_is_eot && core_rstn) eot_done_c_r <= 1'b1;
   end
 
-  // UART core side
+  // UART core side: edge-detect MMIO stores into a small TXQ, then CDC
+  // one byte at a time. dc2_store_v is a level — sampling it every cycle
+  // while !busy duplicated chars and dropped the next store (helloworld).
   reg uart_ack_c_q;
   always_ff @(posedge core_clk) begin
     if (!axi_rstn_c) begin
-      uart_req_c   <= 1'b0;
-      uart_busy_c  <= 1'b0;
-      uart_data_c  <= 8'h0;
-      uart_ack_c_q <= 1'b0;
+      uart_req_c     <= 1'b0;
+      uart_busy_c    <= 1'b0;
+      uart_data_c    <= 8'h0;
+      uart_ack_c_q   <= 1'b0;
+      dccm_uart_q    <= 1'b0;
+      uart_tx_w      <= '0;
+      uart_tx_r      <= '0;
     end else begin
       uart_ack_c_q <= uart_ack_c;
-      if (uart_clear_c)
+      dccm_uart_q  <= dccm_is_uart & core_rstn;
+
+      if (uart_clear_c) begin
         uart_busy_c <= 1'b0;
-      else if (uart_busy_c && (uart_ack_c ^ uart_ack_c_q))
-        uart_busy_c <= 1'b0;
-      else if (dccm_is_uart && core_rstn && !uart_busy_c) begin
-        uart_data_c <= dccm_uart_byte;
-        uart_req_c  <= ~uart_req_c;
-        uart_busy_c <= 1'b1;
+        uart_tx_w   <= '0;
+        uart_tx_r   <= '0;
+      end else begin
+        if (uart_tx_push && !uart_tx_full) begin
+          uart_txq[uart_tx_w[UART_TXW-1:0]] <= dccm_uart_byte;
+          uart_tx_w <= uart_tx_w + 1'b1;
+        end
+        if (uart_busy_c && (uart_ack_c ^ uart_ack_c_q)) begin
+          uart_busy_c <= 1'b0;
+        end else if (!uart_busy_c && !uart_tx_empty) begin
+          uart_data_c <= uart_txq[uart_tx_r[UART_TXW-1:0]];
+          uart_tx_r   <= uart_tx_r + 1'b1;
+          uart_req_c  <= ~uart_req_c;
+          uart_busy_c <= 1'b1;
+        end
       end
     end
   end
@@ -956,6 +984,7 @@ module vedas_fpga_soc #(
   wire [DCCM_AW-1:0] axi_dccm_ridx = DCCM_AW'( (ar_addr - DCCM_BASE) >> 2 );
 
   reg uart_req_a_q;
+  reg [1:0] uart_cap_wait;
   wire host_ack_edge = host_ack_a ^ host_ack_a_q;
 
   always_ff @(posedge s_axi_aclk) begin
@@ -971,6 +1000,7 @@ module vedas_fpga_soc #(
       uart_rd_ptr     <= '0;
       uart_ack_a      <= 1'b0;
       uart_req_a_q    <= 1'b0;
+      uart_cap_wait   <= 2'd0;
       host_req_a      <= 1'b0;
       host_ack_a_q    <= 1'b0;
       host_wr_a       <= 1'b0;
@@ -999,14 +1029,20 @@ module vedas_fpga_soc #(
           uart_clear_a <= 1'b0;
       end
 
-      // Always complete the handshake. If FIFO is full, drop the byte but still
-      // ack — otherwise core uart_busy sticks forever.
+      // Req is a toggle CDC'd with 3 FFs; data is an 8-bit per-bit sync.
+      // Wait extra AXI cycles after the req edge so uart_data_a has settled,
+      // then push and ack. Full FIFO still acks so core busy cannot stick.
       if (uart_req_a ^ uart_req_a_q) begin
-        if (!uart_full) begin
-          uart_mem[uart_wr_ptr[UART_AW-1:0]] <= uart_data_a;
-          uart_wr_ptr <= uart_wr_ptr + 1'b1;
+        uart_cap_wait <= 2'd3;
+      end else if (uart_cap_wait != 2'd0) begin
+        uart_cap_wait <= uart_cap_wait - 2'd1;
+        if (uart_cap_wait == 2'd1) begin
+          if (!uart_full) begin
+            uart_mem[uart_wr_ptr[UART_AW-1:0]] <= uart_data_a;
+            uart_wr_ptr <= uart_wr_ptr + 1'b1;
+          end
+          uart_ack_a <= ~uart_ack_a;
         end
-        uart_ack_a <= ~uart_ack_a;
       end
 
       if (host_busy_a && host_ack_edge) begin
@@ -1045,6 +1081,7 @@ module vedas_fpga_soc #(
               uart_clear_hold <= 4'hF;
               uart_wr_ptr     <= '0;
               uart_rd_ptr     <= '0;
+              uart_cap_wait   <= 2'd0;
             end
             default: ;
           endcase

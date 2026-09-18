@@ -71,6 +71,7 @@ def lower_graph(
     trace_inputs: Tuple[Any, ...],
     *,
     materializer: BufferMaterializer | None = None,
+    gemm_scratch_bytes: int | None = None,
 ) -> CompilePlan:
     materializer = materializer or FlatRowMajorMaterializer()
 
@@ -114,7 +115,14 @@ def lower_graph(
                 f"(codegen={op.codegen!r})"
             )
 
-        statements.append(handler(op, node, memory))
+        statements.append(
+            handler(
+                op,
+                node,
+                memory,
+                gemm_scratch_bytes=gemm_scratch_bytes,
+            )
+        )
 
     return CompilePlan(
         memory=memory,
@@ -144,8 +152,21 @@ def emit_c(plan: CompilePlan, out_path: Path, *, target: bool = False) -> None:
 
     lines.append("")
     lines.append("int main(void) {")
+    if target:
+        # -nostdlib has no CRT, so GP is otherwise 0 and linker-relaxed
+        # addi(gp, ...) misses .data/.bss (broadcast/bmm scratch, C, goldens).
+        lines.append("    asm volatile (")
+        lines.append('        ".option push\\n"')
+        lines.append('        ".option norelax\\n"')
+        lines.append('        "la gp, __global_pointer$\\n"')
+        lines.append('        ".option pop"')
+        lines.append('        :')
+        lines.append('        :')
+        lines.append('        : "gp"')
+        lines.append("    );")
     for stmt in plan.statements:
-        lines.append(f"    {stmt}")
+        for line in stmt.split("\n"):
+            lines.append(f"    {line}" if line else "")
 
     if target:
         if plan.result_name and plan.result_golden:

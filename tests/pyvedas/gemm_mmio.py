@@ -1,20 +1,9 @@
-"""PyVedas skeleton: gemm_mmio CSR sequence (int8 A/B, int32 C)."""
+"""PyVedas: 8x8 gemm_mmio (one START; hardware micro-tiles)."""
 
 import torch
 import torch.nn as nn
 
-
-@torch.library.custom_op("pyvedas::gemm_mmio", mutates_args=())
-def gemm_mmio(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """Eager golden: C = A @ B with int8 values held in int32 tensors."""
-    return (a.to(torch.int32) @ b.to(torch.int32)).to(torch.int32)
-
-
-@gemm_mmio.register_fake
-def _(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    return torch.empty(
-        a.shape[0], b.shape[1], dtype=torch.int32, device=a.device
-    )
+from gemm_op import gemm_mmio
 
 
 class GemmMmio(nn.Module):

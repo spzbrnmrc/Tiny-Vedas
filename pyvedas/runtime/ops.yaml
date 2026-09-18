@@ -24,8 +24,8 @@ ops:
 
   pyvedas.gemm_mmio.default:
     codegen: gemm_mmio
-    symbol: pyvedas_gemm_mmio
-    signature: "void pyvedas_gemm_mmio(const int32_t *a, const int32_t *b, int32_t *out, size_t m, size_t n, size_t k)"
+    symbol: pyvedas_gemm_job
+    signature: "void pyvedas_gemm_job(const int32_t *a, const int32_t *b, int32_t *out, size_t m, size_t n, size_t k, size_t m0, size_t n0, size_t k0, size_t m_t, size_t n_t, size_t k_t, uint8_t *scratch)"
     sources:
       - kind: c
         path: runtime/c/gemm_mmio.c

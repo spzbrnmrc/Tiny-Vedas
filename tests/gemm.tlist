@@ -2,3 +2,10 @@ asm.gemm_8x8
 c.gemm_8x8
 c.gemm_multi
 pyvedas.gemm_mmio
+pyvedas.gemm_mmio_32
+pyvedas.gemm_bmm
+pyvedas.gemm_broadcast
+pyvedas.gemm_mmio_tiled
+pyvedas.gemm_mmio_128
+pyvedas.gemm_bmm_tiled
+pyvedas.gemm_mmio_oversize

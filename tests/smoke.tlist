@@ -30,4 +30,8 @@ pyvedas.vector_mul
 pyvedas.matrix_mul
 pyvedas.tensor_mul
 pyvedas.gemm_mmio
+pyvedas.gemm_mmio_32
+pyvedas.gemm_bmm
+pyvedas.gemm_broadcast
+pyvedas.gemm_mmio_tiled
 elf.dhrystone
