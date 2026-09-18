@@ -36,6 +36,8 @@ docker run --rm \
     -e "HW_CONFIG=${HW_CONFIG:-hw/presets/rv32im_scalar.yaml}" \
     -e "WORK_HOME=${WORK_MOUNT}/pd/work/orfs" \
     -e "FLOW_HOME=/OpenROAD-flow-scripts/flow" \
+    -e "LEC_CHECK=${LEC_CHECK:-0}" \
+    -e "QT_QPA_PLATFORM=offscreen" \
     "${ORFS_IMAGE}" \
     bash -euxo pipefail -c '
         mkdir -p "${HOME}"

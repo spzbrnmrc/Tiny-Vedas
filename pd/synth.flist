@@ -37,3 +37,9 @@ $PROJ/rtl/lsu/lsu_load_queue.sv
 $PROJ/rtl/lsu/lsu_store_queue.sv
 $PROJ/rtl/lsu/lsu_top.sv
 $PROJ/rtl/idu/reg_file.sv
+$PROJ/rtl/accel/gemm_pe.sv
+$PROJ/rtl/accel/gemm_datapath.sv
+$PROJ/rtl/accel/gemm_dma.sv
+$PROJ/rtl/accel/gemm_csr.sv
+$PROJ/rtl/accel/gemm_top.sv
+$PROJ/pd/rtl/core_gemm_top.sv

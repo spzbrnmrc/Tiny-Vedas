@@ -23,6 +23,16 @@ devices:
     sw:
       addr_macro: MMIO_UART_ADDR
 
+  - name: gemm
+    compatible: tv,gemm
+    role: accelerator
+    base: 0x00300000
+    size: 4096
+    access: [read, write]
+    module: gemm_top
+    sw:
+      addr_macro: MMIO_GEMM_ADDR
+
   - name: eot
     compatible: tv,eot
     role: eot

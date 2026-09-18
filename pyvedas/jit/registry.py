@@ -31,12 +31,18 @@ class RegistryError(RuntimeError):
     pass
 
 
+# torch.export inserts these; they have no runtime lowering.
+_EXPORT_SKIP_TARGETS = {
+    "aten._assert_tensor_metadata.default",
+}
+
+
 def canonical_graph_target(target: Any) -> str:
     """Normalize FX node targets to ops.yaml keys (e.g. aten.add.Tensor)."""
     if isinstance(target, str):
         return target
     as_str = str(target)
-    if as_str.startswith("aten.") or as_str.startswith("operator."):
+    if as_str.startswith(("aten.", "operator.", "pyvedas.")):
         return as_str
     name = getattr(target, "__name__", None)
     if name:
@@ -99,6 +105,9 @@ def validate_graph_ops(graph, registry: dict[str, RuntimeOp]) -> None:
     missing: List[str] = []
     for node in graph.nodes:
         if node.op != "call_function":
+            continue
+        key = canonical_graph_target(node.target)
+        if key in _EXPORT_SKIP_TARGETS:
             continue
         try:
             resolve_op(registry, node.target)

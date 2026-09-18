@@ -19,7 +19,7 @@ from .memory import (
     emit_static_buffers,
     format_shape,
 )
-from .registry import RegistryError, RuntimeOp, resolve_op
+from .registry import RegistryError, RuntimeOp, resolve_op, canonical_graph_target, _EXPORT_SKIP_TARGETS
 
 
 @dataclass
@@ -97,6 +97,9 @@ def lower_graph(
             continue
         if node.op != "call_function":
             raise RegistryError(f"Unsupported FX node type: {node.op} ({node.name})")
+
+        if canonical_graph_target(node.target) in _EXPORT_SKIP_TARGETS:
+            continue
 
         op = resolve_op(registry, node.target)
         for src in op.sources:

@@ -66,7 +66,10 @@ def compile_model(
         "graph_json": str(graph_json),
         "graph_backend": imported.backend,
         "hw_config": hw.to_dict(),
-        "include_dirs": [str(pyvedas_root / "runtime" / "include")],
+        "include_dirs": [
+            str(pyvedas_root / "runtime" / "include"),
+            str(pyvedas_root.parent / "sw" / "include"),
+        ],
         "sources": [str(p) for p in plan.runtime_sources],
         "target": target,
     }

@@ -243,7 +243,7 @@ def main() -> int:
     ap.add_argument(
         "--skip-oversized",
         action="store_true",
-        help="skip tests that do not fit 32 KiB ICCM / 64 KiB DCCM (default: fail them)",
+        help="skip tests that do not fit 32 KiB ICCM / 1 MiB DCCM (default: fail them)",
     )
     ap.add_argument(
         "--expect-uart",

@@ -81,7 +81,8 @@ module idu1 #(
     input  logic                           exu_mul_busy,
     input  logic                           exu_div_busy,
     input  logic                           exu_lsu_busy,
-    input  logic                           exu_lsu_stall
+    input  logic                           exu_lsu_stall,
+    input  logic                           accel_hold
 );
 
   idu1_out_t idu1_out_i;
@@ -223,6 +224,7 @@ module idu1 #(
       pipe_stall = exu_lsu_busy;
     end
     pipe_stall |= exu_lsu_stall;
+    pipe_stall |= accel_hold;
   end
 
   always_comb begin : pipe_stall_output

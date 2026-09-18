@@ -30,4 +30,13 @@ void pyvedas_aten_mul_Tensor(
     size_t n
 );
 
+void pyvedas_gemm_mmio(
+    const int32_t *a,
+    const int32_t *b,
+    int32_t *out,
+    size_t m,
+    size_t n,
+    size_t k
+);
+
 #endif

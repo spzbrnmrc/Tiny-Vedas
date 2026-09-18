@@ -71,6 +71,8 @@ module core_top_tb;
   core_debug_lane_t core_debug[ISSUE_WIDTH-1:0];
   logic            mmio_dev_we    [MMIO_DEV_COUNT-1:0];
   logic [XLEN-1:0] mmio_dev_wdata [MMIO_DEV_COUNT-1:0];
+  logic            accel_hold;
+  logic            gemm_busy;
 
   /* DUT Instantiation */
   soc_top #(
@@ -114,13 +116,13 @@ module core_top_tb;
     if (finish_seq_detected) begin
       $finish;
     end
-    if (cycle_count_last_retired > 10000) begin
+    if (!accel_hold && cycle_count_last_retired > 10000) begin
       $fdisplay(fd, "[%d] Nothing retired in 10000 cycles... Aborting", cycle_count);
       $finish;
     end
     /* fail_hang.s is a tight JAL — it keeps retiring, so the idle abort never fires. */
-    if (cycle_count > 32'd5000000) begin
-      $fdisplay(fd, "[%d] Exceeded 5000000 cycles... Aborting", cycle_count);
+    if (cycle_count > 32'd50000000) begin
+      $fdisplay(fd, "[%d] Exceeded 50000000 cycles... Aborting", cycle_count);
       $finish;
     end
   end

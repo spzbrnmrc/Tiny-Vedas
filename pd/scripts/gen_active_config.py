@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -69,9 +70,9 @@ def _render_sdc(template: str, clock_period: float, clock_io_pct: float) -> str:
         else str(int(clock_io_pct))
     )
     return (
-        template.replace("__CLK_PERIOD__", period_text).replace(
-            "__CLK_IO_PCT__", io_text
-        )
+        template.replace("__CLK_PERIOD__", period_text)
+        .replace("__CLK_IO_PCT__", io_text)
+        .replace("__DESIGN_NAME__", "core_gemm_top")
     )
 
 
@@ -110,7 +111,7 @@ def _orfs_config_lines(
     lines = [
         "# Generated ORFS design config for Tiny-Vedas.",
         "export DESIGN_NICKNAME = tiny_vedas",
-        "export DESIGN_NAME = core_top",
+        "export DESIGN_NAME = core_gemm_top",
         f"export PLATFORM = {platform}",
         "",
         f"export VERILOG_FILES = {verilog_out}",
@@ -173,6 +174,14 @@ def main() -> int:
     dccm = int(plat.get("synth_dccm_depth_words", 1024))
     orfs_root = Path(str(plat.get("orfs_root", "/tools/OpenROAD-flow-scripts")))
     sv2v = Path(str(plat.get("sv2v", "/tools/sv2v/bin/sv2v")))
+    if not sv2v.is_file():
+        for cand in (
+            _REPO / "deps" / "sv2v" / "bin" / "sv2v",
+            Path(shutil.which("sv2v") or ""),
+        ):
+            if cand.is_file():
+                sv2v = cand
+                break
 
     clock_period, clock_unit, target_ghz = _resolve_clock(plat)
     clock_io_pct = float(plat.get("clock_io_pct", 0.20))
@@ -223,7 +232,7 @@ export ORFS_WORK_HOME="{orfs_work_home}"
 export SV2V="{sv2v}"
 export PD_VERILOG="{verilog_out}"
 export PD_SDC="{sdc_file}"
-export PD_TOP="core_top"
+export PD_TOP="core_gemm_top"
 export PD_CLOCK_PERIOD="{clock_period}"
 export PD_CLOCK_PERIOD_UNIT="{clock_unit}"
 export PD_TARGET_CLOCK_GHZ="{target_ghz if target_ghz is not None else ""}"

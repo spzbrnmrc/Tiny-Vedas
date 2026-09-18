@@ -1,0 +1,3 @@
+asm.gemm_8x8
+c.gemm_8x8
+pyvedas.gemm_mmio

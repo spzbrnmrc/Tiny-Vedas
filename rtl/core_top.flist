@@ -47,4 +47,12 @@ $PROJ/rtl/bus/dmem_to_axi4.sv
 $PROJ/rtl/bus/mmio_mux.sv
 $PROJ/rtl/bus/axi4_tdp_port.sv
 $PROJ/rtl/bus/axi4_iccm.sv
+$PROJ/rtl/include/gemm_csrs.svh
+$PROJ/rtl/accel/gemm_pe.sv
+$PROJ/rtl/accel/gemm_datapath.sv
+$PROJ/rtl/accel/gemm_csr.sv
+$PROJ/rtl/accel/gemm_dma.sv
+$PROJ/rtl/accel/gemm_top.sv
+$PROJ/rtl/bus/axi4_mst_sel.sv
+$PROJ/rtl/bus/mmio_axil_bridge.sv
 $PROJ/rtl/bus/axi4_dccm.sv
