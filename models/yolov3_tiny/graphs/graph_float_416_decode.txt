@@ -1,0 +1,215 @@
+# backend: torch.export
+# call_function count: 107
+# unique: 24
+
+## unique call_function (name  count)
+
+aten.add.Tensor  4
+aten.arange.default  4
+aten.batch_norm.default  11
+aten.cat.default  6
+aten.contiguous.default  2
+aten.conv2d.default  13
+aten.detach_.default  2
+aten.exp.default  2
+aten.leaky_relu.default  11
+aten.lift_fresh_copy.default  2
+aten.max_pool2d.default  6
+aten.meshgrid.indexing  2
+aten.mul.Tensor  6
+aten.pad.default  1
+aten.permute.default  2
+aten.reshape.default  4
+aten.select.int  2
+aten.sigmoid.default  6
+aten.slice.Tensor  6
+aten.stack.default  2
+aten.sub.Tensor  2
+aten.upsample_nearest2d.vec  1
+aten.view.default  6
+getitem  4
+
+## FX nodes
+
+get_attr         net_c0_conv_weight   
+get_attr         net_c0_bn_weight     
+get_attr         net_c0_bn_bias       
+get_attr         net_c2_conv_weight   
+get_attr         net_c2_bn_weight     
+get_attr         net_c2_bn_bias       
+get_attr         net_c4_conv_weight   
+get_attr         net_c4_bn_weight     
+get_attr         net_c4_bn_bias       
+get_attr         net_c6_conv_weight   
+get_attr         net_c6_bn_weight     
+get_attr         net_c6_bn_bias       
+get_attr         net_c8_conv_weight   
+get_attr         net_c8_bn_weight     
+get_attr         net_c8_bn_bias       
+get_attr         net_c10_conv_weight  
+get_attr         net_c10_bn_weight    
+get_attr         net_c10_bn_bias      
+get_attr         net_c12_conv_weight  
+get_attr         net_c12_bn_weight    
+get_attr         net_c12_bn_bias      
+get_attr         net_c13_conv_weight  
+get_attr         net_c13_bn_weight    
+get_attr         net_c13_bn_bias      
+get_attr         net_c14_conv_weight  
+get_attr         net_c14_bn_weight    
+get_attr         net_c14_bn_bias      
+get_attr         net_c15_weight       
+get_attr         net_c15_bias         
+get_attr         net_c18_conv_weight  
+get_attr         net_c18_bn_weight    
+get_attr         net_c18_bn_bias      
+get_attr         net_c21_conv_weight  
+get_attr         net_c21_bn_weight    
+get_attr         net_c21_bn_bias      
+get_attr         net_c22_weight       
+get_attr         net_c22_bias         
+get_attr         net_c0_bn_running_mean 
+get_attr         net_c0_bn_running_var 
+get_attr         net_c0_bn_num_batches_tracked 
+get_attr         net_c2_bn_running_mean 
+get_attr         net_c2_bn_running_var 
+get_attr         net_c2_bn_num_batches_tracked 
+get_attr         net_c4_bn_running_mean 
+get_attr         net_c4_bn_running_var 
+get_attr         net_c4_bn_num_batches_tracked 
+get_attr         net_c6_bn_running_mean 
+get_attr         net_c6_bn_running_var 
+get_attr         net_c6_bn_num_batches_tracked 
+get_attr         net_c8_bn_running_mean 
+get_attr         net_c8_bn_running_var 
+get_attr         net_c8_bn_num_batches_tracked 
+get_attr         net_c10_bn_running_mean 
+get_attr         net_c10_bn_running_var 
+get_attr         net_c10_bn_num_batches_tracked 
+get_attr         net_c12_bn_running_mean 
+get_attr         net_c12_bn_running_var 
+get_attr         net_c12_bn_num_batches_tracked 
+get_attr         net_c13_bn_running_mean 
+get_attr         net_c13_bn_running_var 
+get_attr         net_c13_bn_num_batches_tracked 
+get_attr         net_c14_bn_running_mean 
+get_attr         net_c14_bn_running_var 
+get_attr         net_c14_bn_num_batches_tracked 
+get_attr         net_c18_bn_running_mean 
+get_attr         net_c18_bn_running_var 
+get_attr         net_c18_bn_num_batches_tracked 
+get_attr         net_c21_bn_running_mean 
+get_attr         net_c21_bn_running_var 
+get_attr         net_c21_bn_num_batches_tracked 
+get_attr         decode_lifted_tensor_0 
+get_attr         decode_lifted_tensor_1 
+placeholder      inp                  
+call_module      _guards_fn           
+call_function    conv2d               aten.conv2d.default
+call_function    batch_norm           aten.batch_norm.default
+call_function    leaky_relu           aten.leaky_relu.default
+call_function    max_pool2d           aten.max_pool2d.default
+call_function    conv2d_1             aten.conv2d.default
+call_function    batch_norm_1         aten.batch_norm.default
+call_function    leaky_relu_1         aten.leaky_relu.default
+call_function    max_pool2d_1         aten.max_pool2d.default
+call_function    conv2d_2             aten.conv2d.default
+call_function    batch_norm_2         aten.batch_norm.default
+call_function    leaky_relu_2         aten.leaky_relu.default
+call_function    max_pool2d_2         aten.max_pool2d.default
+call_function    conv2d_3             aten.conv2d.default
+call_function    batch_norm_3         aten.batch_norm.default
+call_function    leaky_relu_3         aten.leaky_relu.default
+call_function    max_pool2d_3         aten.max_pool2d.default
+call_function    conv2d_4             aten.conv2d.default
+call_function    batch_norm_4         aten.batch_norm.default
+call_function    leaky_relu_4         aten.leaky_relu.default
+call_function    max_pool2d_4         aten.max_pool2d.default
+call_function    conv2d_5             aten.conv2d.default
+call_function    batch_norm_5         aten.batch_norm.default
+call_function    leaky_relu_5         aten.leaky_relu.default
+call_function    pad                  aten.pad.default
+call_function    max_pool2d_5         aten.max_pool2d.default
+call_function    conv2d_6             aten.conv2d.default
+call_function    batch_norm_6         aten.batch_norm.default
+call_function    leaky_relu_6         aten.leaky_relu.default
+call_function    conv2d_7             aten.conv2d.default
+call_function    batch_norm_7         aten.batch_norm.default
+call_function    leaky_relu_7         aten.leaky_relu.default
+call_function    conv2d_8             aten.conv2d.default
+call_function    batch_norm_8         aten.batch_norm.default
+call_function    leaky_relu_8         aten.leaky_relu.default
+call_function    conv2d_9             aten.conv2d.default
+call_function    conv2d_10            aten.conv2d.default
+call_function    batch_norm_9         aten.batch_norm.default
+call_function    leaky_relu_9         aten.leaky_relu.default
+call_function    upsample_nearest2d   aten.upsample_nearest2d.vec
+call_function    cat                  aten.cat.default
+call_function    conv2d_11            aten.conv2d.default
+call_function    batch_norm_10        aten.batch_norm.default
+call_function    leaky_relu_10        aten.leaky_relu.default
+call_function    conv2d_12            aten.conv2d.default
+call_function    view                 aten.view.default
+call_function    permute              aten.permute.default
+call_function    contiguous           aten.contiguous.default
+call_function    slice_1              aten.slice.Tensor
+call_function    sigmoid              aten.sigmoid.default
+call_function    slice_2              aten.slice.Tensor
+call_function    exp                  aten.exp.default
+call_function    select               aten.select.int
+call_function    sigmoid_1            aten.sigmoid.default
+call_function    slice_3              aten.slice.Tensor
+call_function    sigmoid_2            aten.sigmoid.default
+call_function    arange               aten.arange.default
+call_function    arange_1             aten.arange.default
+call_function    meshgrid             aten.meshgrid.indexing
+call_function    getitem              getitem
+call_function    getitem_1            getitem
+call_function    stack                aten.stack.default
+call_function    lift_fresh_copy      aten.lift_fresh_copy.default
+call_function    detach_              aten.detach_.default
+call_function    view_1               aten.view.default
+call_function    add                  aten.add.Tensor
+call_function    mul                  aten.mul.Tensor
+call_function    mul_1                aten.mul.Tensor
+call_function    mul_2                aten.mul.Tensor
+call_function    sub                  aten.sub.Tensor
+call_function    add_1                aten.add.Tensor
+call_function    cat_1                aten.cat.default
+call_function    view_2               aten.view.default
+call_function    reshape              aten.reshape.default
+call_function    reshape_1            aten.reshape.default
+call_function    view_3               aten.view.default
+call_function    permute_1            aten.permute.default
+call_function    contiguous_1         aten.contiguous.default
+call_function    slice_4              aten.slice.Tensor
+call_function    sigmoid_3            aten.sigmoid.default
+call_function    slice_5              aten.slice.Tensor
+call_function    exp_1                aten.exp.default
+call_function    select_1             aten.select.int
+call_function    sigmoid_4            aten.sigmoid.default
+call_function    slice_6              aten.slice.Tensor
+call_function    sigmoid_5            aten.sigmoid.default
+call_function    arange_2             aten.arange.default
+call_function    arange_3             aten.arange.default
+call_function    meshgrid_1           aten.meshgrid.indexing
+call_function    getitem_2            getitem
+call_function    getitem_3            getitem
+call_function    stack_1              aten.stack.default
+call_function    lift_fresh_copy_1    aten.lift_fresh_copy.default
+call_function    detach__1            aten.detach_.default
+call_function    view_4               aten.view.default
+call_function    add_2                aten.add.Tensor
+call_function    mul_3                aten.mul.Tensor
+call_function    mul_4                aten.mul.Tensor
+call_function    mul_5                aten.mul.Tensor
+call_function    sub_1                aten.sub.Tensor
+call_function    add_3                aten.add.Tensor
+call_function    cat_2                aten.cat.default
+call_function    view_5               aten.view.default
+call_function    reshape_2            aten.reshape.default
+call_function    reshape_3            aten.reshape.default
+call_function    cat_3                aten.cat.default
+call_function    cat_4                aten.cat.default
+call_function    cat_5                aten.cat.default
+output           output               

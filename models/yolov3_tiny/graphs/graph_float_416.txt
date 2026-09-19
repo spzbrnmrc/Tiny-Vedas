@@ -1,0 +1,133 @@
+# backend: torch.export
+# call_function count: 44
+# unique: 7
+
+## unique call_function (name  count)
+
+aten.batch_norm.default  11
+aten.cat.default  1
+aten.conv2d.default  13
+aten.leaky_relu.default  11
+aten.max_pool2d.default  6
+aten.pad.default  1
+aten.upsample_nearest2d.vec  1
+
+## FX nodes
+
+get_attr         c0_conv_weight       
+get_attr         c0_bn_weight         
+get_attr         c0_bn_bias           
+get_attr         c2_conv_weight       
+get_attr         c2_bn_weight         
+get_attr         c2_bn_bias           
+get_attr         c4_conv_weight       
+get_attr         c4_bn_weight         
+get_attr         c4_bn_bias           
+get_attr         c6_conv_weight       
+get_attr         c6_bn_weight         
+get_attr         c6_bn_bias           
+get_attr         c8_conv_weight       
+get_attr         c8_bn_weight         
+get_attr         c8_bn_bias           
+get_attr         c10_conv_weight      
+get_attr         c10_bn_weight        
+get_attr         c10_bn_bias          
+get_attr         c12_conv_weight      
+get_attr         c12_bn_weight        
+get_attr         c12_bn_bias          
+get_attr         c13_conv_weight      
+get_attr         c13_bn_weight        
+get_attr         c13_bn_bias          
+get_attr         c14_conv_weight      
+get_attr         c14_bn_weight        
+get_attr         c14_bn_bias          
+get_attr         c15_weight           
+get_attr         c15_bias             
+get_attr         c18_conv_weight      
+get_attr         c18_bn_weight        
+get_attr         c18_bn_bias          
+get_attr         c21_conv_weight      
+get_attr         c21_bn_weight        
+get_attr         c21_bn_bias          
+get_attr         c22_weight           
+get_attr         c22_bias             
+get_attr         c0_bn_running_mean   
+get_attr         c0_bn_running_var    
+get_attr         c0_bn_num_batches_tracked 
+get_attr         c2_bn_running_mean   
+get_attr         c2_bn_running_var    
+get_attr         c2_bn_num_batches_tracked 
+get_attr         c4_bn_running_mean   
+get_attr         c4_bn_running_var    
+get_attr         c4_bn_num_batches_tracked 
+get_attr         c6_bn_running_mean   
+get_attr         c6_bn_running_var    
+get_attr         c6_bn_num_batches_tracked 
+get_attr         c8_bn_running_mean   
+get_attr         c8_bn_running_var    
+get_attr         c8_bn_num_batches_tracked 
+get_attr         c10_bn_running_mean  
+get_attr         c10_bn_running_var   
+get_attr         c10_bn_num_batches_tracked 
+get_attr         c12_bn_running_mean  
+get_attr         c12_bn_running_var   
+get_attr         c12_bn_num_batches_tracked 
+get_attr         c13_bn_running_mean  
+get_attr         c13_bn_running_var   
+get_attr         c13_bn_num_batches_tracked 
+get_attr         c14_bn_running_mean  
+get_attr         c14_bn_running_var   
+get_attr         c14_bn_num_batches_tracked 
+get_attr         c18_bn_running_mean  
+get_attr         c18_bn_running_var   
+get_attr         c18_bn_num_batches_tracked 
+get_attr         c21_bn_running_mean  
+get_attr         c21_bn_running_var   
+get_attr         c21_bn_num_batches_tracked 
+placeholder      x                    
+call_module      _guards_fn           
+call_function    conv2d               aten.conv2d.default
+call_function    batch_norm           aten.batch_norm.default
+call_function    leaky_relu           aten.leaky_relu.default
+call_function    max_pool2d           aten.max_pool2d.default
+call_function    conv2d_1             aten.conv2d.default
+call_function    batch_norm_1         aten.batch_norm.default
+call_function    leaky_relu_1         aten.leaky_relu.default
+call_function    max_pool2d_1         aten.max_pool2d.default
+call_function    conv2d_2             aten.conv2d.default
+call_function    batch_norm_2         aten.batch_norm.default
+call_function    leaky_relu_2         aten.leaky_relu.default
+call_function    max_pool2d_2         aten.max_pool2d.default
+call_function    conv2d_3             aten.conv2d.default
+call_function    batch_norm_3         aten.batch_norm.default
+call_function    leaky_relu_3         aten.leaky_relu.default
+call_function    max_pool2d_3         aten.max_pool2d.default
+call_function    conv2d_4             aten.conv2d.default
+call_function    batch_norm_4         aten.batch_norm.default
+call_function    leaky_relu_4         aten.leaky_relu.default
+call_function    max_pool2d_4         aten.max_pool2d.default
+call_function    conv2d_5             aten.conv2d.default
+call_function    batch_norm_5         aten.batch_norm.default
+call_function    leaky_relu_5         aten.leaky_relu.default
+call_function    pad                  aten.pad.default
+call_function    max_pool2d_5         aten.max_pool2d.default
+call_function    conv2d_6             aten.conv2d.default
+call_function    batch_norm_6         aten.batch_norm.default
+call_function    leaky_relu_6         aten.leaky_relu.default
+call_function    conv2d_7             aten.conv2d.default
+call_function    batch_norm_7         aten.batch_norm.default
+call_function    leaky_relu_7         aten.leaky_relu.default
+call_function    conv2d_8             aten.conv2d.default
+call_function    batch_norm_8         aten.batch_norm.default
+call_function    leaky_relu_8         aten.leaky_relu.default
+call_function    conv2d_9             aten.conv2d.default
+call_function    conv2d_10            aten.conv2d.default
+call_function    batch_norm_9         aten.batch_norm.default
+call_function    leaky_relu_9         aten.leaky_relu.default
+call_function    upsample_nearest2d   aten.upsample_nearest2d.vec
+call_function    cat                  aten.cat.default
+call_function    conv2d_11            aten.conv2d.default
+call_function    batch_norm_10        aten.batch_norm.default
+call_function    leaky_relu_10        aten.leaky_relu.default
+call_function    conv2d_12            aten.conv2d.default
+output           output               

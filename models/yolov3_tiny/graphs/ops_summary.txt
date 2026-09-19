@@ -1,0 +1,169 @@
+# YOLOv3-Tiny exported call_function names
+
+## backbone_int8 size=208
+required: conv2d=True, leaky_relu=True, max_pool=True
+unique:
+  aten._assert_tensor_metadata.default
+  aten.cat.default
+  aten.conv2d.default
+  aten.leaky_relu.default
+  aten.max_pool2d.default
+  aten.mul.Tensor
+  aten.pad.default
+  aten.to.dtype
+  aten.upsample_nearest2d.vec
+  aten.view.default
+
+## decode_int8 size=208
+unique:
+  aten._assert_tensor_metadata.default
+  aten.add.Tensor
+  aten.arange.default
+  aten.cat.default
+  aten.contiguous.default
+  aten.conv2d.default
+  aten.detach_.default
+  aten.exp.default
+  aten.leaky_relu.default
+  aten.lift_fresh_copy.default
+  aten.max_pool2d.default
+  aten.meshgrid.indexing
+  aten.mul.Tensor
+  aten.pad.default
+  aten.permute.default
+  aten.reshape.default
+  aten.select.int
+  aten.sigmoid.default
+  aten.slice.Tensor
+  aten.stack.default
+  aten.sub.Tensor
+  aten.to.dtype
+  aten.upsample_nearest2d.vec
+  aten.view.default
+  getitem
+
+## backbone_int8 size=416
+required: conv2d=True, leaky_relu=True, max_pool=True
+unique:
+  aten._assert_tensor_metadata.default
+  aten.cat.default
+  aten.conv2d.default
+  aten.leaky_relu.default
+  aten.max_pool2d.default
+  aten.mul.Tensor
+  aten.pad.default
+  aten.to.dtype
+  aten.upsample_nearest2d.vec
+  aten.view.default
+
+## decode_int8 size=416
+unique:
+  aten._assert_tensor_metadata.default
+  aten.add.Tensor
+  aten.arange.default
+  aten.cat.default
+  aten.contiguous.default
+  aten.conv2d.default
+  aten.detach_.default
+  aten.exp.default
+  aten.leaky_relu.default
+  aten.lift_fresh_copy.default
+  aten.max_pool2d.default
+  aten.meshgrid.indexing
+  aten.mul.Tensor
+  aten.pad.default
+  aten.permute.default
+  aten.reshape.default
+  aten.select.int
+  aten.sigmoid.default
+  aten.slice.Tensor
+  aten.stack.default
+  aten.sub.Tensor
+  aten.to.dtype
+  aten.upsample_nearest2d.vec
+  aten.view.default
+  getitem
+
+## backbone_float size=208
+required: conv2d=True, leaky_relu=True, max_pool=True
+unique:
+  aten.batch_norm.default
+  aten.cat.default
+  aten.conv2d.default
+  aten.leaky_relu.default
+  aten.max_pool2d.default
+  aten.pad.default
+  aten.upsample_nearest2d.vec
+
+## decode_float size=208
+unique:
+  aten.add.Tensor
+  aten.arange.default
+  aten.batch_norm.default
+  aten.cat.default
+  aten.contiguous.default
+  aten.conv2d.default
+  aten.detach_.default
+  aten.exp.default
+  aten.leaky_relu.default
+  aten.lift_fresh_copy.default
+  aten.max_pool2d.default
+  aten.meshgrid.indexing
+  aten.mul.Tensor
+  aten.pad.default
+  aten.permute.default
+  aten.reshape.default
+  aten.select.int
+  aten.sigmoid.default
+  aten.slice.Tensor
+  aten.stack.default
+  aten.sub.Tensor
+  aten.upsample_nearest2d.vec
+  aten.view.default
+  getitem
+
+## backbone_float size=416
+required: conv2d=True, leaky_relu=True, max_pool=True
+unique:
+  aten.batch_norm.default
+  aten.cat.default
+  aten.conv2d.default
+  aten.leaky_relu.default
+  aten.max_pool2d.default
+  aten.pad.default
+  aten.upsample_nearest2d.vec
+
+## decode_float size=416
+unique:
+  aten.add.Tensor
+  aten.arange.default
+  aten.batch_norm.default
+  aten.cat.default
+  aten.contiguous.default
+  aten.conv2d.default
+  aten.detach_.default
+  aten.exp.default
+  aten.leaky_relu.default
+  aten.lift_fresh_copy.default
+  aten.max_pool2d.default
+  aten.meshgrid.indexing
+  aten.mul.Tensor
+  aten.pad.default
+  aten.permute.default
+  aten.reshape.default
+  aten.select.int
+  aten.sigmoid.default
+  aten.slice.Tensor
+  aten.stack.default
+  aten.sub.Tensor
+  aten.upsample_nearest2d.vec
+  aten.view.default
+  getitem
+
+## letterbox size=-
+unique:
+  aten.pad.default
+  aten.upsample_bilinear2d.vec
+
+## nms size=-
+ERROR: not in the detector GraphModule; host NMS does not export (data-dependent keep count)

@@ -1,0 +1,172 @@
+# backend: torch.export
+# call_function count: 111
+# unique: 10
+
+## unique call_function (name  count)
+
+aten._assert_tensor_metadata.default  26
+aten.cat.default  1
+aten.conv2d.default  13
+aten.leaky_relu.default  11
+aten.max_pool2d.default  6
+aten.mul.Tensor  13
+aten.pad.default  1
+aten.to.dtype  26
+aten.upsample_nearest2d.vec  1
+aten.view.default  13
+
+## FX nodes
+
+get_attr         c0_weight_i8         
+get_attr         c0_scale             
+get_attr         c0_bias              
+get_attr         c2_weight_i8         
+get_attr         c2_scale             
+get_attr         c2_bias              
+get_attr         c4_weight_i8         
+get_attr         c4_scale             
+get_attr         c4_bias              
+get_attr         c6_weight_i8         
+get_attr         c6_scale             
+get_attr         c6_bias              
+get_attr         c8_weight_i8         
+get_attr         c8_scale             
+get_attr         c8_bias              
+get_attr         c10_weight_i8        
+get_attr         c10_scale            
+get_attr         c10_bias             
+get_attr         c12_weight_i8        
+get_attr         c12_scale            
+get_attr         c12_bias             
+get_attr         c13_weight_i8        
+get_attr         c13_scale            
+get_attr         c13_bias             
+get_attr         c14_weight_i8        
+get_attr         c14_scale            
+get_attr         c14_bias             
+get_attr         c15_weight_i8        
+get_attr         c15_scale            
+get_attr         c15_bias             
+get_attr         c18_weight_i8        
+get_attr         c18_scale            
+get_attr         c18_bias             
+get_attr         c21_weight_i8        
+get_attr         c21_scale            
+get_attr         c21_bias             
+get_attr         c22_weight_i8        
+get_attr         c22_scale            
+get_attr         c22_bias             
+placeholder      x                    
+call_module      _guards_fn           
+call_function    _assert_tensor_metadata_default aten._assert_tensor_metadata.default
+call_function    to                   aten.to.dtype
+call_function    view                 aten.view.default
+call_function    mul                  aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_1 aten._assert_tensor_metadata.default
+call_function    to_1                 aten.to.dtype
+call_function    conv2d               aten.conv2d.default
+call_function    leaky_relu           aten.leaky_relu.default
+call_function    max_pool2d           aten.max_pool2d.default
+call_function    _assert_tensor_metadata_default_2 aten._assert_tensor_metadata.default
+call_function    to_2                 aten.to.dtype
+call_function    view_1               aten.view.default
+call_function    mul_1                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_3 aten._assert_tensor_metadata.default
+call_function    to_3                 aten.to.dtype
+call_function    conv2d_1             aten.conv2d.default
+call_function    leaky_relu_1         aten.leaky_relu.default
+call_function    max_pool2d_1         aten.max_pool2d.default
+call_function    _assert_tensor_metadata_default_4 aten._assert_tensor_metadata.default
+call_function    to_4                 aten.to.dtype
+call_function    view_2               aten.view.default
+call_function    mul_2                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_5 aten._assert_tensor_metadata.default
+call_function    to_5                 aten.to.dtype
+call_function    conv2d_2             aten.conv2d.default
+call_function    leaky_relu_2         aten.leaky_relu.default
+call_function    max_pool2d_2         aten.max_pool2d.default
+call_function    _assert_tensor_metadata_default_6 aten._assert_tensor_metadata.default
+call_function    to_6                 aten.to.dtype
+call_function    view_3               aten.view.default
+call_function    mul_3                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_7 aten._assert_tensor_metadata.default
+call_function    to_7                 aten.to.dtype
+call_function    conv2d_3             aten.conv2d.default
+call_function    leaky_relu_3         aten.leaky_relu.default
+call_function    max_pool2d_3         aten.max_pool2d.default
+call_function    _assert_tensor_metadata_default_8 aten._assert_tensor_metadata.default
+call_function    to_8                 aten.to.dtype
+call_function    view_4               aten.view.default
+call_function    mul_4                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_9 aten._assert_tensor_metadata.default
+call_function    to_9                 aten.to.dtype
+call_function    conv2d_4             aten.conv2d.default
+call_function    leaky_relu_4         aten.leaky_relu.default
+call_function    max_pool2d_4         aten.max_pool2d.default
+call_function    _assert_tensor_metadata_default_10 aten._assert_tensor_metadata.default
+call_function    to_10                aten.to.dtype
+call_function    view_5               aten.view.default
+call_function    mul_5                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_11 aten._assert_tensor_metadata.default
+call_function    to_11                aten.to.dtype
+call_function    conv2d_5             aten.conv2d.default
+call_function    leaky_relu_5         aten.leaky_relu.default
+call_function    pad                  aten.pad.default
+call_function    max_pool2d_5         aten.max_pool2d.default
+call_function    _assert_tensor_metadata_default_12 aten._assert_tensor_metadata.default
+call_function    to_12                aten.to.dtype
+call_function    view_6               aten.view.default
+call_function    mul_6                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_13 aten._assert_tensor_metadata.default
+call_function    to_13                aten.to.dtype
+call_function    conv2d_6             aten.conv2d.default
+call_function    leaky_relu_6         aten.leaky_relu.default
+call_function    _assert_tensor_metadata_default_14 aten._assert_tensor_metadata.default
+call_function    to_14                aten.to.dtype
+call_function    view_7               aten.view.default
+call_function    mul_7                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_15 aten._assert_tensor_metadata.default
+call_function    to_15                aten.to.dtype
+call_function    conv2d_7             aten.conv2d.default
+call_function    leaky_relu_7         aten.leaky_relu.default
+call_function    _assert_tensor_metadata_default_16 aten._assert_tensor_metadata.default
+call_function    to_16                aten.to.dtype
+call_function    view_8               aten.view.default
+call_function    mul_8                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_17 aten._assert_tensor_metadata.default
+call_function    to_17                aten.to.dtype
+call_function    conv2d_8             aten.conv2d.default
+call_function    leaky_relu_8         aten.leaky_relu.default
+call_function    _assert_tensor_metadata_default_18 aten._assert_tensor_metadata.default
+call_function    to_18                aten.to.dtype
+call_function    view_9               aten.view.default
+call_function    mul_9                aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_19 aten._assert_tensor_metadata.default
+call_function    to_19                aten.to.dtype
+call_function    conv2d_9             aten.conv2d.default
+call_function    _assert_tensor_metadata_default_20 aten._assert_tensor_metadata.default
+call_function    to_20                aten.to.dtype
+call_function    view_10              aten.view.default
+call_function    mul_10               aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_21 aten._assert_tensor_metadata.default
+call_function    to_21                aten.to.dtype
+call_function    conv2d_10            aten.conv2d.default
+call_function    leaky_relu_9         aten.leaky_relu.default
+call_function    upsample_nearest2d   aten.upsample_nearest2d.vec
+call_function    cat                  aten.cat.default
+call_function    _assert_tensor_metadata_default_22 aten._assert_tensor_metadata.default
+call_function    to_22                aten.to.dtype
+call_function    view_11              aten.view.default
+call_function    mul_11               aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_23 aten._assert_tensor_metadata.default
+call_function    to_23                aten.to.dtype
+call_function    conv2d_11            aten.conv2d.default
+call_function    leaky_relu_10        aten.leaky_relu.default
+call_function    _assert_tensor_metadata_default_24 aten._assert_tensor_metadata.default
+call_function    to_24                aten.to.dtype
+call_function    view_12              aten.view.default
+call_function    mul_12               aten.mul.Tensor
+call_function    _assert_tensor_metadata_default_25 aten._assert_tensor_metadata.default
+call_function    to_25                aten.to.dtype
+call_function    conv2d_12            aten.conv2d.default
+output           output               

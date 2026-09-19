@@ -1,0 +1,15 @@
+{
+  "backend": "torch.export",
+  "call_function": [
+    "aten.upsample_bilinear2d.vec",
+    "aten.pad.default"
+  ],
+  "unique": [
+    "aten.pad.default",
+    "aten.upsample_bilinear2d.vec"
+  ],
+  "counts": {
+    "aten.pad.default": 1,
+    "aten.upsample_bilinear2d.vec": 1
+  }
+}

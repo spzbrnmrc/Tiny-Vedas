@@ -1,0 +1,4 @@
+# Host-side YOLOv3-Tiny: export needs torch; eval also needs image I/O.
+torch>=2.2
+numpy
+pillow

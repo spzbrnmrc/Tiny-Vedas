@@ -47,6 +47,12 @@ sw/include/soc_defines.inc
 # Local reference copy of the RISC-V ISA manual (not a project dependency)
 riscv-isa-manual/
 
+# Paper LaTeX tree (arXiv / conference sources; not part of the product repo)
+paper/
+
 # PyVedas JIT generated output
 pyvedas/work/
 pyvedas/.venv/
+
+# Downloaded detector weights and eval fixtures
+models/.cache/

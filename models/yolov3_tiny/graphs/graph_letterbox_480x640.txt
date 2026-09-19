@@ -1,0 +1,16 @@
+# backend: torch.export
+# call_function count: 2
+# unique: 2
+
+## unique call_function (name  count)
+
+aten.pad.default  1
+aten.upsample_bilinear2d.vec  1
+
+## FX nodes
+
+placeholder      x                    
+call_module      _guards_fn           
+call_function    upsample_bilinear2d  aten.upsample_bilinear2d.vec
+call_function    pad                  aten.pad.default
+output           output               
