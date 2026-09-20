@@ -129,7 +129,7 @@ regression: `asm.basic_mul`.
 
 Reads:
 
-- **HW preset** (`hw/presets/*.yaml`) — CPU flavor (scalar only today)
+- **HW preset** (`hw/presets/*.yaml`) — CPU flavor (`rv32im_scalar` or `rv32im_zve32x`)
 - **PD platform** (`pd/platforms/*.yaml`) — ORFS platform, clock, synth memory sizes
 
 Generates:
@@ -192,6 +192,8 @@ pd/
 
 ## Adding a CPU flavor
 
-When new RTL variants land, point `HW_CONFIG` at the matching preset. Only
-presets with `cpu.kind: scalar` are accepted until vector/OoO RTL is
-synthesizable.
+When new RTL variants land, point `HW_CONFIG` at the matching preset.
+`rv32im_zve32x` keeps `cpu.kind: scalar` and turns `HAS_VECTOR` on so
+`vector_top` is in `core_gemm_top` (`keep_hierarchy` on core, GEMM, and
+vector). After `make rtl2gds`, `make pd-annotate` colors those three
+instances into `pd/work/layout/annotated_core_gemm_vector.png`.

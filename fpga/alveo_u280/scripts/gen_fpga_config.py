@@ -42,7 +42,7 @@ localparam int INSTR_MEM_DEPTH = {iccm_depth};
 localparam int INSTR_MEM_ADDR_WIDTH = $clog2(INSTR_MEM_DEPTH * INSTR_MEM_WIDTH / 8);
 localparam int INSTR_MEM_TAG_WIDTH = XLEN;
 
-localparam int DATA_MEM_WIDTH = XLEN;
+localparam int DATA_MEM_WIDTH = 128;
 localparam int DATA_MEM_DEPTH = {dccm_depth};
 localparam int DATA_MEM_ADDR_WIDTH = $clog2(DATA_MEM_DEPTH * DATA_MEM_WIDTH / 8);
 
@@ -64,7 +64,7 @@ def main() -> int:
     ap.add_argument(
         "--hw-config",
         type=Path,
-        default=_REPO / "hw" / "presets" / "rv32im_scalar.yaml",
+        default=_REPO / "hw" / "presets" / "rv32im_zve32x.yaml",
         help="Path to hw preset YAML",
     )
     args = ap.parse_args()

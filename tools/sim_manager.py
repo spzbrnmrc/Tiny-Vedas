@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import re
 import sys
 import os
 from pathlib import Path
@@ -62,6 +63,15 @@ def _sw_include_dir() -> str:
     return str(_REPO_ROOT / "sw" / "include")
 
 
+def _riscv_march(test: str) -> str:
+    """Vector-named tests assemble with Zve32x; everyone else stays RV32IM."""
+    parts = test.split(".")
+    stem = parts[1] if len(parts) > 1 else parts[0]
+    if stem.startswith("rvv_") or test.startswith("rvv."):
+        return "rv32im_zve32x -mrvv-max-lmul=m1"
+    return "rv32im"
+
+
 def _compile_riscv_elf(test: str, sources: List[str], include_dirs: List[str]) -> int:
     """Link *sources* into work/<test>/test.elf. Returns the reset vector."""
     compile_log = os.path.join("work", test, "compile.log")
@@ -74,7 +84,7 @@ def _compile_riscv_elf(test: str, sources: List[str], include_dirs: List[str]) -
     source_list = " ".join(sources)
     cmd = (
         f"riscv64-unknown-elf-gcc -O0 {inc_flags} {as_inc_flags} "
-        f"-march=rv32im -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
+        f"-march={_riscv_march(test)} -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
         f"-fno-builtin-printf -fno-common -falign-functions=4 -msmall-data-limit=0 "
         f"{source_list} -lgcc "
         f"-Wl,-Ttext=0x100000 -Wl,--defsym,_start=main "
@@ -148,7 +158,7 @@ def run_gen(test: str, hw_config: HwConfig) -> int:
             os.system(
                 f"riscv64-unknown-elf-gcc -O0 -I{asm_inc} -I{sw_inc} "
                 f"-Wa,-I,{asm_inc} -Wa,-I,{sw_inc} "
-                f"-march=rv32im -mabi=ilp32 -o work/{test}/test.elf -nostdlib "
+                f"-march={_riscv_march(test)} -mabi=ilp32 -o work/{test}/test.elf -nostdlib "
                 f"{asm_src} -Wl,-Ttext=0x100000 "
                 f"> {os.path.join('work', test, 'compile.log')} 2>&1"
             )
@@ -202,7 +212,7 @@ def run_iss(test: str, reset_vector: int, hw_config: HwConfig) -> None:
         gemm_flags = ""
         if gemm_hits:
             gemm_flags = f"--gemm-addr {hex(gemm_hits[0].base)} --gemm-size {hex(gemm_hits[0].size)}"
-        extra = f"{eot_flags} {gemm_flags}".strip()
+        extra = f"{eot_flags} {gemm_flags} --hw-config {hw_config.source_path}".strip()
         if has_dmem:
             cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {extra} -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
         else:
@@ -264,19 +274,30 @@ def prepare_imem(test: str) -> None:
             sec = elf.get_section_by_name(secname)
             copy_section_to_dmem(sec)
 
-        # Write out the merged DMEM image, 4 bytes per line, little-endian words
-        with open(dmem_path, "w") as f:
-            dmem_path = os.path.join("tests", test_path[0], test_path[1] + ".mem")
-            has_dmem = os.path.exists(dmem_path)
-            if has_dmem:
-                os.system(f"cp {dmem_path} work/{test}/dmem.hex") 
-            else:
-                for i in range(0, DMEM_DEPTH, 4):
-                    word = dmem_image[i:i+4]
-                    # If less than 4 bytes (should not happen), pad with zeros
-                    if len(word) < 4:
-                        word = word + b'\x00' * (4 - len(word))
-                    hex_str = '{:08x}'.format(int.from_bytes(word, byteorder='little'))
+        # 128-bit DCCM init: 16-byte little-endian lines. Optional .mem is
+        # still 32-bit words (ISS preload); pack four words per line here.
+        mem_src = os.path.join("tests", test_path[0], test_path[1] + ".mem")
+        if os.path.exists(mem_src):
+            words = []
+            with open(mem_src, "r") as sf:
+                for raw in sf:
+                    tok = raw.split("//")[0].strip()
+                    if tok:
+                        words.append(int(tok, 16) & 0xFFFFFFFF)
+            with open(dmem_path, "w") as f:
+                for i in range(0, max(len(words), 1), 4):
+                    chunk = words[i:i + 4]
+                    while len(chunk) < 4:
+                        chunk.append(0)
+                    val = chunk[0] | (chunk[1] << 32) | (chunk[2] << 64) | (chunk[3] << 96)
+                    f.write(f"{val:032x}  // {hex(i * 4)}\n")
+        else:
+            with open(dmem_path, "w") as f:
+                for i in range(0, DMEM_DEPTH, 16):
+                    line = dmem_image[i:i+16]
+                    if len(line) < 16:
+                        line = line + b'\x00' * (16 - len(line))
+                    hex_str = '{:032x}'.format(int.from_bytes(line, byteorder='little'))
                     f.write(f"{hex_str}  // {hex(i)}\n")
 
     # Write the instruction memory as hex, 4 bytes per line
@@ -288,11 +309,38 @@ def prepare_imem(test: str) -> None:
             hex_str = '{:08x}'.format(int.from_bytes(word, byteorder='little'))
             f.write(f"{hex_str}\n")
 
-def read_task_list(filename: str) -> List[str]:
-    """Read and return list of tests from file."""
+_TLIST_LINE = re.compile(r"^(\S+)(?:\s+if\s+(\S+))?\s*$")
+
+
+def _tlist_predicate_holds(pred: str, hw_config: HwConfig) -> bool:
+    if pred == "vector.enabled":
+        return hw_config.has_vector_unit
+    raise ValueError(f"Unknown tlist predicate '{pred}'")
+
+
+def read_task_list(filename: str, hw_config: Optional[HwConfig] = None) -> List[str]:
+    """Read tests from a tlist. Lines may be ``name if vector.enabled``.
+
+    Predicates are evaluated against *hw_config*. A false predicate skips
+    the test. ``#`` starts a comment. If *hw_config* is omitted, predicated
+    lines are skipped.
+    """
     try:
-        with open(filename, 'r') as f:
-            return [line.strip() for line in f if line.strip()]
+        tests: List[str] = []
+        with open(filename, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                match = _TLIST_LINE.match(line)
+                if match is None:
+                    raise ValueError(f"Invalid tlist line: {raw.rstrip()}")
+                name, pred = match.group(1), match.group(2)
+                if pred is not None:
+                    if hw_config is None or not _tlist_predicate_holds(pred, hw_config):
+                        continue
+                tests.append(name)
+        return tests
     except Exception as e:
         print(f"Error reading task list file: {e}")
         return []
@@ -332,7 +380,7 @@ def run_verilator(test: str, reset_vector: int, enable_vcd: bool = False) -> Non
         f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && "
         f"verilator --cc {trace_flags}--build --timing "
         f"--top-module core_top_tb --exe $PROJ/dv/verilator/core_top_tb.cpp "
-        f"-I$PROJ/rtl/include -I$PROJ/rtl/idu -f $PROJ/rtl/core_top.flist "
+        f"-I$PROJ/rtl/include -I$PROJ/rtl/idu -I$PROJ/rtl/csr -f $PROJ/rtl/core_top.flist "
         f"-Wno-LATCH -Wno-UNOPTFLAT -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND "
         f"-DICCM_INIT_FILE='\"imem.hex\"' -DRESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} "
         f"-DSTACK_POINTER_INIT_VALUE=32\\'h80000000"
@@ -366,7 +414,7 @@ def run_xsim(test: str, reset_vector: int) -> None:
     """Execute XSim simulation."""
     _unlink_sim_logs(test)
     has_dmem = os.path.exists(os.path.join("work", test, "dmem.hex"))
-    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -i $PROJ/rtl/include -i $PROJ/rtl/idu -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
+    xsim_cmd = f"export PROJ=$(pwd) && cd {os.path.join('work', test)} && xvlog -sv -i $PROJ/rtl/include -i $PROJ/rtl/idu -i $PROJ/rtl/csr -f $PROJ/rtl/core_top.flist --define ICCM_INIT_FILE='\"imem.hex\"' --define RESET_VECTOR=32\\'h{hex(reset_vector).lstrip('0x')} --define STACK_POINTER_INIT_VALUE=32\\'h80000000"
     if has_dmem:
         xsim_cmd += f" --define DCCM_INIT_FILE='\"dmem.hex\"'"
     else:
@@ -667,7 +715,7 @@ def main():
         if not os.path.exists(args.task_list):
             print(f"Error: Task list file '{args.task_list}' not found")
             sys.exit(1)
-        tests = read_task_list(args.task_list)
+        tests = read_task_list(args.task_list, hw_config)
         if not tests:
             print("Error: No valid tests found in task list")
             sys.exit(1)

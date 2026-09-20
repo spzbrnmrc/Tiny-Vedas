@@ -286,6 +286,22 @@ def load_hw_config(path: Path | str | None = None) -> HwConfig:
     eot = soc.require_role("eot")
     eot_magic = int(eot.params["magic"]) & 0xFFFFFFFF
 
+    vec_enabled = bool(_require(vector_raw, "enabled", "vector"))
+    vec_width = int(_require(vector_raw, "width_bits", "vector"))
+    vec_dlen = int(vector_raw.get("dlen_bits", 0))
+    vec_lanes = int(_require(vector_raw, "lanes", "vector"))
+    if vec_enabled:
+        if vec_width <= 0 or vec_dlen <= 0 or vec_lanes <= 0:
+            raise HwConfigError(
+                f"{config_path.name}: vector.enabled requires width_bits, "
+                f"dlen_bits, and lanes > 0"
+            )
+        if vec_width % vec_dlen != 0:
+            raise HwConfigError(
+                f"{config_path.name}: vector.width_bits must be a multiple of "
+                f"vector.dlen_bits"
+            )
+
     return HwConfig(
         name=str(_require(raw, "name", config_path.name)),
         version=int(_require(raw, "version", config_path.name)),
@@ -299,9 +315,10 @@ def load_hw_config(path: Path | str | None = None) -> HwConfig:
             exu=_parse_exu_units(cpu_raw, issue_width, config_path.name),
         ),
         vector=VectorUnitConfig(
-            enabled=bool(_require(vector_raw, "enabled", "vector")),
-            width_bits=int(_require(vector_raw, "width_bits", "vector")),
-            lanes=int(_require(vector_raw, "lanes", "vector")),
+            enabled=vec_enabled,
+            width_bits=vec_width,
+            dlen_bits=vec_dlen,
+            lanes=vec_lanes,
             local_mem_bytes=int(_require(vector_raw, "local_mem_bytes", "vector")),
         ),
         memory=MemoryConfig(

@@ -19,5 +19,6 @@ place_density_lb_addon: 0.10
 orfs_exports:
   SYNTH_HIERARCHICAL: 1
   SYNTH_MINIMUM_KEEP_SIZE: 10000
+  SYNTH_KEEP_MODULES: core_top gemm_top vector_top
   TNS_END_PERCENT: 100
   # SWAP_ARITH_OPERATORS triggers abc_new (XAIGER2) which fails on this netlist.

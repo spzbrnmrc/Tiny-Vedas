@@ -1,0 +1,128 @@
+    .globl   _start
+    .section .text
+
+_start:
+    li       x4, 0
+    li       x5, 64
+fill_a:
+    sw       x4, 0(x4)
+    addi     x4, x4, 4
+    bne      x4, x5, fill_a
+
+    li       x4, 0
+fill_b:
+    addi     x6, x4, 1
+    slli     x7, x4, 2
+    add      x7, x7, x5
+    sw       x6, 0(x7)
+    addi     x4, x4, 1
+    li       x6, 16
+    bne      x4, x6, fill_b
+
+    vsetvli  x1, x0, e32, m1, ta, ma
+    vle32.v  v1, (x0)
+    li       x10, 64
+    vle32.v  v2, (x10)
+
+    # vsub.vv: 4*i - (i+1) = 3*i - 1
+    vsub.vv  v3, v1, v2
+    li       x11, 256
+    vse32.v  v3, (x11)
+    lw       x2, 256(x0)
+    li       x5, -1
+    bne      x2, x5, fail
+    lw       x2, 260(x0)
+    li       x5, 2
+    bne      x2, x5, fail
+    lw       x2, 316(x0)
+    li       x5, 44
+    bne      x2, x5, fail
+
+    li       x12, 3
+    vsub.vx  v4, v1, x12
+    li       x11, 320
+    vse32.v  v4, (x11)
+    lw       x2, 320(x0)
+    li       x5, -3
+    bne      x2, x5, fail
+    lw       x2, 380(x0)
+    li       x5, 57
+    bne      x2, x5, fail
+
+    vrsub.vi v5, v1, 5
+    li       x11, 384
+    vse32.v  v5, (x11)
+    lw       x2, 384(x0)
+    li       x5, 5
+    bne      x2, x5, fail
+    lw       x2, 444(x0)
+    li       x5, -55
+    bne      x2, x5, fail
+
+    vand.vv  v6, v1, v2
+    li       x11, 448
+    vse32.v  v6, (x11)
+    lw       x2, 448(x0)
+    bne      x2, x0, fail
+    lw       x2, 508(x0)
+    li       x5, 16
+    bne      x2, x5, fail
+
+    vor.vv   v7, v1, v2
+    li       x11, 512
+    vse32.v  v7, (x11)
+    lw       x2, 512(x0)
+    li       x5, 1
+    bne      x2, x5, fail
+    lw       x2, 516(x0)
+    li       x5, 6
+    bne      x2, x5, fail
+    lw       x2, 572(x0)
+    li       x5, 60
+    bne      x2, x5, fail
+
+    vxor.vv  v8, v1, v2
+    li       x11, 576
+    vse32.v  v8, (x11)
+    lw       x2, 576(x0)
+    li       x5, 1
+    bne      x2, x5, fail
+    lw       x2, 636(x0)
+    li       x5, 44
+    bne      x2, x5, fail
+
+    li       x13, 15
+    vand.vx  v9, v1, x13
+    li       x11, 640
+    vse32.v  v9, (x11)
+    lw       x2, 640(x0)
+    bne      x2, x0, fail
+    lw       x2, 644(x0)
+    li       x5, 4
+    bne      x2, x5, fail
+    lw       x2, 700(x0)
+    li       x5, 12
+    bne      x2, x5, fail
+
+    vor.vi   v10, v1, 1
+    li       x11, 704
+    vse32.v  v10, (x11)
+    lw       x2, 704(x0)
+    li       x5, 1
+    bne      x2, x5, fail
+    lw       x2, 764(x0)
+    li       x5, 61
+    bne      x2, x5, fail
+
+    vxor.vi  v11, v1, -1
+    li       x11, 768
+    vse32.v  v11, (x11)
+    lw       x2, 768(x0)
+    li       x5, -1
+    bne      x2, x5, fail
+    lw       x2, 772(x0)
+    li       x5, -5
+    bne      x2, x5, fail
+
+    .include "eot_sequence.s"
+    .include "fail_hang.s"

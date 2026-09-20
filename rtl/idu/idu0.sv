@@ -62,13 +62,19 @@ module idu0 (
     output idu0_out_t idu0_out
 );
 
-  idu0_out_t   idu0_out_i;
-  decode_out_t decode_out;
+  idu0_out_t           idu0_out_i;
+  decode_out_t         decode_out;
+  zve32x_decode_out_t  vec_decode;
 
   /* Instantiate Decode Table */
   rv32im_decoder decode_inst (
       .i(instr),
       .o(decode_out)
+  );
+
+  zve32x_decoder vec_decode_inst (
+      .i(instr),
+      .o(vec_decode)
   );
 
 
@@ -95,10 +101,10 @@ module idu0 (
   assign idu0_out_i.shamt = instr[24:20];
 
   assign idu0_out_i.alu = decode_out.alu;
-  assign idu0_out_i.rs1 = decode_out.rs1;
-  assign idu0_out_i.rs2 = decode_out.rs2;
+  assign idu0_out_i.rs1 = decode_out.rs1 | (HAS_VECTOR && vec_decode.rs1);
+  assign idu0_out_i.rs2 = decode_out.rs2 | (HAS_VECTOR && vec_decode.rs2);
   assign idu0_out_i.imm12 = decode_out.imm12;
-  assign idu0_out_i.rd = decode_out.rd;
+  assign idu0_out_i.rd = decode_out.rd | (HAS_VECTOR && vec_decode.rd);
   assign idu0_out_i.shimm5 = decode_out.shimm5;
   assign idu0_out_i.imm20 = decode_out.imm20;
   assign idu0_out_i.pc = decode_out.pc;
@@ -132,7 +138,13 @@ module idu0 (
   assign idu0_out_i.rem = decode_out.rem;
   assign idu0_out_i.nop = decode_out.nop;
   assign idu0_out_i.ecall = decode_out.ecall;
-  assign idu0_out_i.legal = decode_out.legal;
+  assign idu0_out_i.legal = decode_out.legal | (HAS_VECTOR && vec_decode.legal);
+  assign idu0_out_i.vec = HAS_VECTOR && vec_decode.vec;
+  assign idu0_out_i.vset = HAS_VECTOR && vec_decode.vset;
+  assign idu0_out_i.vcsr = HAS_VECTOR && vec_decode.vcsr;
+  assign idu0_out_i.vload = HAS_VECTOR && vec_decode.vload;
+  assign idu0_out_i.vstore = HAS_VECTOR && vec_decode.vstore;
+  assign idu0_out_i.valu = HAS_VECTOR && vec_decode.valu;
 
   /* Output Flop */
   register_en_flush_sync_rstn #(

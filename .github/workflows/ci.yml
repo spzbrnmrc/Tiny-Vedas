@@ -10,6 +10,12 @@ jobs:
   smoke-verilator:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        hw_config:
+          - hw/presets/rv32im_scalar.yaml
+          - hw/presets/rv32im_zve32x.yaml
     env:
       # Pin for reproducible CI and a stable Actions cache key (bump when upgrading Verilator).
       VERILATOR_TAG: v5.048
@@ -31,11 +37,14 @@ jobs:
       - name: Regenerate decoder
         run: make decodes
 
+      - name: Regenerate CSR file
+        run: make csrs
+
       - name: Regenerate SoC MMIO map
         run: make soc
 
       - name: Run smoke regression (Verilator)
-        run: make smoke-verilator
+        run: make smoke-verilator HW_CONFIG=${{ matrix.hw_config }}
 
   pd-synth:
     runs-on: ubuntu-22.04
@@ -59,4 +68,4 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-yaml haskell-stack
-          make pd-synth
+          make pd-synth HW_CONFIG=hw/presets/rv32im_zve32x.yaml

@@ -72,7 +72,14 @@ module core_top #(
     output logic            dccm_wen       [LSU_DCCM_PORT_COUNT-1:0],
     output logic [XLEN-1:0] dccm_wdata     [LSU_DCCM_PORT_COUNT-1:0],
     output logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0],
-    input  logic            accel_hold
+    input  logic            accel_hold,
+    output logic              v_dccm_req,
+    output logic              v_dccm_wen,
+    output logic [      31:0] v_dccm_addr,
+    output logic [     127:0] v_dccm_wdata,
+    output logic [      15:0] v_dccm_wstrb,
+    input  logic [     127:0] v_dccm_rdata,
+    input  logic              v_dccm_rvalid
 `ifdef TV_HAS_CORE_DEBUG
     ,
     output core_debug_lane_t debug[ISSUE_WIDTH-1:0]
@@ -115,6 +122,25 @@ module core_top #(
   logic exu_lsu_busy[ISSUE_WIDTH-1:0];
   logic exu_lsu_stall[ISSUE_WIDTH-1:0];
 
+  logic [               XLEN-1:0] csr_vl, csr_vtype, csr_vlenb, csr_vstart, csr_rdata;
+  logic                           csr_illegal;
+  logic                           csr_req, csr_write;
+  logic [                   11:0] csr_addr;
+  logic [               XLEN-1:0] csr_wdata;
+  logic                           vset_we;
+  logic [               XLEN-1:0] vset_vl, vset_vtype;
+  logic [               XLEN-1:0] vec_wb_data;
+  logic [REG_FILE_ADDR_WIDTH-1:0] vec_wb_rd_addr;
+  logic                           vec_wb_rd_wr_en;
+  logic                           vector_busy;
+  logic [ISSUE_WIDTH-1:0][               XLEN-1:0] gpr_wb_data;
+  logic [ISSUE_WIDTH-1:0][REG_FILE_ADDR_WIDTH-1:0] gpr_wb_rd_addr;
+  logic [ISSUE_WIDTH-1:0]                          gpr_wb_rd_wr_en;
+
+  assign gpr_wb_data[0]     = vec_wb_rd_wr_en ? vec_wb_data : exu_wb_data[0];
+  assign gpr_wb_rd_addr[0]  = vec_wb_rd_wr_en ? vec_wb_rd_addr : exu_wb_rd_addr[0];
+  assign gpr_wb_rd_wr_en[0] = vec_wb_rd_wr_en | exu_wb_rd_wr_en[0];
+
   /* EXU <-> Central LSU Interface */
   logic                           exu_lsu_req_valid[ISSUE_WIDTH-1:0];
   idu1_out_t                      exu_lsu_req_ctrl[ISSUE_WIDTH-1:0];
@@ -153,6 +179,8 @@ module core_top #(
 `ifdef TV_HAS_CORE_DEBUG
   logic [ISSUE_WIDTH-1:0][XLEN-1:0] exu_instr_tag_out;
   logic [ISSUE_WIDTH-1:0][XLEN-1:0] exu_instr_out;
+  core_debug_lane_t exu_debug;
+  core_debug_lane_t vec_debug;
 `endif
   logic [ISSUE_WIDTH-1:0][XLEN-1:0] instr_tag;
 
@@ -188,9 +216,9 @@ module core_top #(
       .rs2_rd_en(rs2_rd_en),
       .rs1_data (rs1_data),
       .rs2_data (rs2_data),
-      .rd_addr  (exu_wb_rd_addr),
-      .rd_data  (exu_wb_data),
-      .rd_wr_en (exu_wb_rd_wr_en)
+      .rd_addr  (gpr_wb_rd_addr),
+      .rd_data  (gpr_wb_data),
+      .rd_wr_en (gpr_wb_rd_wr_en)
   );
 
   /* Register Scoreboard */
@@ -210,8 +238,8 @@ module core_top #(
       .rs2_hit       (rs2_rsb_hit),
       .set_rd_addr   (rsb_set_rd_addr),
       .set_rd_wr_en  (rsb_set_rd_wr_en),
-      .clear_rd_addr (exu_wb_rd_addr),
-      .clear_rd_wr_en(exu_wb_rd_wr_en)
+      .clear_rd_addr (gpr_wb_rd_addr),
+      .clear_rd_wr_en(gpr_wb_rd_wr_en)
   );
 
   idu0 idu0_inst (
@@ -242,14 +270,15 @@ module core_top #(
       .rsb_set_rd_wr_en  (rsb_set_rd_wr_en[0]),
       .rs1_rsb_hit       (rs1_rsb_hit[0]),
       .rs2_rsb_hit       (rs2_rsb_hit[0]),
-      .exu_wb_data       (exu_wb_data[0]),
-      .exu_wb_rd_addr    (exu_wb_rd_addr[0]),
-      .exu_wb_rd_wr_en   (exu_wb_rd_wr_en[0]),
+      .exu_wb_data       (gpr_wb_data[0]),
+      .exu_wb_rd_addr    (gpr_wb_rd_addr[0]),
+      .exu_wb_rd_wr_en   (gpr_wb_rd_wr_en[0]),
       .exu_mul_busy      (exu_mul_busy[0]),
       .exu_div_busy      (exu_div_busy[0]),
       .exu_lsu_busy      (exu_lsu_busy[0]),
       .exu_lsu_stall     (exu_lsu_stall[0]),
       .accel_hold        (accel_hold),
+      .vector_busy       (vector_busy),
       .pipe_stall        (pipe_stall),
       .idu0_rsb_hit_stall(idu0_rsb_hit_stall),
       .pipe_flush        (pc_load)
@@ -293,9 +322,86 @@ module core_top #(
       .lsu_instr_out                (lsu_debug_instr_out[0]),
       .instr_tag_out                (exu_instr_tag_out[0]),
       .instr_out                    (exu_instr_out[0]),
-      .debug                        (debug[0])
+      .debug                        (exu_debug)
 `endif
   );
+
+  csr_file csr_file_inst (
+      .clk        (clk),
+      .rstn       (rstn),
+      .csr_req    (csr_req),
+      .csr_write  (csr_write),
+      .csr_addr   (csr_addr),
+      .csr_wdata  (csr_wdata),
+      .csr_rdata  (csr_rdata),
+      .csr_illegal(csr_illegal),
+      .vset_we    (vset_we),
+      .vset_vl    (vset_vl),
+      .vset_vtype (vset_vtype),
+      .vl         (csr_vl),
+      .vtype      (csr_vtype),
+      .vlenb      (csr_vlenb),
+      .vstart     (csr_vstart)
+  );
+
+  generate
+    if (HAS_VECTOR) begin : g_vector
+      (* keep_hierarchy = "yes" *)
+      vector_top vector_top_inst (
+          .clk         (clk),
+          .rstn        (rstn),
+          .idu1_out    (idu1_out),
+          .csr_vl      (csr_vl),
+          .csr_vtype   (csr_vtype),
+          .csr_vlenb   (csr_vlenb),
+          .csr_vstart  (csr_vstart),
+          .csr_rdata   (csr_rdata),
+          .csr_illegal (csr_illegal),
+          .csr_req     (csr_req),
+          .csr_write   (csr_write),
+          .csr_addr    (csr_addr),
+          .csr_wdata   (csr_wdata),
+          .vset_we     (vset_we),
+          .vset_vl     (vset_vl),
+          .vset_vtype  (vset_vtype),
+          .v_dccm_req  (v_dccm_req),
+          .v_dccm_wen  (v_dccm_wen),
+          .v_dccm_addr (v_dccm_addr),
+          .v_dccm_wdata(v_dccm_wdata),
+          .v_dccm_wstrb(v_dccm_wstrb),
+          .v_dccm_rdata(v_dccm_rdata),
+          .v_dccm_rvalid(v_dccm_rvalid),
+          .wb_data     (vec_wb_data),
+          .wb_rd_addr  (vec_wb_rd_addr),
+          .wb_rd_wr_en (vec_wb_rd_wr_en),
+          .vector_busy (vector_busy)
+`ifdef TV_HAS_CORE_DEBUG
+          ,
+          .debug       (vec_debug)
+`endif
+      );
+    end else begin : g_no_vector
+      assign csr_req        = 1'b0;
+      assign csr_write      = 1'b0;
+      assign csr_addr       = 12'd0;
+      assign csr_wdata      = 32'd0;
+      assign vset_we        = 1'b0;
+      assign vset_vl        = 32'd0;
+      assign vset_vtype     = 32'd0;
+      assign vec_wb_data    = 32'd0;
+      assign vec_wb_rd_addr = '0;
+      assign vec_wb_rd_wr_en = 1'b0;
+      assign vector_busy    = 1'b0;
+      assign v_dccm_req     = 1'b0;
+      assign v_dccm_wen     = 1'b0;
+      assign v_dccm_addr    = 32'd0;
+      assign v_dccm_wdata   = 128'd0;
+      assign v_dccm_wstrb   = 16'd0;
+`ifdef TV_HAS_CORE_DEBUG
+      assign vec_debug = '0;
+`endif
+    end
+  endgenerate
 
   generate
     if (EXU_HAS_LSU[0] != 0) begin : g_lsu_top
@@ -379,6 +485,17 @@ module core_top #(
   assign dccm_wstrb         = dccm_wstrb_arr;
 
 `ifdef TV_HAS_CORE_DEBUG
+  // Vector GPR WB can retire the same cycle as an EXU branch. Keep both.
+  always_comb begin
+    debug[0]              = exu_debug;
+    if (vec_wb_rd_wr_en) begin
+      debug[0].reg_wr       = 1'b1;
+      debug[0].wb_instr_tag = vec_debug.wb_instr_tag;
+      debug[0].wb_instr     = vec_debug.wb_instr;
+      debug[0].wb_rd_addr   = vec_debug.wb_rd_addr;
+      debug[0].wb_data      = vec_debug.wb_data;
+    end
+  end
   generate
     for (genvar lane = 1; lane < ISSUE_WIDTH; lane++) begin : g_unused_debug
       assign debug[lane] = '0;

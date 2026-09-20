@@ -8,12 +8,12 @@ are targeting. Pass a preset (or custom YAML) via `--hw-config` everywhere.
 | File | CPU | Vector unit |
 |------|-----|-------------|
 | `rv32im_scalar.yaml` | 4-stage in-order scalar (shipping RTL) | off |
-| `vliw_vec.yaml` | Configurable VLIW | on |
-| `superscalar_vec.yaml` | In-order superscalar | on |
-| `ooo_vec.yaml` | Out-of-order | on |
+| `rv32im_zve32x.yaml` | same core + v1 vector box (VLEN=512, DLEN=128) | on |
+| `rv32im_superscalar_2x.yaml` | 2-wide issue scaffold | off |
 
-Only `rv32im_scalar` matches implemented RTL today. Other presets are **scaffolds**
-so software can be developed against a stable contract before those cores land.
+`rv32im_scalar` is the CI/sim default. `rv32im_zve32x` is the vector contract
+and the Alveo U280 overlay (`make fpga` / `make fpga_smoke`). Vector rows in
+`tests/smoke.tlist` are predicated on `vector.enabled`.
 
 ## Schema (version 1)
 
@@ -30,13 +30,14 @@ cpu:
 
 vector:
   enabled: <bool>
-  width_bits: <int>
+  width_bits: <int>          # VLEN; 0 if off
+  dlen_bits: <int>           # execute beat; 0 if off
   lanes: <int>
   local_mem_bytes: <int>
 
 memory:
   iccm_depth_words: <int>
-  dccm_depth_words: <int>
+  dccm_depth_words: <int>    # 128-bit DCCM lines (65536 = 1 MiB)
   link_address: <hex>
 
 soc: default                 # hw/soc/<name>.yaml

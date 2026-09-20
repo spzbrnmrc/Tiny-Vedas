@@ -80,4 +80,9 @@ function automatic logic lsu_is_unaligned(
   return (word & (|addr_lo)) | (half & (&addr_lo));
 endfunction
 
+// 16-byte DCCM line: word0 in last slot means beat 1 is the next line.
+function automatic logic lsu_line_cross(input logic unaligned, input logic [1:0] word0_slot);
+  return unaligned & (word0_slot == 2'b11);
+endfunction
+
 `endif

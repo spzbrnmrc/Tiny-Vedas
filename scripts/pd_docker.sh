@@ -19,6 +19,15 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 command -v docker >/dev/null 2>&1 || die "docker not found — install Docker to run PD in a container"
 
+DOCKER=(docker)
+if ! docker info >/dev/null 2>&1; then
+    if sudo -n docker info >/dev/null 2>&1; then
+        DOCKER=(sudo docker)
+    else
+        die "cannot reach the Docker daemon (try adding this user to the docker group)"
+    fi
+fi
+
 "${REPO_ROOT}/scripts/install_sv2v.sh"
 
 if [[ $# -eq 0 ]]; then
@@ -26,7 +35,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 log "ORFS image: ${ORFS_IMAGE}"
-docker run --rm \
+"${DOCKER[@]}" run --rm \
     -v "${REPO_ROOT}:${WORK_MOUNT}" \
     -w "${WORK_MOUNT}" \
     -u "$(id -u):$(id -g)" \

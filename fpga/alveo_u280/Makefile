@@ -8,6 +8,7 @@ PART      := xcu280-fsvh2892-2L-e
 PYTHON    ?= /usr/bin/python3
 VENV_PYTHON ?= $(REPO_ROOT)/venv/bin/python
 SMOKE_TLIST ?= $(REPO_ROOT)/tests/smoke.tlist
+HW_CONFIG ?= $(REPO_ROOT)/hw/presets/rv32im_zve32x.yaml
 # Prepended under sudo so run_gen can rebuild ELFs (riscv64-unknown-elf-gcc).
 RISCV_BIN ?= /tools/riscv/bin
 
@@ -22,7 +23,8 @@ BIT ?= $(WORK_DIR)/tiny_vedas_u280.bit
 config:
 	mkdir -p $(WORK_DIR)
 	$(PYTHON) $(BOARD_DIR)/scripts/gen_fpga_config.py \
-		--board-dir $(BOARD_DIR) --work-dir $(WORK_DIR)
+		--board-dir $(BOARD_DIR) --work-dir $(WORK_DIR) \
+		--hw-config $(HW_CONFIG)
 
 bitstream: config
 	@command -v $(VIVADO) >/dev/null || { echo "error: vivado not on PATH (need 2023.2)"; exit 1; }
@@ -47,7 +49,8 @@ smoke:
 	@test -x $(VENV_PYTHON) || { echo "error: missing $(VENV_PYTHON) — create the repo venv first"; exit 1; }
 	@test -f $(SMOKE_TLIST) || { echo "error: missing $(SMOKE_TLIST)"; exit 1; }
 	sudo env PATH="$(RISCV_BIN):$(PATH)" $(VENV_PYTHON) \
-		$(BOARD_DIR)/scripts/fpga_runner.py -t $(SMOKE_TLIST) --skip-oversized
+		$(BOARD_DIR)/scripts/fpga_runner.py -t $(SMOKE_TLIST) \
+		--hw-config $(HW_CONFIG) --skip-oversized
 
 clean:
 	rm -rf $(WORK_DIR)

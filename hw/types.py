@@ -44,6 +44,7 @@ class CpuConfig:
 class VectorUnitConfig:
     enabled: bool
     width_bits: int
+    dlen_bits: int
     lanes: int
     local_mem_bytes: int
 

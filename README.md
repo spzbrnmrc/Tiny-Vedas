@@ -24,7 +24,7 @@ The shipping RTL is a **4-stage pipelined RV32IM** processor written in SystemVe
 
 ## Roadmap: microarchitectures and vector
 
-Tiny Vedas is built to support **multiple CPU organizations** behind one hardware-config contract. Presets in [`hw/presets/`](hw/presets/) already describe scalar, VLIW, superscalar, and out-of-order variants with optional vector units; only `rv32im_scalar` matches implemented RTL today. As new microarchitectures land, `sim_manager`, PyVedas, and the test suite will target them through the same `--hw-config` YAML — so accelerator exploration stays one toolchain, not a fork per design.
+Tiny Vedas is built to support **multiple CPU organizations** behind one hardware-config contract. Presets in [`hw/presets/`](hw/presets/) describe scalar, VLIW, superscalar, and out-of-order variants with optional vector units. Shipping RTL matches `rv32im_scalar` and `rv32im_zve32x` (VLEN=512, DLEN=128). As new microarchitectures land, `sim_manager`, PyVedas, and the test suite will target them through the same `--hw-config` YAML — so accelerator exploration stays one toolchain, not a fork per design.
 
 ## Features
 

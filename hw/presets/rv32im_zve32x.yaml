@@ -1,0 +1,39 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# RV32IM plus the v1 vector box (VLEN=512, DLEN=128). Same SoC map as scalar.
+name: rv32im_zve32x
+version: 1
+description: >
+  4-stage in-order RV32IM plus the v1 integer vector box: VLEN=512,
+  DLEN=128 (4 beats). Same ICCM/DCCM map and SoC devices as rv32im_scalar.
+
+cpu:
+  kind: scalar
+  isa: rv32im
+  issue_width: 1
+  out_of_order: false
+  exu:
+    - alu: true
+      mul: true
+      div: true
+      lsu: true
+
+vector:
+  enabled: true
+  width_bits: 512      # VLEN
+  dlen_bits: 128       # execute / mem beat
+  lanes: 16            # VLEN/SEW at SEW=32
+  local_mem_bytes: 0
+
+soc: default
+
+memory:
+  iccm_depth_words: 262144   # 2^18
+  dccm_depth_words: 65536    # 128-bit lines, 1 MiB
+  link_address: 0x00100000
+
+software:
+  vliw_compiler: false
+  materializer: flat_row_major
+  vectorize_min_numel: 0

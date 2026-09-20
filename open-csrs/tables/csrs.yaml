@@ -1,0 +1,50 @@
+# Copyright (c) 2025 Siliscale Consulting, LLC
+# SPDX-License-Identifier: Apache-2.0
+#
+# Architectural CSR file. Scalar csrr and vector vset* share one instance.
+# Addresses match RISC-V unpriv vector CSRs.
+
+module_name: csr_file
+pkg_name: csr_pkg
+
+csrs:
+  - name: vstart
+    addr: 0x008
+    privilege: URW
+    width: 32
+    reset: 0
+    access: RW
+    fields:
+      - {name: vstart, bits: [31, 0], access: RW}
+
+  - name: vl
+    addr: 0xC20
+    privilege: URO
+    width: 32
+    reset: 0
+    access: RO
+    fields:
+      - {name: vl, bits: [31, 0], access: RO}
+
+  - name: vtype
+    addr: 0xC21
+    privilege: URO
+    width: 32
+    reset: 0x80000000   # vill=1
+    access: RO
+    fields:
+      - {name: vill, bits: [31, 31], access: RO}
+      - {name: vma, bits: [7, 7], access: RO}
+      - {name: vta, bits: [6, 6], access: RO}
+      - {name: vsew, bits: [5, 3], access: RO}
+      - {name: vlmul, bits: [2, 0], access: RO}
+
+  - name: vlenb
+    addr: 0xC22
+    privilege: URO
+    width: 32
+    reset: vlen_bytes    # VLEN/8 from hw_config.svh
+    access: RO
+    const: true
+    fields:
+      - {name: vlenb, bits: [31, 0], access: RO}

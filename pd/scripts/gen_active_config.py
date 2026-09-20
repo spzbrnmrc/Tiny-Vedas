@@ -255,6 +255,14 @@ export PD_TARGET_CLOCK_GHZ="{target_ghz if target_ghz is not None else ""}"
     )
 
     print(f"HW preset:     {hw.name} ({hw.cpu.kind.value})")
+    print(
+        f"Vector:        {'on' if hw.has_vector_unit else 'off'}"
+        + (
+            f" VLEN={hw.vector.width_bits} DLEN={hw.vector.dlen_bits}"
+            if hw.has_vector_unit
+            else ""
+        )
+    )
     print(f"PD platform:   {args.platform}")
     if target_ghz is not None:
         print(f"Clock target:  {target_ghz:g} GHz ({clock_period:g} {clock_unit})")

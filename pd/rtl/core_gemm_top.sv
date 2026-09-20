@@ -33,6 +33,14 @@ module core_gemm_top (
     output logic [XLEN-1:0] dccm_wdata     [LSU_DCCM_PORT_COUNT-1:0],
     output logic [     3:0] dccm_wstrb     [LSU_DCCM_PORT_COUNT-1:0],
 
+    output logic              v_dccm_req,
+    output logic              v_dccm_wen,
+    output logic [      31:0] v_dccm_addr,
+    output logic [     127:0] v_dccm_wdata,
+    output logic [      15:0] v_dccm_wstrb,
+    input  logic [     127:0] v_dccm_rdata,
+    input  logic              v_dccm_rvalid,
+
     input  logic [AXI_ADDR_WIDTH-1:0] s_axil_awaddr,
     input  logic                      s_axil_awvalid,
     output logic                      s_axil_awready,
@@ -139,7 +147,14 @@ module core_gemm_top (
       .dccm_wen             (dccm_wen),
       .dccm_wdata           (dccm_wdata),
       .dccm_wstrb           (dccm_wstrb),
-      .accel_hold           (accel_hold)
+      .accel_hold           (accel_hold),
+      .v_dccm_req           (v_dccm_req),
+      .v_dccm_wen           (v_dccm_wen),
+      .v_dccm_addr          (v_dccm_addr),
+      .v_dccm_wdata         (v_dccm_wdata),
+      .v_dccm_wstrb         (v_dccm_wstrb),
+      .v_dccm_rdata         (v_dccm_rdata),
+      .v_dccm_rvalid        (v_dccm_rvalid)
   );
 
   (* keep_hierarchy = "yes" *)

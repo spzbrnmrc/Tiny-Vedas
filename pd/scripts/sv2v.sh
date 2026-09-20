@@ -32,6 +32,7 @@ echo "==> sv2v (${#SOURCES[@]} files) -> ${PD_VERILOG}"
   -I "${REPO_ROOT}/pd/include" \
   -I "${REPO_ROOT}/rtl/include" \
   -I "${REPO_ROOT}/rtl/idu" \
+  -I "${REPO_ROOT}/rtl/csr" \
   --top="${PD_TOP}" \
   --write="${PD_VERILOG}" \
   "${SOURCES[@]}"

@@ -244,9 +244,22 @@ module lsu_engine (
   assign dc2_strb_wide = lsu_strb_wide(dc2_by, dc2_half, dc2_word, dc2_computed_addr[1:0]);
   assign dc2_store_wide = lsu_store_data_wide(dc2_rs2_data, dc2_computed_addr[1:0]);
 
-  /* Port conflict: unaligned op needs both TDP ports, older DC2 store wins. */
-  assign engine_stall = (dc1_lsu_valid & dc1_load & dc2_store_v &
-                         (dc1_unaligned_addr | dc2_unaligned_addr));
+  logic dc1_line_cross;
+  logic dc2_line_cross;
+  logic load_cross_beat;
+  logic store_cross_beat;
+  logic load_cross_hold;
+  logic store_cross_hold;
+  logic [XLEN-1:0] line_cross_word0;
+
+  assign dc1_line_cross = lsu_line_cross(dc1_unaligned_addr, dc1_word0_addr[3:2]);
+
+  /* Single 128-bit port: DC1 load and DC2 store cannot share a cycle. */
+  assign store_cross_hold = dc2_store_v & dc2_line_cross & ~store_cross_beat;
+  assign load_cross_hold  = dc1_lsu_valid & dc1_load & dc1_line_cross & ~load_cross_beat &
+                            ~store_cross_hold;
+  assign engine_stall = (dc1_lsu_valid & dc1_load & dc2_store_v) | store_cross_hold |
+                        load_cross_hold;
   assign dc1_hold = engine_stall;
 
   assign dc1_pipe_fwd0 = (dc1_load & dc1_legal) & dc2_store_v & (
@@ -295,7 +308,7 @@ module lsu_engine (
   assign dc2_in_lsu_valid = dc1_lsu_valid & ~engine_stall;
 
   /* ****** DC2 ***** */
-  register_sync_rstn #(
+  register_en_sync_rstn #(
       .WIDTH($bits(
           {
             dc2_by,
@@ -322,6 +335,7 @@ module lsu_engine (
   ) dc2_dccm_rdata_reg (
       .clk(clk),
       .rstn(rstn),
+      .en(~store_cross_hold),
       .din({
         dc1_by,
         dc1_half,
@@ -367,32 +381,53 @@ module lsu_engine (
   );
 
 `ifdef TV_HAS_CORE_DEBUG
-  register_sync_rstn #(
+  register_en_sync_rstn #(
       .WIDTH(XLEN)
   ) dc2_instr_tag_reg (
       .clk (clk),
       .rstn(rstn),
+      .en  (~store_cross_hold),
       .din (dc1_lsu_instr_tag_out),
       .dout(dc2_lsu_instr_tag_out)
   );
 
-  register_sync_rstn #(
+  register_en_sync_rstn #(
       .WIDTH(32)
   ) dc2_instr_out_reg (
       .clk (clk),
       .rstn(rstn),
+      .en  (~store_cross_hold),
       .din (dc1_lsu_instr_out),
       .dout(dc2_lsu_instr_out)
   );
 `endif
 
+  always_ff @(posedge clk) begin
+    if (!rstn) begin
+      dc2_line_cross   <= 1'b0;
+      load_cross_beat  <= 1'b0;
+      store_cross_beat <= 1'b0;
+      line_cross_word0 <= '0;
+    end else begin
+      if (!store_cross_hold) dc2_line_cross <= dc1_line_cross & ~dc1_hold;
+      if (dc2_store_v && dc2_line_cross) store_cross_beat <= ~store_cross_beat;
+      else store_cross_beat <= 1'b0;
+      if (dc1_lsu_valid && dc1_load && dc1_line_cross && !store_cross_hold)
+        load_cross_beat <= ~load_cross_beat;
+      else load_cross_beat <= 1'b0;
+      if (load_cross_beat) line_cross_word0 <= dccm_rdata[0];
+    end
+  end
+
   logic [XLEN-1:0] dc2_merged_word0;
   logic [XLEN-1:0] dc2_merged_word1;
   logic [2*XLEN-1:0] dc2_load_wide;
 
+  logic [XLEN-1:0] dc2_mem_word0;
+  assign dc2_mem_word0 = dc2_line_cross ? line_cross_word0 : dccm_rdata[0];
   assign dc2_merged_word0 = dc2_fwd0_valid ?
-      lsu_merge_bytes(dccm_rdata[0], dc2_fwd0_value, dc2_fwd0_strb) :
-      dccm_rdata[0];
+      lsu_merge_bytes(dc2_mem_word0, dc2_fwd0_value, dc2_fwd0_strb) :
+      dc2_mem_word0;
   assign dc2_merged_word1 = dc2_fwd1_valid ?
       lsu_merge_bytes(dccm_rdata[1], dc2_fwd1_value, dc2_fwd1_strb) :
       dccm_rdata[1];
@@ -480,19 +515,24 @@ module lsu_engine (
                             ({XLEN{dc3_word}} & 32'hFFFFFFFF);
 
   /* Port 0: beat-0 read, unaligned-store beat 1 write.
-   * Port 1: beat-0 write, unaligned-load beat 1 read. */
+   * Port 1: beat-0 write, unaligned-load beat 1 read.
+   * Line-crossing splits across two cycles (single 128-bit DCCM port). */
   assign dccm_raddr[0]     = dc1_word0_addr;
-  assign dccm_rvalid_in[0] = dc1_lsu_valid & dc1_load & ~dc1_skip_read0 & ~engine_stall;
+  assign dccm_rvalid_in[0] = dc1_lsu_valid & dc1_load & ~dc1_skip_read0 &
+                             ~(dc2_store_v | store_cross_hold) &
+                             (~dc1_line_cross | ~load_cross_beat);
   assign dccm_waddr[0]     = dc2_word1_addr;
-  assign dccm_wen[0]       = dc2_store_v & dc2_unaligned_addr;
+  assign dccm_wen[0]       = dc2_store_v & dc2_unaligned_addr &
+                             (~dc2_line_cross | store_cross_beat);
   assign dccm_wdata[0]     = dc2_store_wide[2*XLEN-1:XLEN];
   assign dccm_wstrb[0]     = dc2_strb_wide[7:4];
 
   assign dccm_raddr[1]     = dc1_word1_addr;
   assign dccm_rvalid_in[1] = dc1_lsu_valid & dc1_load & dc1_unaligned_addr & ~dc1_skip_read1 &
-                             ~engine_stall;
+                             ~(dc2_store_v | store_cross_hold) &
+                             (~dc1_line_cross | load_cross_beat);
   assign dccm_waddr[1]     = dc2_word0_addr;
-  assign dccm_wen[1]       = dc2_store_v;
+  assign dccm_wen[1]       = dc2_store_v & (~dc2_line_cross | ~store_cross_beat);
   assign dccm_wdata[1]     = dc2_store_wide[XLEN-1:0];
   assign dccm_wstrb[1]     = dc2_strb_wide[3:0];
 
@@ -512,7 +552,7 @@ module lsu_engine (
   assign dc2_lane_id    = dc2_lane_id_q;
   assign dc2_lane_valid = dc2_lsu_valid;
 
-  assign store_retire_valid = dc2_store_v;
+  assign store_retire_valid = dc2_store_v & ~store_cross_beat;
   assign store_retire_addr  = dc2_computed_addr;
   assign store_retire_line_clear_valid = dc2_store_v;
   assign store_retire_line_clear_addr  = dc2_word0_addr;
@@ -532,7 +572,7 @@ module lsu_engine (
   assign instr_tag_out = dc3_lsu_instr_tag_out;
   assign instr_out     = dc3_lsu_instr_out;
 
-  assign debug_store_dc2_valid     = dc2_store_v;
+  assign debug_store_dc2_valid     = dc2_store_v & ~store_cross_beat;
   assign debug_store_dc2_instr_tag = dc2_lsu_instr_tag_out;
   assign debug_store_dc2_instr     = dc2_lsu_instr_out;
   assign debug_store_dc2_addr      = dc2_computed_addr;
@@ -541,7 +581,7 @@ module lsu_engine (
                                       ({XLEN{dc2_half}} & 32'h0000FFFF) |
                                       ({XLEN{dc2_word}} & 32'hFFFFFFFF));
 
-  assign debug_store_dc3_valid     = dc2_store_v & dc2_unaligned_addr;
+  assign debug_store_dc3_valid     = dc2_store_v & dc2_unaligned_addr & ~store_cross_beat;
   assign debug_store_dc3_instr_tag = dc2_lsu_instr_tag_out;
   assign debug_store_dc3_instr     = dc2_lsu_instr_out;
   assign debug_store_dc3_addr      = dc2_computed_addr;

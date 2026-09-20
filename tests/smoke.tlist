@@ -35,3 +35,11 @@ pyvedas.gemm_bmm
 pyvedas.gemm_broadcast
 pyvedas.gemm_mmio_tiled
 elf.dhrystone
+asm.rvv_vset if vector.enabled
+asm.rvv_csrr if vector.enabled
+asm.rvv_vmem if vector.enabled
+asm.rvv_valu if vector.enabled
+asm.rvv_vlogic if vector.enabled
+asm.rvv_vmin if vector.enabled
+asm.rvv_vshift if vector.enabled
+asm.rvv_vcmp if vector.enabled

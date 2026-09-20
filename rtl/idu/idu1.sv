@@ -82,7 +82,8 @@ module idu1 #(
     input  logic                           exu_div_busy,
     input  logic                           exu_lsu_busy,
     input  logic                           exu_lsu_stall,
-    input  logic                           accel_hold
+    input  logic                           accel_hold,
+    input  logic                           vector_busy
 );
 
   idu1_out_t idu1_out_i;
@@ -158,6 +159,12 @@ module idu1 #(
   assign idu1_out_i.nop = idu0_out.nop;
   assign idu1_out_i.ecall = idu0_out.ecall;
   assign idu1_out_i.legal = idu0_out.legal & ~(idu0_rsb_hit_stall);
+  assign idu1_out_i.vec = idu0_out.vec;
+  assign idu1_out_i.vset = idu0_out.vset;
+  assign idu1_out_i.vcsr = idu0_out.vcsr;
+  assign idu1_out_i.vload = idu0_out.vload;
+  assign idu1_out_i.vstore = idu0_out.vstore;
+  assign idu1_out_i.valu = idu0_out.valu;
 
   register_en_flush_sync_rstn #(
       .WIDTH($bits(idu1_out_t))
@@ -185,7 +192,8 @@ module idu1 #(
         idu1_out_before_fwd.alu,
         idu1_out_before_fwd.div,
         idu1_out_before_fwd.load,
-        idu1_out_before_fwd.store
+        idu1_out_before_fwd.store,
+        idu1_out_before_fwd.vec
       }),
       .dout(last_issued_instr),
       .en(~pipe_stall),
@@ -222,6 +230,8 @@ module idu1 #(
       pipe_stall = exu_lsu_busy;
     end else if (last_issued_instr.store & (idu1_out_gated.legal & ~idu1_out_gated.store)) begin /* Pipeline Stores */
       pipe_stall = exu_lsu_busy;
+    end else if (last_issued_instr.vec) begin
+      pipe_stall = vector_busy;
     end
     pipe_stall |= exu_lsu_stall;
     pipe_stall |= accel_hold;

@@ -40,3 +40,8 @@ unset KEPLER_FORMAL_EXE
 # ORFS defaults WORK_HOME to the flow tree (read-only in Docker / system installs).
 export WORK_HOME="${ORFS_WORK_HOME}"
 make -C "${ORFS_FLOW}" DESIGN_CONFIG="${ORFS_CONFIG}" ${ORFS_TARGET:-all}
+
+target="${ORFS_TARGET:-all}"
+if [[ "${target}" == "all" || "${target}" == "finish" ]]; then
+  python3 "${REPO_ROOT}/pd/scripts/annotate_layout.py" || true
+fi

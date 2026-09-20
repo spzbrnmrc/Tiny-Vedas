@@ -93,9 +93,18 @@ class Memory:
 class RISC_V_ISS:
     """RISC-V Instruction Set Simulator"""
     
+    # v1 legal vtype: vma=1, vta=1, vsew=e32, vlmul=m1. Same as rtl/vector/vector_top.sv.
+    VTYPE_LEGAL = 0x000000D0  # vma=1, vta=1, vsew=e32 (010), vlmul=m1
+    VTYPE_VILL = 0x80000000
+    CSR_VSTART = 0x008
+    CSR_VL = 0xC20
+    CSR_VTYPE = 0xC21
+    CSR_VLENB = 0xC22
+
     def __init__(self, text_start: int, stack_base: int, stack_size: int,
                  eot_addr: int = 0x10000000, eot_size: int = 4,
-                 gemm_addr: int = 0x00300000, gemm_size: int = 0x1000):
+                 gemm_addr: int = 0x00300000, gemm_size: int = 0x1000,
+                 vlen: int = 0):
         self.regs = RegisterFile()
         self.mem = Memory()
         self.pc = text_start
@@ -106,6 +115,13 @@ class RISC_V_ISS:
         self.eot_size = max(1, eot_size)
         self.gemm_addr = gemm_addr & 0xFFFFFFFF
         self.gemm_size = max(1, gemm_size)
+        self.vlen = int(vlen)
+        self.vlenb = (self.vlen // 8) if self.vlen else 0
+        self.vlmax = (self.vlen // 32) if self.vlen else 0
+        self.vl = 0
+        self.vtype = self.VTYPE_VILL if self.vlen else 0
+        self.vstart = 0
+        self.vregs = [[0] * (self.vlen // 32) for _ in range(32)] if self.vlen else []
         self.gemm_csr = {
             0x00: 0,
             0x04: 0,
@@ -210,6 +226,256 @@ class RISC_V_ISS:
             fields['imm'] = 0
         
         return opcode, fields
+
+    def _vtype_legal(self, vtype: int) -> bool:
+        return (vtype & 0xFFFFFFFF) == self.VTYPE_LEGAL
+
+    def _apply_vset(self, rd: int, avl: int, req_vtype: int, keep_vl: bool) -> None:
+        """RVV 1.0 vsetvl table. keep_vl is the rd==x0 && rs1==x0 case."""
+        if not self._vtype_legal(req_vtype):
+            self.vl = 0
+            self.vtype = self.VTYPE_VILL
+            self.vstart = 0
+            if rd != 0:
+                self.regs.write(rd, 0)
+            return
+        if keep_vl:
+            vl = self.vl
+        elif avl < self.vlmax:
+            vl = avl
+        else:
+            vl = self.vlmax
+        self.vl = vl & 0xFFFFFFFF
+        self.vtype = self.VTYPE_LEGAL
+        self.vstart = 0
+        if rd != 0:
+            self.regs.write(rd, self.vl)
+
+    def _exec_csr(self, inst: int, rd: int, rs1: int, funct3: int, resources: List[str]) -> None:
+        csr = (inst >> 20) & 0xFFF
+        # v1: csrrs rd, csr, x0 of the four vector CSRs only.
+        if self.vlen and funct3 == 2 and rs1 == 0:
+            if csr == self.CSR_VL:
+                val = self.vl
+            elif csr == self.CSR_VTYPE:
+                val = self.vtype
+            elif csr == self.CSR_VLENB:
+                val = self.vlenb
+            elif csr == self.CSR_VSTART:
+                val = self.vstart
+            else:
+                raise ValueError(f"Undecodeable CSR 0x{csr:03X} at PC 0x{self.pc:08X}")
+            self.regs.write(rd, val)
+            if rd != 0:
+                resources.append(f"{self.regs.get_name(rd)}=0x{self.regs.read(rd):08X}")
+            return
+        if funct3 != 0:
+            # Existing RV32IM images may contain unused SYSTEM encodings; skip.
+            return
+
+    def _exec_vector(self, inst: int, rd: int, rs1: int, rs2: int, funct3: int,
+                     resources: List[str]) -> None:
+        if not self.vlen:
+            raise ValueError(f"Vector op 0x{inst:08X} with VLEN=0 at PC 0x{self.pc:08X}")
+        if funct3 != 7:
+            self._exec_valu(inst, rd, rs1, rs2, funct3)
+            return
+        if (inst >> 31) == 0:
+            # vsetvli
+            zimm = (inst >> 20) & 0x7FF
+            rs1_is_x0 = rs1 == 0
+            rd_is_x0 = rd == 0
+            if rd_is_x0 and rs1_is_x0:
+                self._apply_vset(rd, self.vl, zimm, keep_vl=True)
+            elif (not rd_is_x0) and rs1_is_x0:
+                self._apply_vset(rd, self.vlmax, zimm, keep_vl=False)
+            else:
+                self._apply_vset(rd, self.regs.read(rs1), zimm, keep_vl=False)
+        elif (inst >> 30) == 3:
+            # vsetivli: AVL is uimm, not the x0 table
+            zimm = (inst >> 20) & 0x3FF
+            uimm = (inst >> 15) & 0x1F
+            self._apply_vset(rd, uimm, zimm, keep_vl=False)
+        elif ((inst >> 25) & 0x7F) == 0x40:
+            # vsetvl
+            rs1_is_x0 = rs1 == 0
+            rd_is_x0 = rd == 0
+            req = self.regs.read(rs2)
+            if rd_is_x0 and rs1_is_x0:
+                self._apply_vset(rd, self.vl, req, keep_vl=True)
+            elif (not rd_is_x0) and rs1_is_x0:
+                self._apply_vset(rd, self.vlmax, req, keep_vl=False)
+            else:
+                self._apply_vset(rd, self.regs.read(rs1), req, keep_vl=False)
+        else:
+            raise ValueError(f"Undecodeable vset 0x{inst:08X} at PC 0x{self.pc:08X}")
+        if rd != 0:
+            resources.append(f"{self.regs.get_name(rd)}=0x{self.regs.read(rd):08X}")
+
+    def _vmem_enc_ok(self, inst: int, funct3: int) -> bool:
+        """Unmasked unit-stride e32: nf=0 mew=0 mop=00 vm=1 lumop/sumop=0 width=110."""
+        return (
+            self.vlen
+            and funct3 == 6
+            and ((inst >> 20) & 0xFFF) == 0x020
+        )
+
+    def _exec_vle32(self, rd: int, rs1: int) -> None:
+        if self.vtype == self.VTYPE_VILL:
+            return
+        base = self.regs.read(rs1)
+        for i in range(self.vl):
+            self.vregs[rd][i] = self.mem.read_word(base + 4 * i) & 0xFFFFFFFF
+        for i in range(self.vl, self.vlmax):
+            self.vregs[rd][i] = 0xFFFFFFFF
+
+    def _exec_vse32(self, vs3: int, rs1: int) -> None:
+        if self.vtype == self.VTYPE_VILL or self.vl == 0:
+            return
+        base = self.regs.read(rs1)
+        for i in range(self.vl):
+            self.mem.write_word(base + 4 * i, self.vregs[vs3][i] & 0xFFFFFFFF)
+
+    @staticmethod
+    def _sext5(imm: int) -> int:
+        imm &= 0x1F
+        return (imm | 0xFFFFFFE0) if (imm & 0x10) else imm
+
+    def _fill_tail(self, vd: int) -> None:
+        for i in range(self.vl, self.vlmax):
+            self.vregs[vd][i] = 0xFFFFFFFF
+
+    @staticmethod
+    def _to_signed(x: int) -> int:
+        return x - 0x100000000 if x >= 0x80000000 else x
+
+    @staticmethod
+    def _valu_op(funct6: int, a: int, b: int) -> int:
+        if funct6 == 0x00:
+            return (a + b) & 0xFFFFFFFF
+        if funct6 == 0x02:
+            return (a - b) & 0xFFFFFFFF
+        if funct6 == 0x03:
+            return (b - a) & 0xFFFFFFFF
+        if funct6 == 0x04:
+            return a if a <= b else b
+        if funct6 == 0x05:
+            sa = RISC_V_ISS._to_signed(a)
+            sb = RISC_V_ISS._to_signed(b)
+            return a if sa <= sb else b
+        if funct6 == 0x06:
+            return a if a >= b else b
+        if funct6 == 0x07:
+            sa = RISC_V_ISS._to_signed(a)
+            sb = RISC_V_ISS._to_signed(b)
+            return a if sa >= sb else b
+        if funct6 == 0x09:
+            return (a & b) & 0xFFFFFFFF
+        if funct6 == 0x0A:
+            return (a | b) & 0xFFFFFFFF
+        if funct6 == 0x0B:
+            return (a ^ b) & 0xFFFFFFFF
+        if funct6 == 0x17:
+            return b & 0xFFFFFFFF
+        sh = b & 31
+        if funct6 == 0x25:
+            return (a << sh) & 0xFFFFFFFF
+        if funct6 == 0x28:
+            return a >> sh
+        if funct6 == 0x29:
+            return (RISC_V_ISS._to_signed(a) >> sh) & 0xFFFFFFFF
+        raise ValueError(f"Undecodeable valu funct6=0x{funct6:02X}")
+
+    @staticmethod
+    def _valu_cmp(funct6: int, a: int, b: int) -> bool:
+        sa = RISC_V_ISS._to_signed(a)
+        sb = RISC_V_ISS._to_signed(b)
+        if funct6 == 0x18:
+            return a == b
+        if funct6 == 0x19:
+            return a != b
+        if funct6 == 0x1A:
+            return a < b
+        if funct6 == 0x1B:
+            return sa < sb
+        if funct6 == 0x1C:
+            return a <= b
+        if funct6 == 0x1D:
+            return sa <= sb
+        if funct6 == 0x1E:
+            return a > b
+        if funct6 == 0x1F:
+            return sa > sb
+        raise ValueError(f"Undecodeable valu compare funct6=0x{funct6:02X}")
+
+    def _valu_src1(self, inst: int, rs1: int, funct3: int, funct6: int) -> int:
+        if funct3 == 4:
+            return self.regs.read(rs1) & 0xFFFFFFFF
+        if funct3 == 3:
+            imm = (inst >> 15) & 0x1F
+            if funct6 in (0x25, 0x28, 0x29):
+                return imm
+            return self._sext5(imm) & 0xFFFFFFFF
+        raise ValueError(f"Undecodeable valu funct3={funct3}")
+
+    def _exec_valu(self, inst: int, rd: int, rs1: int, rs2: int, funct3: int) -> None:
+        if self.vtype == self.VTYPE_VILL:
+            return
+        funct6 = (inst >> 26) & 0x3F
+        vm = (inst >> 25) & 1
+        vs2 = (inst >> 20) & 0x1F
+        if not vm:
+            raise ValueError(f"Masked valu 0x{inst:08X} at PC 0x{self.pc:08X}")
+        legal_f3 = {
+            0x00: (0, 3, 4),
+            0x02: (0, 4),
+            0x03: (3, 4),
+            0x04: (0, 4),
+            0x05: (0, 4),
+            0x06: (0, 4),
+            0x07: (0, 4),
+            0x09: (0, 3, 4),
+            0x0A: (0, 3, 4),
+            0x0B: (0, 3, 4),
+            0x17: (0, 3, 4),
+            0x18: (0, 3, 4),
+            0x19: (0, 3, 4),
+            0x1A: (0, 4),
+            0x1B: (0, 4),
+            0x1C: (0, 3, 4),
+            0x1D: (0, 3, 4),
+            0x1E: (3, 4),
+            0x1F: (3, 4),
+            0x25: (0, 3, 4),
+            0x28: (0, 3, 4),
+            0x29: (0, 3, 4),
+        }
+        if funct6 not in legal_f3 or funct3 not in legal_f3[funct6]:
+            raise ValueError(f"Undecodeable valu 0x{inst:08X} at PC 0x{self.pc:08X}")
+        if funct6 == 0x17 and vs2 != 0:
+            raise ValueError(f"Undecodeable vmv 0x{inst:08X} at PC 0x{self.pc:08X}")
+        scalar = None if funct3 == 0 else self._valu_src1(inst, rs1, funct3, funct6)
+        if 0x18 <= funct6 <= 0x1F:
+            mask = 0
+            for i in range(self.vl):
+                a = self.vregs[vs2][i]
+                b = self.vregs[rs1][i] if funct3 == 0 else scalar
+                if self._valu_cmp(funct6, a, b):
+                    mask |= 1 << i
+            for i in range(self.vl, self.vlmax):
+                mask |= 1 << i
+            self.vregs[rd][0] = 0xFFFF0000 | (mask & 0xFFFF)
+            for i in range(1, self.vlmax):
+                self.vregs[rd][i] = 0xFFFFFFFF
+            return
+        dest = [0] * self.vlmax
+        for i in range(self.vl):
+            a = self.vregs[vs2][i]
+            b = self.vregs[rs1][i] if funct3 == 0 else scalar
+            dest[i] = self._valu_op(funct6, a, b)
+        for i in range(self.vl):
+            self.vregs[rd][i] = dest[i]
+        self._fill_tail(rd)
     
     def disassemble(self, inst: int, fields: Dict) -> str:
         """Disassemble instruction to assembly string"""
@@ -334,13 +600,101 @@ class RISC_V_ISS:
                 elif funct7 == 0x01:  # REMU (M extension)
                     return f"remu {self.regs.get_name(rd)},{self.regs.get_name(rs1)},{self.regs.get_name(rs2)}"
         
-        # SYSTEM (ECALL, EBREAK)
+        # SYSTEM (ECALL, EBREAK, CSR)
         if opcode == 0x73:
             if funct3 == 0:
                 if imm == 0:  # ECALL
                     return "ecall"
                 elif imm == 1:  # EBREAK
                     return "ebreak"
+            csr = (inst >> 20) & 0xFFF
+            csr_names = {
+                self.CSR_VSTART: "vstart",
+                self.CSR_VL: "vl",
+                self.CSR_VTYPE: "vtype",
+                self.CSR_VLENB: "vlenb",
+            }
+            name = csr_names.get(csr, f"0x{csr:03X}")
+            if funct3 == 2 and rs1 == 0:
+                return f"csrr {self.regs.get_name(rd)},{name}"
+            return f"csr(0x{inst:08X})"
+
+        # OP-V (vset* in v1)
+        if opcode == 0x57:
+            if funct3 == 7:
+                if (inst >> 31) == 0:
+                    return f"vsetvli {self.regs.get_name(rd)},{self.regs.get_name(rs1)},vtypei"
+                if (inst >> 30) == 3:
+                    uimm = (inst >> 15) & 0x1F
+                    return f"vsetivli {self.regs.get_name(rd)},{uimm},vtypei"
+                if ((inst >> 25) & 0x7F) == 0x40:
+                    return (
+                        f"vsetvl {self.regs.get_name(rd)},"
+                        f"{self.regs.get_name(rs1)},{self.regs.get_name(rs2)}"
+                    )
+            funct6 = (inst >> 26) & 0x3F
+            vs2 = (inst >> 20) & 0x1F
+            uimm = (inst >> 15) & 0x1F
+            simm = self._sext5(uimm)
+            if funct6 == 0x00:
+                if funct3 == 0:
+                    return f"vadd.vv v{rd},v{vs2},v{rs1}"
+                if funct3 == 4:
+                    return f"vadd.vx v{rd},v{vs2},{self.regs.get_name(rs1)}"
+                if funct3 == 3:
+                    return f"vadd.vi v{rd},v{vs2},{simm}"
+            if funct6 == 0x02:
+                if funct3 == 0:
+                    return f"vsub.vv v{rd},v{vs2},v{rs1}"
+                if funct3 == 4:
+                    return f"vsub.vx v{rd},v{vs2},{self.regs.get_name(rs1)}"
+            if funct6 == 0x03:
+                if funct3 == 4:
+                    return f"vrsub.vx v{rd},v{vs2},{self.regs.get_name(rs1)}"
+                if funct3 == 3:
+                    return f"vrsub.vi v{rd},v{vs2},{simm}"
+            names = {
+                0x04: "vminu",
+                0x05: "vmin",
+                0x06: "vmaxu",
+                0x07: "vmax",
+                0x09: "vand",
+                0x0A: "vor",
+                0x0B: "vxor",
+                0x18: "vmseq",
+                0x19: "vmsne",
+                0x1A: "vmsltu",
+                0x1B: "vmslt",
+                0x1C: "vmsleu",
+                0x1D: "vmsle",
+                0x1E: "vmsgtu",
+                0x1F: "vmsgt",
+                0x25: "vsll",
+                0x28: "vsrl",
+                0x29: "vsra",
+            }
+            if funct6 in names:
+                op = names[funct6]
+                if funct3 == 0:
+                    return f"{op}.vv v{rd},v{vs2},v{rs1}"
+                if funct3 == 4:
+                    return f"{op}.vx v{rd},v{vs2},{self.regs.get_name(rs1)}"
+                if funct3 == 3:
+                    imm = uimm if funct6 in (0x25, 0x28, 0x29) else simm
+                    return f"{op}.vi v{rd},v{vs2},{imm}"
+            if funct6 == 0x17 and vs2 == 0:
+                if funct3 == 0:
+                    return f"vmv.v.v v{rd},v{rs1}"
+                if funct3 == 4:
+                    return f"vmv.v.x v{rd},{self.regs.get_name(rs1)}"
+                if funct3 == 3:
+                    return f"vmv.v.i v{rd},{simm}"
+            return f"vec(0x{inst:08X})"
+
+        if opcode == 0x07 and self._vmem_enc_ok(inst, funct3):
+            return f"vle32.v v{rd},({self.regs.get_name(rs1)})"
+        if opcode == 0x27 and self._vmem_enc_ok(inst, funct3):
+            return f"vse32.v v{rd},({self.regs.get_name(rs1)})"
         
         # FENCE
         if opcode == 0x0F:
@@ -655,7 +1009,7 @@ class RISC_V_ISS:
             self.regs.write(rd, result)
             resources.append(f"{self.regs.get_name(rd)}=0x{self.regs.read(rd):08X}")
         
-        # SYSTEM (ECALL, EBREAK)
+        # SYSTEM (ECALL, EBREAK, CSR reads)
         elif opcode == 0x73:
             if funct3 == 0:
                 if imm == 0:  # ECALL
@@ -664,13 +1018,34 @@ class RISC_V_ISS:
                 elif imm == 1:  # EBREAK
                     should_continue = True
                     resources.append("ebreak")
+                else:
+                    raise ValueError(
+                        f"Invalid SYSTEM instruction: 0x{inst:08X} at PC 0x{self.pc:08X}"
+                    )
+            else:
+                self._exec_csr(inst, rd, rs1, funct3, resources)
+
+        # OP-V
+        elif opcode == 0x57:
+            self._exec_vector(inst, rd, rs1, rs2, funct3, resources)
+
+        # Vector unit-stride load / store (LOAD-FP / STORE-FP encodings)
+        elif opcode == 0x07:
+            if not self._vmem_enc_ok(inst, funct3):
+                raise ValueError(f"Undecodeable vle 0x{inst:08X} at PC 0x{self.pc:08X}")
+            self._exec_vle32(rd, rs1)
+        elif opcode == 0x27:
+            if not self._vmem_enc_ok(inst, funct3):
+                raise ValueError(f"Undecodeable vse 0x{inst:08X} at PC 0x{self.pc:08X}")
+            self._exec_vse32(rd, rs1)
         
         # FENCE
         elif opcode == 0x0F:
             # FENCE is a NOP for our purposes
             pass
         
-        # Invalid instruction
+        # Invalid instruction. Vector / CSR paths raise in their helpers.
+        # Scalar unknown stays a skip until the smoke list is grepped for padding.
         #else:
         #    raise ValueError(f"Invalid instruction: 0x{inst:08X} at PC 0x{self.pc:08X} (opcode: 0x{opcode:02X})")
         
@@ -786,11 +1161,13 @@ class RISC_V_ISS:
                 # Execute
                 should_continue, resources = self.execute_instruction(inst, fields)
 
-                # Generate trace line using the saved PC (before execution)
-                resources_str = ";".join(resources) if resources else ""
-                trace_file.write(
-                    f"0x{instruction_pc:08X};0x{inst:08X};{disasm};{resources_str}\n"
-                )
+                # Generate trace line using the saved PC (before execution).
+                # Skip empty retires (e.g. vset rd=x0) — RTL has no observe event.
+                if resources:
+                    resources_str = ";".join(resources)
+                    trace_file.write(
+                        f"0x{instruction_pc:08X};0x{inst:08X};{disasm};{resources_str}\n"
+                    )
 
                 if not should_continue:
                     break
@@ -874,8 +1251,27 @@ Examples:
         type=lambda x: int(x, 0),
         help='MMIO GEMM CSR size (default: 0x1000)'
     )
+    parser.add_argument(
+        '--vlen',
+        default=0,
+        type=int,
+        help='Vector register width in bits (0 = no vector)',
+    )
+    parser.add_argument(
+        '--hw-config',
+        default=None,
+        help='HwConfig YAML; sets --vlen from vector.width_bits when enabled',
+    )
     
     args = parser.parse_args()
+
+    vlen = args.vlen
+    if args.hw_config:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from hw import load_hw_config  # noqa: WPS433
+        hw = load_hw_config(args.hw_config)
+        if hw.has_vector_unit:
+            vlen = hw.vector.width_bits
     
     iss = RISC_V_ISS(
         args.text_start,
@@ -885,6 +1281,7 @@ Examples:
         eot_size=args.eot_size,
         gemm_addr=args.gemm_addr,
         gemm_size=args.gemm_size,
+        vlen=vlen,
     )
     iss.run(args.elf_file, args.output, args.mem_file)
 

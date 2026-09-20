@@ -54,6 +54,10 @@ localparam int LSU_LOAD_QUEUE_DEPTH  = 4;
 localparam int LSU_STORE_QUEUE_DEPTH = 4;
 localparam int LSU_DCCM_PORT_COUNT   = 2;
 
+localparam bit HAS_VECTOR = {1 if hw.has_vector_unit else 0};
+localparam int VLEN = {hw.vector.width_bits};
+localparam int DLEN = {hw.vector.dlen_bits};
+
 `endif
 """
 

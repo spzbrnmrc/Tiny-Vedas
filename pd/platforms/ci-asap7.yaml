@@ -18,6 +18,7 @@ place_density_lb_addon: 0.10
 orfs_exports:
   SYNTH_HIERARCHICAL: 1
   SYNTH_MINIMUM_KEEP_SIZE: 10000
+  SYNTH_KEEP_MODULES: core_top gemm_top vector_top
   TNS_END_PERCENT: 100
   # Kepler LEC in the ORFS Docker image is AVX-512-only; skip it.
   LEC_CHECK: 0

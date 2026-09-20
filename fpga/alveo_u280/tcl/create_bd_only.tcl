@@ -26,7 +26,10 @@ source [file join $BOARD_DIR tcl create_bd.tcl]
 
 create_project tiny_vedas_u280 $WORK_DIR/vivado -part $PART -force
 set_property target_language Verilog [current_project]
-set_property include_dirs [list $FPGA_INC [file join $PROJ rtl include] [file join $PROJ rtl idu]] \
+set_property include_dirs [list $FPGA_INC \
+  [file join $PROJ rtl include] \
+  [file join $PROJ rtl idu] \
+  [file join $PROJ rtl csr]] \
   [current_fileset]
 set_property verilog_define [list SYNTHESIS] [current_fileset]
 
@@ -47,12 +50,15 @@ add_files -norecurse $rtl_files
 set hdr_files [glob -nocomplain \
   [file join $FPGA_INC *.svh] \
   [file join $PROJ rtl include *.svh] \
-  [file join $PROJ rtl idu *.svh]]
+  [file join $PROJ rtl idu *.svh] \
+  [file join $PROJ rtl csr *.svh]]
 if {[llength $hdr_files] > 0} {
   add_files -norecurse $hdr_files
 }
 foreach f [concat $rtl_files $hdr_files] {
-  if {[string match "*.sv" $f]} {
+  if {[string match "*decode_out_t.svh" $f] || [string match "*csr_pkg.svh" $f]} {
+    set_property file_type SystemVerilog [get_files $f]
+  } elseif {[string match "*.sv" $f]} {
     set_property file_type SystemVerilog [get_files $f]
   } elseif {[string match "*.svh" $f]} {
     set_property file_type {Verilog Header} [get_files $f]

@@ -3,9 +3,9 @@ board: alveo_u280
 part: xcu280-fsvh2892-2L-e
 vivado_version: "2023.2"
 
-# 8192 words = 32 KiB ICCM; 262144 words = 1 MiB DCCM (256x256 GEMM + firmware)
+# 8192 words = 32 KiB ICCM; 65536 x 128-bit lines = 1 MiB DCCM
 synth_iccm_depth_words: 8192
-synth_dccm_depth_words: 262144
+synth_dccm_depth_words: 65536
 
 qdma:
   link_width: x16
@@ -29,11 +29,11 @@ qdma:
 # BAR2 (2 MiB):
 #   0x0000 CTRL  (4 KiB)
 #   0x1000 ICCM  (32 KiB / 8192 words)
-#   0x9000 DCCM  (1 MiB / 262144 words)
+#   0x9000 DCCM  (1 MiB / 65536 x 128-bit lines)
 #   end    0x109000 (unused to 0x200000)
 #
 # CTRL:
-#   0x00 VERSION (0x000B0013), 0x04 SCRATCH, 0x08 HEARTBEAT
+#   0x00 VERSION (0x000B0014), 0x04 SCRATCH, 0x08 HEARTBEAT
 #   0x0C CORE_CTRL [0]=core_run [1]=mmcm_locked
 #   0x10 RESET_VECTOR, 0x14 STATUS eot_done, 0x18 EOT_CLEAR
 #   0x1C UART_STATUS, 0x20 UART_POP, 0x24 UART_CLEAR

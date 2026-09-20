@@ -22,6 +22,7 @@ cpu:
 vector:
   enabled: false
   width_bits: 0
+  dlen_bits: 0
   lanes: 0
   local_mem_bytes: 0
 
@@ -29,7 +30,7 @@ soc: default                 # hw/soc/default.yaml — MMIO mux + soc_defines.h
 
 memory:
   iccm_depth_words: 262144   # 2^18
-  dccm_depth_words: 262144   # 2^18
+  dccm_depth_words: 65536    # 128-bit lines, 1 MiB
   link_address: 0x00100000
 
 software:

@@ -43,6 +43,10 @@
 `include "decode_out_t.svh"
 `endif
 
+`ifndef ZVE32X_DECODE_OUT_T_SVH
+`include "zve32x_decode_out_t.svh"
+`endif
+
 typedef struct packed {
 
   logic [31:0]             instr;
@@ -94,6 +98,12 @@ typedef struct packed {
   logic nop;
   logic ecall;
   logic legal;
+  logic vec;
+  logic vset;
+  logic vcsr;
+  logic vload;
+  logic vstore;
+  logic valu;
 } idu0_out_t;
 
 typedef struct packed {
@@ -149,6 +159,12 @@ typedef struct packed {
   logic nop;
   logic ecall;
   logic legal;
+  logic vec;
+  logic vset;
+  logic vcsr;
+  logic vload;
+  logic vstore;
+  logic valu;
 } idu1_out_t;
 
 typedef struct packed {
@@ -162,6 +178,7 @@ typedef struct packed {
   logic div;
   logic load;
   logic store;
+  logic vec;
 } last_issued_instr_t;
 
 localparam int LSU_LANE_ID_WIDTH = ISSUE_WIDTH > 1 ? $clog2(ISSUE_WIDTH) : 1;

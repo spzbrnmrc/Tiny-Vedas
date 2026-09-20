@@ -183,7 +183,7 @@ def check_ctrl(bar: VedasBar2) -> None:
     ver = bar.version()
     if ver != VERSION_SLICE_B:
         raise RuntimeError(
-            f"VERSION 0x{ver:08x} != 0x{VERSION_SLICE_B:08x} — program Slice B bit"
+            f"VERSION 0x{ver:08x} != 0x{VERSION_SLICE_B:08x} — program the zve32x bit"
         )
     hb0 = bar.read32(REG_HEARTBEAT)
     time.sleep(0.01)
@@ -270,10 +270,14 @@ def main() -> int:
     if args.test:
         tests = [args.test]
     else:
-        tests = read_task_list(str(args.task_list))
+        tests = read_task_list(str(args.task_list), hw_config)
 
     results: list[RunResult] = []
 
+    print(
+        f"[fpga_runner] hw={hw_config.name} vector={hw_config.has_vector_unit} "
+        f"({args.hw_config})"
+    )
     print(f"[fpga_runner] opening BAR2 ({args.bdf or 'auto'})")
     with VedasBar2(bdf=args.bdf) as bar:
         print(f"[fpga_runner] {bar.bdf} BAR2=0x{bar.size:x}")

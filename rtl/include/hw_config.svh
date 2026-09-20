@@ -21,4 +21,8 @@ localparam int LSU_LOAD_QUEUE_DEPTH  = 4;
 localparam int LSU_STORE_QUEUE_DEPTH = 4;
 localparam int LSU_DCCM_PORT_COUNT   = 2;
 
+localparam bit HAS_VECTOR = 1;
+localparam int VLEN = 512;
+localparam int DLEN = 128;
+
 `endif
