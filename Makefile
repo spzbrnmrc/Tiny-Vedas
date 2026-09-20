@@ -3,7 +3,7 @@
 RUN = ./scripts/with_env.sh
 
 PD_PLATFORM ?= asap7
-HW_CONFIG ?= hw/presets/rv32im_scalar.yaml
+HW_CONFIG ?= hw/presets/rv32im_zve32x.yaml
 FPGA_HW_CONFIG ?= hw/presets/rv32im_zve32x.yaml
 ORFS_TARGET ?= all
 ORFS_IMAGE ?= openroad/orfs:26Q2-446-g85d92b593

@@ -26,7 +26,7 @@ from .types import (
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 PRESETS_DIR = _REPO_ROOT / "hw" / "presets"
 SOC_DIR = _REPO_ROOT / "hw" / "soc"
-DEFAULT_PRESET = PRESETS_DIR / "rv32im_scalar.yaml"
+DEFAULT_PRESET = PRESETS_DIR / "rv32im_zve32x.yaml"
 DEFAULT_SOC = SOC_DIR / "default.yaml"
 
 _VALID_CPU_KINDS = {kind.value for kind in CpuKind}

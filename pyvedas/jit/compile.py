@@ -47,17 +47,30 @@ def compile_model(
         trace_inputs,
         materializer=materializer,
         gemm_scratch_bytes=gemm_scratch_bytes,
+        graph_module=imported.graph_module,
     )
 
-    if target and plan.result_name:
+    if target and plan.result_names:
         # Bake host-computed goldens so FPGA EOT implies correct outputs.
         eager = model
         if isinstance(model, nn.Module) and hasattr(model, "_orig_mod"):
             eager = model._orig_mod  # torch.compile wrapper
         with torch.no_grad():
             out_t = eager(*trace_inputs)
-        golden_buf = materializer.materialize("_eot_golden_tmp", out_t)
-        plan.result_golden = golden_buf.values
+        if isinstance(out_t, (tuple, list)):
+            tensors = list(out_t)
+        else:
+            tensors = [out_t]
+        if len(tensors) != len(plan.result_names):
+            raise RuntimeError(
+                f"eager produced {len(tensors)} outputs, "
+                f"graph has {len(plan.result_names)}"
+            )
+        goldens: list[tuple[str, tuple[int, ...]]] = []
+        for name, tensor in zip(plan.result_names, tensors):
+            golden_buf = materializer.materialize(f"_eot_golden_{name}", tensor)
+            goldens.append((name, golden_buf.values))
+        plan.result_goldens = goldens
 
     generated_c = out_dir / "generated.c"
     emit_c(plan, generated_c, target=target)
@@ -100,7 +113,7 @@ def main() -> None:
     parser.add_argument(
         "--hw-config",
         default=None,
-        help="Hardware preset YAML (default: hw/presets/rv32im_scalar.yaml)",
+        help="Hardware preset YAML (default: hw/presets/rv32im_zve32x.yaml)",
     )
     args = parser.parse_args()
 

@@ -32,10 +32,13 @@ def _unwrap_compiled(model: torch.nn.Module) -> torch.nn.Module:
 def _target_name(target: Any) -> str:
     if isinstance(target, str):
         return target
+    as_str = str(target)
+    if as_str.startswith(("aten.", "operator.", "pyvedas.")):
+        return as_str
     name = getattr(target, "__name__", None)
     if name:
         return name
-    return repr(target)
+    return as_str
 
 
 def _node_arg_names(args: Tuple[Any, ...]) -> List[Any]:

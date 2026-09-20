@@ -20,7 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--hw",
-        default=str(_REPO / "hw" / "presets" / "rv32im_scalar.yaml"),
+        default=str(_REPO / "hw" / "presets" / "rv32im_zve32x.yaml"),
         help="Hardware preset YAML",
     )
     parser.add_argument(

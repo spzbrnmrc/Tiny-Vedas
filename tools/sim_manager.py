@@ -63,8 +63,10 @@ def _sw_include_dir() -> str:
     return str(_REPO_ROOT / "sw" / "include")
 
 
-def _riscv_march(test: str) -> str:
-    """Vector-named tests assemble with Zve32x; everyone else stays RV32IM."""
+def _riscv_march(test: str, hw_config: Optional[HwConfig] = None) -> str:
+    """Vector presets and rvv_* tests assemble with Zve32x."""
+    if hw_config is not None and hw_config.has_vector_unit:
+        return "rv32im_zve32x -mrvv-max-lmul=m1"
     parts = test.split(".")
     stem = parts[1] if len(parts) > 1 else parts[0]
     if stem.startswith("rvv_") or test.startswith("rvv."):
@@ -72,7 +74,18 @@ def _riscv_march(test: str) -> str:
     return "rv32im"
 
 
-def _compile_riscv_elf(test: str, sources: List[str], include_dirs: List[str]) -> int:
+_RVV_RUNTIME_C = {
+    "pyvedas_leaky_relu.c",
+    "aten_max_pool2d.c",
+}
+
+
+def _compile_riscv_elf(
+    test: str,
+    sources: List[str],
+    include_dirs: List[str],
+    hw_config: Optional[HwConfig] = None,
+) -> int:
     """Link *sources* into work/<test>/test.elf. Returns the reset vector."""
     compile_log = os.path.join("work", test, "compile.log")
     inc_dirs = list(include_dirs)
@@ -81,14 +94,35 @@ def _compile_riscv_elf(test: str, sources: List[str], include_dirs: List[str]) -
         inc_dirs.append(sw_inc)
     inc_flags = " ".join(f"-I{inc}" for inc in inc_dirs)
     as_inc_flags = " ".join(f"-Wa,-I,{inc}" for inc in inc_dirs)
-    source_list = " ".join(sources)
+    march = _riscv_march(test, hw_config)
+    common = (
+        f"{inc_flags} {as_inc_flags} -march={march} -mabi=ilp32 "
+        f"-fno-builtin-printf -fno-common -falign-functions=4 -msmall-data-limit=0"
+    )
+    rvv_src = [s for s in sources if os.path.basename(s) in _RVV_RUNTIME_C]
+    other_src = [s for s in sources if os.path.basename(s) not in _RVV_RUNTIME_C]
+    # -O0 on RVV C emits vse8 (SEW=8); -O2 keeps vle32/vse32. Scalar
+    # fallbacks stay -O0: GCC -O2 on max_pool produced a pointer the RTL
+    # loaded off-by-2 vs ISS.
+    rvv_opt = "-O2" if "zve32x" in march else "-O0"
+    objs: List[str] = []
+    with open(compile_log, "w", encoding="utf-8") as log:
+        log.write("")
+    for src in rvv_src:
+        obj = os.path.join("work", test, os.path.basename(src) + ".o")
+        cmd = (
+            f"riscv64-unknown-elf-gcc {rvv_opt} {common} -c {src} -o {obj} "
+            f">> {compile_log} 2>&1"
+        )
+        if os.system(cmd) != 0:
+            raise RuntimeError(f"RISC-V compile failed for {test}; see {compile_log}")
+        objs.append(obj)
+    source_list = " ".join(other_src + objs)
     cmd = (
-        f"riscv64-unknown-elf-gcc -O0 {inc_flags} {as_inc_flags} "
-        f"-march={_riscv_march(test)} -mabi=ilp32 -nostdlib -o work/{test}/test.elf "
-        f"-fno-builtin-printf -fno-common -falign-functions=4 -msmall-data-limit=0 "
+        f"riscv64-unknown-elf-gcc -O0 {common} -nostdlib -o work/{test}/test.elf "
         f"{source_list} -lgcc "
         f"-Wl,-Ttext=0x100000 -Wl,--defsym,_start=main "
-        f"> {compile_log} 2>&1"
+        f">> {compile_log} 2>&1"
     )
     if os.system(cmd) != 0:
         raise RuntimeError(f"RISC-V compile failed for {test}; see {compile_log}")
@@ -145,7 +179,9 @@ def run_gen(test: str, hw_config: HwConfig) -> int:
 
             eot_source = os.path.join("tests", "c", "asm_functions", "eot_sequence.s")
             sources = [manifest["generated_c"], eot_source, *manifest["sources"]]
-            reset_vector = _compile_riscv_elf(test, sources, manifest["include_dirs"])
+            reset_vector = _compile_riscv_elf(
+                test, sources, manifest["include_dirs"], hw_config
+            )
             os.system(
                 f"riscv64-unknown-elf-objdump -D work/{test}/test.elf "
                 f"> work/{test}/test.dump"
@@ -158,7 +194,7 @@ def run_gen(test: str, hw_config: HwConfig) -> int:
             os.system(
                 f"riscv64-unknown-elf-gcc -O0 -I{asm_inc} -I{sw_inc} "
                 f"-Wa,-I,{asm_inc} -Wa,-I,{sw_inc} "
-                f"-march={_riscv_march(test)} -mabi=ilp32 -o work/{test}/test.elf -nostdlib "
+                f"-march={_riscv_march(test, hw_config)} -mabi=ilp32 -o work/{test}/test.elf -nostdlib "
                 f"{asm_src} -Wl,-Ttext=0x100000 "
                 f"> {os.path.join('work', test, 'compile.log')} 2>&1"
             )
@@ -170,7 +206,7 @@ def run_gen(test: str, hw_config: HwConfig) -> int:
             if test_path[1] == 'helloworld':
                 sources.insert(1, printf_source)
             include_dirs = [os.path.join('tests', test_path[0])]
-            reset_vector = _compile_riscv_elf(test, sources, include_dirs)
+            reset_vector = _compile_riscv_elf(test, sources, include_dirs, hw_config)
             return reset_vector
         else:
             os.system(f"cp {os.path.join('tests', test_path[0], test_path[1])} work/{test}/test.elf")

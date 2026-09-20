@@ -20,10 +20,17 @@ from tools.sim_manager import read_task_list  # noqa: E402
 
 
 class TestHwPresets(unittest.TestCase):
-    def test_scalar_default_has_no_vector(self) -> None:
+    def test_scalar_preset_has_no_vector(self) -> None:
         cfg = load_hw_config(_REPO / "hw" / "presets" / "rv32im_scalar.yaml")
         self.assertFalse(cfg.has_vector_unit)
         self.assertEqual(cfg.vector.dlen_bits, 0)
+
+    def test_default_preset_is_zve32x(self) -> None:
+        from hw import default_hw_config_path
+
+        cfg = load_hw_config(default_hw_config_path())
+        self.assertTrue(cfg.has_vector_unit)
+        self.assertEqual(cfg.name, "rv32im_zve32x")
 
     def test_fpga_gen_config_vector_on(self) -> None:
         import subprocess

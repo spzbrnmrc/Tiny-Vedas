@@ -15,6 +15,11 @@ _REPO = Path(__file__).resolve().parents[2]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+from models.yolov3_tiny.int32 import (  # noqa: E402
+    DecodeHeadsInt32,
+    LetterboxInt32,
+    quantize_int32,
+)
 from models.yolov3_tiny.export_graph import (  # noqa: E402
     call_functions,
     export_module,
@@ -61,6 +66,42 @@ class TestYoloV3TinyGraph(unittest.TestCase):
             self.assertTrue(present["conv2d"], unique)
             self.assertTrue(present["leaky_relu"], unique)
             self.assertTrue(present["max_pool"], unique)
+
+    def test_export_int32_required_ops(self) -> None:
+        model = quantize_int32(YoloV3Tiny()).eval()
+        x = torch.randint(-8, 9, (1, 3, 32, 32), dtype=torch.int32)
+        gm, backend = export_module(model, (x,))
+        self.assertEqual(backend, "torch.export")
+        unique = sorted(set(call_functions(gm.graph)))
+        present = required_ops_present(unique)
+        self.assertTrue(present["conv2d"], unique)
+        self.assertTrue(present["leaky_relu"], unique)
+        self.assertTrue(present["max_pool"], unique)
+        blob = " ".join(unique)
+        self.assertIn("pyvedas.conv2d", blob)
+        self.assertIn("pyvedas.leaky_relu", blob)
+        self.assertNotIn("aten.to.dtype", unique)
+
+    def test_export_letterbox_int32(self) -> None:
+        lb = LetterboxInt32(16)
+        x = torch.randint(0, 255, (1, 3, 12, 16), dtype=torch.int32)
+        gm, backend = export_module(lb, (x,))
+        self.assertEqual(backend, "torch.export")
+        unique = sorted(set(call_functions(gm.graph)))
+        blob = " ".join(unique)
+        self.assertIn("upsample_bilinear", blob)
+        self.assertTrue(any("pad" in n for n in unique), unique)
+
+    def test_export_decode_int32(self) -> None:
+        decode = DecodeHeadsInt32(32)
+        d32 = torch.randint(-8, 9, (1, 255, 1, 1), dtype=torch.int32)
+        d16 = torch.randint(-8, 9, (1, 255, 2, 2), dtype=torch.int32)
+        gm, backend = export_module(decode, (d32, d16))
+        self.assertEqual(backend, "torch.export")
+        unique = sorted(set(call_functions(gm.graph)))
+        blob = " ".join(unique)
+        self.assertIn("sigmoid_i32", blob)
+        self.assertIn("exp_i32", blob)
 
     def test_map50_perfect_is_one(self) -> None:
         box = torch.tensor([[10.0, 10.0, 50.0, 50.0, 0.9, 0.0]])

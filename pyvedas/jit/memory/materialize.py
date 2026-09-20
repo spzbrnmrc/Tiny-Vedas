@@ -19,7 +19,7 @@ from .types import BufferLayout, ElementType, StaticBuffer
 
 
 def resolve_element_type(tensor: torch.Tensor) -> ElementType:
-    if tensor.dtype in (torch.int32, torch.int64):
+    if tensor.dtype in (torch.int8, torch.int32, torch.int64):
         return ElementType(c_type="int32_t", size_bytes=4)
     if tensor.dtype in (torch.float32, torch.float64):
         raise RegistryError(

@@ -92,3 +92,23 @@ class MemoryPlan:
                 values=tuple(),
             )
         )
+
+    def allocate_shape(
+        self,
+        name: str,
+        shape: Tuple[int, ...],
+        *,
+        c_type: str = "int32_t",
+        size_bytes: int = 4,
+    ) -> StaticBuffer:
+        numel = 1
+        for dim in shape:
+            numel *= int(dim)
+        return self.add(
+            StaticBuffer(
+                name=name,
+                shape=tuple(int(d) for d in shape),
+                element=ElementType(c_type=c_type, size_bytes=size_bytes),
+                layout=BufferLayout.flat_row_major(numel),
+            )
+        )

@@ -34,6 +34,16 @@ pyvedas.gemm_mmio_32
 pyvedas.gemm_bmm
 pyvedas.gemm_broadcast
 pyvedas.gemm_mmio_tiled
+pyvedas.conv2d
+pyvedas.cat
+pyvedas.pad
+pyvedas.upsample_nearest
+pyvedas.upsample_bilinear
+pyvedas.view
+pyvedas.permute
+pyvedas.sigmoid_exp
+pyvedas.decode_heads
+pyvedas.yolo_mini
 elf.dhrystone
 asm.rvv_vset if vector.enabled
 asm.rvv_csrr if vector.enabled
@@ -43,3 +53,5 @@ asm.rvv_vlogic if vector.enabled
 asm.rvv_vmin if vector.enabled
 asm.rvv_vshift if vector.enabled
 asm.rvv_vcmp if vector.enabled
+pyvedas.leaky_relu if vector.enabled
+pyvedas.max_pool2d if vector.enabled

@@ -22,6 +22,22 @@ ops:
       - kind: c
         path: runtime/c/aten_mul_Tensor.c
 
+  aten.sub.Tensor:
+    codegen: elementwise_binary
+    symbol: pyvedas_aten_sub_Tensor
+    signature: "void pyvedas_aten_sub_Tensor(const int32_t *a, const int32_t *b, int32_t *out, size_t n)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_sub_Tensor.c
+
+  aten.div.Tensor_mode:
+    codegen: div_trunc
+    symbol: pyvedas_aten_div_Tensor_mode
+    signature: "void pyvedas_aten_div_Tensor_mode(const int32_t *a, const int32_t *b, int32_t *out, size_t n)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_div_Tensor_mode.c
+
   pyvedas.gemm_mmio.default:
     codegen: gemm_mmio
     symbol: pyvedas_gemm_job
@@ -29,3 +45,181 @@ ops:
     sources:
       - kind: c
         path: runtime/c/gemm_mmio.c
+
+  pyvedas.conv2d.default:
+    codegen: conv2d
+    symbol: pyvedas_im2col
+    signature: "void pyvedas_im2col(const int32_t *x, int32_t *col, size_t n, size_t cin, size_t h, size_t w, size_t kh, size_t kw, size_t stride, size_t pad, size_t oh, size_t ow)"
+    sources:
+      - kind: c
+        path: runtime/c/pyvedas_conv2d.c
+      - kind: c
+        path: runtime/c/gemm_mmio.c
+
+  pyvedas.leaky_relu.default:
+    codegen: unary_same
+    symbol: pyvedas_leaky_relu
+    signature: "void pyvedas_leaky_relu(const int32_t *x, int32_t *out, size_t n)"
+    sources:
+      - kind: c
+        path: runtime/c/pyvedas_leaky_relu.c
+
+  aten.max_pool2d.default:
+    codegen: max_pool2d
+    symbol: pyvedas_aten_max_pool2d
+    signature: "void pyvedas_aten_max_pool2d(const int32_t *x, int32_t *out, size_t n, size_t c, size_t h, size_t w, size_t oh, size_t ow, size_t kh, size_t kw, size_t sh, size_t sw, size_t pad_h, size_t pad_w)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_max_pool2d.c
+
+  aten.cat.default:
+    codegen: cat
+    symbol: pyvedas_aten_cat
+    signature: "void pyvedas_aten_cat(const int32_t **ins, const size_t *dim_sizes, int32_t *out, size_t n, size_t outer, size_t inner)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_cat.c
+
+  aten.pad.default:
+    codegen: pad
+    symbol: pyvedas_aten_pad
+    signature: "void pyvedas_aten_pad(const int32_t *in, int32_t *out, int rank, const size_t *in_shape, const size_t *out_shape, int n_pad, const int *pad, int32_t value)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_pad.c
+
+  pyvedas.upsample_nearest.default:
+    codegen: upsample_bilinear
+    symbol: pyvedas_upsample_nearest
+    signature: "void pyvedas_upsample_nearest(const int32_t *in, int32_t *out, size_t n, size_t c, size_t ih, size_t iw, size_t oh, size_t ow)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_upsample_nearest2d.c
+
+  aten.upsample_nearest2d.vec:
+    codegen: upsample_nearest
+    symbol: pyvedas_upsample_nearest
+    signature: "void pyvedas_upsample_nearest(const int32_t *in, int32_t *out, size_t n, size_t c, size_t ih, size_t iw, size_t oh, size_t ow)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_upsample_nearest2d.c
+
+  pyvedas.upsample_bilinear.default:
+    codegen: upsample_bilinear
+    symbol: pyvedas_upsample_bilinear
+    signature: "void pyvedas_upsample_bilinear(const int32_t *in, int32_t *out, size_t n, size_t c, size_t ih, size_t iw, size_t oh, size_t ow)"
+    sources:
+      - kind: c
+        path: runtime/c/pyvedas_upsample_bilinear.c
+
+  aten.view.default:
+    codegen: view
+    symbol: pyvedas_aten_view_default
+    signature: "void pyvedas_aten_view_default(void)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_alias.c
+
+  aten.reshape.default:
+    codegen: view
+    symbol: pyvedas_aten_reshape_default
+    signature: "void pyvedas_aten_reshape_default(void)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_alias.c
+
+  aten.contiguous.default:
+    codegen: alias
+    symbol: pyvedas_aten_contiguous_default
+    signature: "void pyvedas_aten_contiguous_default(void)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_alias.c
+
+  aten.detach_.default:
+    codegen: alias
+    symbol: pyvedas_aten_detach__default
+    signature: "void pyvedas_aten_detach__default(void)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_alias.c
+
+  aten.lift_fresh_copy.default:
+    codegen: alias
+    symbol: pyvedas_aten_lift_fresh_copy_default
+    signature: "void pyvedas_aten_lift_fresh_copy_default(void)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_alias.c
+
+  aten.permute.default:
+    codegen: permute
+    symbol: pyvedas_aten_permute
+    signature: "void pyvedas_aten_permute(const int32_t *in, int32_t *out, int rank, const size_t *in_shape, const int *dims)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_permute.c
+
+  aten.slice.Tensor:
+    codegen: slice
+    symbol: pyvedas_aten_slice
+    signature: "void pyvedas_aten_slice(const int32_t *in, int32_t *out, int rank, const size_t *in_shape, size_t dim, size_t start, size_t end)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_slice.c
+
+  aten.select.int:
+    codegen: select
+    symbol: pyvedas_aten_select
+    signature: "void pyvedas_aten_select(const int32_t *in, int32_t *out, int rank, const size_t *in_shape, size_t dim, size_t index)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_select.c
+
+  aten.stack.default:
+    codegen: stack
+    symbol: pyvedas_aten_stack
+    signature: "void pyvedas_aten_stack(const int32_t **ins, int32_t *out, size_t n, size_t outer, size_t inner)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_stack.c
+
+  aten.arange.default:
+    codegen: arange
+    symbol: pyvedas_aten_arange
+    signature: "void pyvedas_aten_arange(int32_t *out, size_t end)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_arange.c
+
+  aten.meshgrid.indexing:
+    codegen: meshgrid
+    symbol: pyvedas_aten_meshgrid
+    signature: "void pyvedas_aten_meshgrid(const int32_t *a, const int32_t *b, int32_t *gy, int32_t *gx, size_t h, size_t w)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_meshgrid.c
+
+  getitem:
+    codegen: getitem
+    symbol: pyvedas_getitem
+    signature: "void pyvedas_getitem(void)"
+    sources:
+      - kind: c
+        path: runtime/c/aten_alias.c
+
+  pyvedas.sigmoid_i32.default:
+    codegen: unary_same
+    symbol: pyvedas_sigmoid_i32
+    signature: "void pyvedas_sigmoid_i32(const int32_t *x, int32_t *out, size_t n)"
+    sources:
+      - kind: c
+        path: runtime/c/pyvedas_sigmoid_i32.c
+
+  pyvedas.exp_i32.default:
+    codegen: unary_same
+    symbol: pyvedas_exp_i32
+    signature: "void pyvedas_exp_i32(const int32_t *x, int32_t *out, size_t n)"
+    sources:
+      - kind: c
+        path: runtime/c/pyvedas_exp_i32.c

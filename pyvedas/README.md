@@ -29,8 +29,9 @@ implementation file.
 **Vectors, not tensors.** PyTorch has tensors; the runtime does not. The JIT
 flattens compile-time trace inputs into row-major `static` buffers. Each runtime
 function receives `(const T *a, const T *b, T *out, size_t n)` — flat vectors
-only. Rank and shape are compile-time comments in `generated.c`. The C kernels
-will be revisited when Tiny-Vedas has hardware vector support.
+only. Rank and shape are compile-time comments in `generated.c`. RVV kernels
+are unmasked (`vm=1`) Zve32x, SEW=32, LMUL=1: `vle32`/`vse32` plus the §2 ALU
+(add/sub, logic, min/max, shifts, compares, `vmv`). No vector mul/div.
 
 ## Architecture
 
@@ -109,8 +110,9 @@ Artifacts in `work/out/`:
 ./scripts/with_env.sh ./tools/sim_manager.py -s verilator -n pyvedas.vector_add
 ```
 
-Smoke tests: `pyvedas.{vector,matrix,tensor}_{add,mul}` — rank varies per test,
-but each op lowers 1:1 to `aten.add.Tensor` or `aten.mul.Tensor`.
+Smoke tests: `pyvedas.{vector,matrix,tensor}_{add,mul}` plus integer YOLO
+ops (`conv2d`, `cat`, `pad`, upsample, `view`, `permute`, decode scalars,
+`yolo_mini`). Leaky ReLU and max-pool are `if vector.enabled`.
 
 ## Layout
 

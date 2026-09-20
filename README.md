@@ -20,7 +20,7 @@ It is also used as a reference for the [free course on RISC-V Processor Design](
 
 ## Current focus: RV32IM
 
-The shipping RTL is a **4-stage pipelined RV32IM** processor written in SystemVerilog, plus an **8×8 int8 GEMM** MMIO accelerator that shares DCCM over AXI4. The CPU flavor (`hw/presets/rv32im_scalar.yaml`) is the baseline used by CI, examples, and the course.
+The shipping RTL is a **4-stage pipelined RV32IM** processor written in SystemVerilog, plus an **8×8 int8 GEMM** MMIO accelerator that shares DCCM over AXI4. Smoke and CI use the vector flavor (`hw/presets/rv32im_zve32x.yaml`); `rv32im_scalar.yaml` remains a `HW_CONFIG` opt-in.
 
 ## Roadmap: microarchitectures and vector
 
@@ -280,7 +280,7 @@ All tests are driven by `tools/sim_manager.py`. Tests are named `<type>.<name>`:
   -s, --simulator   verilator | xsim
   -n, --test-name   Run a single test (e.g. asm.basic_alu_r)
   -t, --task-list   Run all tests listed in a file (e.g. tests/smoke.tlist)
-  --hw-config       Hardware preset YAML (default: hw/presets/rv32im_scalar.yaml)
+  --hw-config       Hardware preset YAML (default: hw/presets/rv32im_zve32x.yaml)
   --vcd             Verilator waveform (core_top.vcd); omit for smoke/CI
 ```
 

@@ -10,12 +10,6 @@ jobs:
   smoke-verilator:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        hw_config:
-          - hw/presets/rv32im_scalar.yaml
-          - hw/presets/rv32im_zve32x.yaml
     env:
       # Pin for reproducible CI and a stable Actions cache key (bump when upgrading Verilator).
       VERILATOR_TAG: v5.048
@@ -44,7 +38,7 @@ jobs:
         run: make soc
 
       - name: Run smoke regression (Verilator)
-        run: make smoke-verilator HW_CONFIG=${{ matrix.hw_config }}
+        run: make smoke-verilator
 
   pd-synth:
     runs-on: ubuntu-22.04

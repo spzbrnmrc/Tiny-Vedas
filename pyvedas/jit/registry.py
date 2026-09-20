@@ -45,6 +45,8 @@ def canonical_graph_target(target: Any) -> str:
     if as_str.startswith(("aten.", "operator.", "pyvedas.")):
         return as_str
     name = getattr(target, "__name__", None)
+    if name == "getitem":
+        return "getitem"
     if name:
         return name
     return repr(target)

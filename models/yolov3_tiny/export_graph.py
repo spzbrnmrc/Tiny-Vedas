@@ -15,6 +15,12 @@ import torch
 import torch.fx as fx
 import torch.nn as nn
 
+from .int32 import (
+    DecodeHeadsInt32,
+    LetterboxInt32,
+    YoloV3TinyInt32,
+    quantize_int32,
+)
 from .model import DecodeHeads, Letterbox, YoloV3Tiny, quantize_int8
 
 
@@ -22,7 +28,9 @@ def _target_name(target: Any) -> str:
     if isinstance(target, str):
         return target
     as_str = str(target)
-    if as_str.startswith(("aten.", "operator.", "torchvision.", "quantized.")):
+    if as_str.startswith(
+        ("aten.", "operator.", "torchvision.", "quantized.", "pyvedas.")
+    ):
         return as_str
     name = getattr(target, "__name__", None)
     if name:
@@ -164,6 +172,63 @@ def run_exports(
     return reports
 
 
+def run_exports_int32(
+    out_dir: Path,
+    sizes: Tuple[int, ...],
+) -> List[dict[str, Any]]:
+    """JIT integer module: int32 activations, custom conv / leaky."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    reports: List[dict[str, Any]] = []
+    core: YoloV3TinyInt32 = quantize_int32(YoloV3Tiny()).eval()
+
+    for size in sizes:
+        x = torch.randint(-8, 9, (1, 3, size, size), dtype=torch.int32)
+        gm, backend = export_module(core, (x,))
+        payload = dump_graph(
+            gm,
+            backend,
+            out_dir / f"graph_int32_{size}.txt",
+            out_dir / f"graph_int32_{size}.json",
+        )
+        payload["kind"] = "backbone_int32"
+        payload["size"] = size
+        payload["required"] = required_ops_present(payload["unique"])
+        reports.append(payload)
+
+        class _DetectDecodeI32(nn.Module):
+            def __init__(self, net: nn.Module, img_size: int) -> None:
+                super().__init__()
+                self.net = net
+                self.decode = DecodeHeadsInt32(img_size)
+
+            def forward(self, inp: torch.Tensor):
+                d32, d16 = self.net(inp)
+                return self.decode(d32, d16)
+
+        try:
+            wrapped = _DetectDecodeI32(core, size)
+            gm_d, backend_d = export_module(wrapped, (x,))
+            payload_d = dump_graph(
+                gm_d,
+                backend_d,
+                out_dir / f"graph_int32_{size}_decode.txt",
+                out_dir / f"graph_int32_{size}_decode.json",
+            )
+            payload_d["kind"] = "decode_int32"
+            payload_d["size"] = size
+            reports.append(payload_d)
+        except Exception as exc:  # noqa: BLE001
+            reports.append(
+                {
+                    "kind": "decode_int32",
+                    "size": size,
+                    "error": str(exc).splitlines()[0],
+                }
+            )
+
+    return reports
+
+
 def _export_letterbox(out_dir: Path) -> dict[str, Any]:
     lb = Letterbox(416)
     try:
@@ -179,6 +244,23 @@ def _export_letterbox(out_dir: Path) -> dict[str, Any]:
         return payload_l
     except Exception as exc:  # noqa: BLE001
         return {"kind": "letterbox", "error": str(exc).splitlines()[0]}
+
+
+def _export_letterbox_int32(out_dir: Path) -> dict[str, Any]:
+    lb = LetterboxInt32(32)
+    try:
+        src = torch.randint(0, 255, (1, 3, 24, 32), dtype=torch.int32)
+        gm_l, backend_l = export_module(lb, (src,))
+        payload_l = dump_graph(
+            gm_l,
+            backend_l,
+            out_dir / "graph_letterbox_int32.txt",
+            out_dir / "graph_letterbox_int32.json",
+        )
+        payload_l["kind"] = "letterbox_int32"
+        return payload_l
+    except Exception as exc:  # noqa: BLE001
+        return {"kind": "letterbox_int32", "error": str(exc).splitlines()[0]}
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -207,7 +289,9 @@ def main(argv: List[str] | None = None) -> int:
     all_reports.extend(run_exports(args.out_dir, tuple(args.sizes), int8=True))
     if args.float:
         all_reports.extend(run_exports(args.out_dir, tuple(args.sizes), int8=False))
+    all_reports.extend(run_exports_int32(args.out_dir, tuple(args.sizes)))
     all_reports.append(_export_letterbox(args.out_dir))
+    all_reports.append(_export_letterbox_int32(args.out_dir))
     all_reports.append(
         {
             "kind": "nms",

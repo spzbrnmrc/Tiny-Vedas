@@ -11,9 +11,10 @@ are targeting. Pass a preset (or custom YAML) via `--hw-config` everywhere.
 | `rv32im_zve32x.yaml` | same core + v1 vector box (VLEN=512, DLEN=128) | on |
 | `rv32im_superscalar_2x.yaml` | 2-wide issue scaffold | off |
 
-`rv32im_scalar` is the CI/sim default. `rv32im_zve32x` is the vector contract
-and the Alveo U280 overlay (`make fpga` / `make fpga_smoke`). Vector rows in
-`tests/smoke.tlist` are predicated on `vector.enabled`.
+`rv32im_zve32x` is the CI/sim default and the Alveo U280 overlay
+(`make fpga` / `make fpga_smoke`). `rv32im_scalar` is opt-in via
+`HW_CONFIG`. Vector rows in `tests/smoke.tlist` are predicated on
+`vector.enabled` (on for the default preset).
 
 ## Schema (version 1)
 
@@ -87,7 +88,7 @@ Stores in any mapped range are stripped from DCCM. `role: uart` and `role: eot` 
 ## Usage
 
 ```bash
-# sim_manager (default = rv32im_scalar)
+# sim_manager (default = rv32im_zve32x)
 ./scripts/with_env.sh ./tools/sim_manager.py -s verilator -n pyvedas.vector_add
 ./scripts/with_env.sh ./tools/sim_manager.py -s verilator -t tests/smoke.tlist \
   --hw-config hw/presets/vliw_vec.yaml
