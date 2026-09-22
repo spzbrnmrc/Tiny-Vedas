@@ -1,0 +1,47 @@
+
+\section{Compiler and Runtime Library}
+\label{sec:compiler}
+
+% Author voice. Figure shows graph node → ops.yaml → XCL emit.
+% Long identifiers break at \allowbreak so they stay in-column.
+
+\pyv{} starts from a \texttt{torch.export} graph of a {PyTorch} model.
+Each node of the graph represents an operator, like a 2D convolution or a ReLU. 
+While walking the graph, \pyv{} checks whether that operator is a lowering candidate,
+and when it is, looks up the matching entry in an operation dictionary, containing
+the mapping between PyTorch/ATEN operators and their custom {C} implementation in {XCL}.
+
+That entry names a codegen handler and an {XCL} symbol (plus the {C} sources that implement it).
+The handler emits a call into the generated {C} file, plus any pre- and post-processing needed.
+After the codegen phase, the compiler hands it off to the {RISC-V} {GNU} toolchain, for final linking 
+against {XCL} and {ELF} generation.
+
+\begin{figure*}[t]
+  \centering
+  \input{pyvedas_lower}
+  \caption{Lowering one graph node.
+    \pyv{} selects \texttt{aten.max\_pool2d.default} from a small
+    exported graph, looks up the {XCL} candidate in \texttt{ops.yaml},
+    and emits the call that the stock toolchain will compile.}
+  \label{fig:pyvedas-lower}
+\end{figure*}
+
+Figure~\ref{fig:pyvedas-lower} shows what a graph walk looks like:
+\texttt{conv2d} then \texttt{max\_pool2d}.
+The highlighted pool node resolves to an {XCL} symbol in
+\texttt{aten\_max\_pool2d.c}.
+Convolution follows the same path, except its {XCL} body can call a
+{DA} on the {XDAI} (the $8{\times}8$ {GEMM} in this paper) instead of
+letting GCC unroll the operator to plain RISC-V instructions.
+A better {XCL} body---or one that calls an available {DA}---is the
+same lookup; \pyv{} still has to emit the call.
+
+\pyv{} extracts weights from the graph by looking for \texttt{get\_attr}
+nodes and materializes them into the compile image (static buffers or the
+on-chip memory), so the generated Executable and Linkable Format
+({ELF}) carries both code and parameters.\footnote{The careful reader will notice how there is nothing special about RISC-V.
+An ARM licensee can easily swap RISC-V GCC for ARM GCC, and swap the RISC-V core
+with their ARM core and the system would work the same. C is the intermediate
+representation language.}
+
+

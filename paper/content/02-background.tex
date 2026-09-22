@@ -1,0 +1,124 @@
+\section{Hardware Architecture}
+\label{sec:arch}
+
+% The core is scalar + vector as one pipeline. XDAI / GEMM after.
+% Pipeline figure shows the shared frontend. Die lives in Impl
+% (first cite). No clock/area here.
+
+\paragraph{RISC-V Core.}
+The core is an in-order, single-issue, four-stage pipeline, divided into a shared frontend and a scalar and vector backends.
+The frontend stages are Instruction Fetch Unit ({IFU}), Decode~0 ({IDU0}),
+Decode~1 ({IDU1}), while the backends are the scalar and vector Execute ({EXU}) as depicted in Figure~\ref{fig:core-pipe}.
+
+\begin{figure}[t]
+  \centering
+  \input{core_pipeline}
+  \caption{Core pipeline: shared {IFU}/{IDU0}/{IDU1} with the
+    integer scalar register file ({XRF}); scalar and vector {EXU};
+    both write {XRF}, while the vector register file ({VRF}) stays in
+    the vector datapath.}
+  \label{fig:core-pipe}
+\end{figure}
+
+{IFU} maintains a program counter into the Instruction Closely Coupled
+Memory ({ICCM}).
+{IDU0} runs the {RV32IM} and {Zve32x} decoders in parallel on the same
+instruction and dispatches to either the scalar or vector backend.
+{IDU1} reads the integer scalar register file ({XRF}), checks the
+scoreboard, and
+issues to {EXU}, or stalls the frontend of the machine.
+
+The scalar datapath is composed by an integer Arithmetic-Logic Unit ({ALU}), a multiply unit, 
+a divide unit, and the scalar load/store unit ({LSU}).
+The {LSU} is the bridge between the core and the XDAI, connecting it to the available DAs
+and the memory subsystem.
+
+The vector datapath implements {Zve32x} specifications, with 512-bit vectors
+({VLEN}), 32-bit elements and unit-stride loads and stores.
+To keep area utilization low, the vector {ALU} and memory datapath are
+only 128~bits wide ({DLEN}) rather than a full 512-bit slice, so a
+vector op walks the register in four beats.
+
+\paragraph{eXtensible Datapath Accelerator Interconnect.} % XDAI
+The {XDAI} is the Advanced eXtensible Interface ({AXI}) fabric the
+{LSU} uses to reach memories, peripherals, and {MMIO}
+{DA}s. A software-defined range decoder matches each address against the
+device map and steers the memory request to the target device.
+
+This unified bus allows a {DA} to expose its Control and Status Registers ({CSRs})
+to the RISC-V core. Once triggered by the core, a {DA} can take control of the
+{XDAI} and access any memory-mapped device, such as Data Closely Coupled Memory ({DCCM}) and other {SRAM} resources,
+where weights might be stored, for example, through a Direct Memory Access ({DMA}) engine.
+
+The {DA} gives control back to the core by setting the {Done} {CSR}.
+
+The memory map is software-defined.
+A device-tree-style YAML file lists each {DA}'s address window.
+Hardware uses it to build the {SoC} decode; the same file emits the
+{C} macros the {XCL} includes when it programs a {DA}.
+
+
+\paragraph{Datapath Accelerators.}
+DAs are memory-mapped, domain-specific hardware blocks used by the core to offload a
+particular functionality to specialized hardware.
+In this paper, the only {DA} on the {XDAI} is an \texttt{int8} $8{\times}8$ integer
+General Matrix Multiply ({GEMM}) engine, performing $A \times B = C$. 
+
+The array is output-stationary $8{\times}8$ {PE}s with $K{=}32$.
+Software writes the three bases---including $C$---and $M$, $N$, $K$,
+then toggles the {START} {CSR}.
+
+{GEMM}'s {DMA} reads $A$ and $B$ from {DCCM} and writes $C$ to the
+base the core programmed, then sets the {Done} {CSR}.
+Figure~\ref{fig:soc-block} is the {SoC}: the core, the {XDAI} with that
+{GEMM}, and the ordinary peripherals---Universal Asynchronous Receiver--Transmitter ({UART}), end-of-test ({EOT}),
+and the on-chip memories.
+
+\begin{figure}[H]
+  \centering
+  \input{soc_block}
+  \caption{{SoC} block: core, {MMIO}/{XDAI}, {GEMM} as the attached
+    {DA}, {UART}, {EOT}, and memories.}
+  \label{fig:soc-block}
+\end{figure}
+
+
+% Memory map: on-chip SRAM stub @ 0x40000000 stands in for DRAM (FPGA:
+% URAM/BRAM in axi4_dram_fpga --- say SRAM in the PDF, not UltraRAM).
+
+\paragraph{Plugging the accelerator into \pyv{}.}
+Once the {DA} is on the {XDAI}, \pyv{} still has to see it:
+an \texttt{ops.yaml} row, a codegen handler, an {XCL} body, and the
+hardware {YAML} for the address window.
+
+The first step is to write a codegen handler for the accelerator.
+That handler is the compiler's picture of the {CSR} map: a base pointer
+for $A$, one for $B$, one for $C$, the three shapes $M$, $N$, and $K$,
+and a {START} bit.
+Those registers live in the {GEMM}'s window on the software-defined
+memory map, so that the core's LSU can directly access those registers.
+
+The next step is to review the primitives inside {XCL} and ask a simple question: which primitives
+could actually benefit from this {DA}?
+Matrix multiply is the obvious one.
+Convolution is the useful one, because a convolution is a matrix
+multiply after an \texttt{im2col}.
+Those {XCL} bodies used to be native {C} loops, translated into RISC-V code by GCC.
+To offload matrix multiplication to {GEMM}, I just substitute the inner multiply loop of the convolution
+with a call that programs the {GEMM} and lets its {DMA} engine walk $A$ and $B$.
+
+The last step is compile-time tiling.
+The engine is $8{\times}8$ with $K{=}32$.
+\pyv{} cuts a large multiply when the packed $A$/$B$ panels would
+not fit on-chip; the generated {C} walks those tiles, one {START}
+at a time.
+Figure~\ref{fig:pyvedas-gemm-plug} is that whole path for this {GEMM}.
+
+\begin{figure}[H]
+  \centering
+  \input{pyvedas_gemm_plug}
+  \caption{Plugging the {GEMM} into \pyv{}: a codegen handler for the
+    {CSR} map, an {XCL} body that calls the {DA}, and a tiling pass
+    so packed panels fit on-chip.}
+  \label{fig:pyvedas-gemm-plug}
+\end{figure}

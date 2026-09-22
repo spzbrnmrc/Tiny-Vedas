@@ -1,0 +1,98 @@
+% Column-width PyVedas compile flow.
+% Theme aligned with pyvedas_lower: white ground, black ink,
+% gray only for emphasis; arrows on background layer.
+\definecolor{tvink}{HTML}{111111}
+\definecolor{tvmute}{HTML}{333333}
+\definecolor{tvline}{HTML}{555555}
+\definecolor{tvshade}{HTML}{EEEEEE}
+
+\pgfdeclarelayer{backarrows}
+\pgfsetlayers{backarrows,main}
+
+\begin{tikzpicture}[
+  >=Stealth,
+  x=1mm, y=1mm,
+  font=\sffamily\scriptsize,
+  box/.style={
+    draw=tvink,
+    line width=0.6pt,
+    rounded corners=1.5pt,
+    fill=white,
+    align=center,
+    inner xsep=2.5pt,
+    inner ysep=2.6pt,
+    font=\sffamily\scriptsize,
+  },
+  hub/.style={
+    box,
+    line width=1.15pt,
+    fill=tvshade,
+    font=\sffamily\footnotesize\bfseries,
+    inner xsep=4pt,
+    inner ysep=3.0pt,
+  },
+  arr/.style={
+    ->,
+    draw=tvline,
+    line width=0.55pt,
+    shorten >=0.8pt,
+    shorten <=0.8pt,
+  },
+]
+\pgfmathsetmacro{\W}{0.92*\columnwidth/1mm}
+
+% Thin frame only (no wash, no colored header bar)
+\draw[tvink, line width=0.6pt, rounded corners=2.5pt]
+  (0,-1.5) rectangle (\W,76.5);
+
+\node[font=\sffamily\footnotesize\bfseries, text=tvink, anchor=west]
+  at (2.0,73.8) {PyVedas compile flow};
+\draw[tvink, line width=0.45pt]
+  (2.0,71.6) -- (\W-2.0,71.6);
+
+% --- row: inputs ---
+\node[box, text width=0.38*\columnwidth] (model) at (0.26*\W, 60.5)
+  {\textbf{PyTorch model}\\[0.35em]
+   {\color{tvmute}graph}};
+
+\node[box, text width=0.38*\columnwidth] (soc) at (0.74*\W, 60.5)
+  {\textbf{SoC description}\\[0.35em]
+   {\color{tvmute}XDAI + DAs}};
+
+\node[box, font=\sffamily\scriptsize\bfseries, inner xsep=3pt, inner ysep=1.4pt]
+  (wt) at (0.26*\W, 50.8) {weights};
+
+% --- hub ---
+\node[hub, minimum width=0.78*\columnwidth] (jit) at (0.5*\W, 40.2)
+  {PyVedas\\[0.25em]
+   {\normalfont\scriptsize\color{tvmute}extract · tile · lower}};
+
+% --- C + link + ELF ---
+\node[box, align=left, text width=0.72*\columnwidth,
+  inner xsep=4pt, inner ysep=2.8pt] (cfile) at (0.5*\W, 27.6)
+  {\textbf{Generated C}\\[0.2em]
+   {\color{tvmute}calls mapped through the XCL}};
+
+\node[box, minimum width=0.78*\columnwidth,
+  inner xsep=4pt, inner ysep=2.8pt] (link) at (0.5*\W, 16.4)
+  {\textbf{Link + stock RISC-V GCC}};
+
+\node[hub, minimum width=0.78*\columnwidth,
+  inner xsep=4pt, inner ysep=2.8pt] (elf) at (0.5*\W, 5.6)
+  {Target ELF};
+
+\begin{pgfonlayer}{backarrows}
+  \draw[arr]
+    (model.south) -- ++(0,-1.6) -| ([xshift=-3.5mm]jit.north);
+  \draw[arr]
+    (soc.south) -- ++(0,-1.6) -| ([xshift=3.5mm]jit.north);
+  \draw[arr, densely dashed]
+    (wt.south) -- ([xshift=-2.8mm]jit.north);
+  \draw[arr]
+    (jit) -- node[font=\sffamily\scriptsize, text=tvmute, right, inner sep=1.2pt]
+      {C emit} (cfile);
+  \draw[arr] (cfile) -- (link);
+  \draw[arr] (link) -- (elf);
+\end{pgfonlayer}
+
+\end{tikzpicture}

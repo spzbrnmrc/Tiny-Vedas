@@ -1,0 +1,56 @@
+\section{Artifact}
+\label{app:artifact}
+
+The numbers in \S\ref{sec:eval} and Figure~\ref{fig:die} come from
+the \texttt{arxiv-v0} tag of
+Tiny-Vedas.\footnote{\url{https://github.com/siliscale/Tiny-Vedas}}
+Check that tag out and install the simulation dependencies:
+\tvcmdopen
+\begin{lstlisting}
+git checkout arxiv-v0
+make deps
+\end{lstlisting}
+\tvcmdclose
+
+The host integer graph is the reference. Tiny-208, coco128 with
+sixteen images, and the checked-in calibration file should print
+{mAP@0.5} 0.274089:
+\tvcmdopen
+\begin{lstlisting}
+python -m models.yolov3_tiny \
+  eval --int32 --size 208 \
+  --limit 16 --download \
+  --cal models/yolov3_tiny/requant_cal.yaml
+\end{lstlisting}
+\tvcmdclose
+
+The card run is the same graph on a programmed Alveo~{U280} STREAM
+bit. It should match that host number at 80\,{MHz}. The RISC-V
+GNU toolchain has to be on \texttt{PATH} for the link:
+\tvcmdopen
+\begin{lstlisting}
+sudo env \
+  PATH="/tools/riscv/bin:$PATH" \
+  ./venv/bin/python \
+  -m models.yolov3_tiny eval --card \
+  --size 208 --limit 16 \
+  --cal models/yolov3_tiny/requant_cal.yaml \
+  --eot-timeout 400
+\end{lstlisting}
+\tvcmdclose
+
+One Tiny-208 \texttt{cache\_col} frame is the same command with
+\texttt{--limit 1} (295907.7\,{ms} in \S\ref{sec:eval}).
+
+Figure~\ref{fig:die} is the {ASAP7} \texttt{core\_gemm\_top} finish
+(memories as {IOs}):
+\tvcmdopen
+\begin{lstlisting}
+make config \
+  HW_CONFIG=hw/presets/rv32im_zve32x.yaml \
+  PD_PLATFORM=asap7
+make rtl2gds
+make pd-annotate
+\end{lstlisting}
+\tvcmdclose
+\nocite{genc2021gemmini}

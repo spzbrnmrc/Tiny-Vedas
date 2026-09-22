@@ -1,0 +1,44 @@
+% MLSys 2027 research-track wrapper.
+% CFP: https://mlsys.org/Conferences/2027/CallForResearchPapers
+%   Official kit: mlsys2025style.zip (same format as 2025/2026).
+%   10 pages of body. References unlimited. Appendix is a *separate*
+%   upload --- build it with `make mlsys-appendix`.
+
+\documentclass{article}
+
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\usepackage{mlsys2025}
+
+\mlsystitlerunning{Tiny-Vedas: RISC-V Infrastructure for AI Accelerators}
+
+\input{macros}
+
+\begin{document}
+
+\twocolumn[
+\mlsystitle{Tiny-Vedas: RISC-V Infrastructure for AI Accelerator Design}
+
+% Style strips this unless [accepted].
+\input{authors-mlsys}
+\mlsyskeywords{RISC-V, System on Chip, just-in-time compilers,
+  Memory-Mapped I/O, Artificial Intelligence accelerators}
+
+\vskip 0.3in
+\begin{abstract}
+\input{abstract}
+\end{abstract}
+]
+
+\printAffiliationsAndNotice{}
+
+\input{body}
+
+\bibliography{refs}
+\bibliographystyle{mlsys2025}
+
+\end{document}

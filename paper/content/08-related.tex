@@ -1,0 +1,30 @@
+\section{Related Work}
+\label{sec:related}
+
+% Compilers then machines. Not a bake-off.
+
+{TVM}, {MLIR}, and {IREE} compile a graph onto a backend that is
+already there~\cite{chen2018tvm,lattner2021mlir,iree}.
+I needed the other direction: a new {MMIO} engine on a {RISC-V}
+{SoC}, named from {PyTorch}, still built by stock {GCC}.
+
+Gemmini generates a systolic array and evaluates it on
+FireSim~\cite{genc2021gemmini}.
+I start from a finished {SoC} and hang one more engine on the bus,
+without a new opcode.
+
+Simba, Occamy, and {SNAX} are the machines: scale-out inference and
+high-performance computing across
+chiplets~\cite{shao2019simba,bartolini2024occamy,snax}.
+This paper is the path from that kind of machine back into a compiler
+a {PyTorch} user can run.
+
+FireSim uses {FPGA}s as cycle-approximate {ASIC}
+simulators~\cite{karandikar2018firesim}.
+I use the {FPGA} as the card: the same {ELF} as the instruction-set
+simulator ({ISS}), with boxes back on the host.
+
+{YOLOv3} is the accuracy bar for the running
+example~\cite{redmon2018yolov3}.
+Matching the integer {mAP} shows the stack closed; it is not a
+detector paper.

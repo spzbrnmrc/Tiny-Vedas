@@ -1,0 +1,62 @@
+% One repeating Tiny-208 stem stage (integer graph). Compact: must
+% fit under its first cite in a short column.
+\definecolor{tvink}{HTML}{111111}
+\definecolor{tvmute}{HTML}{333333}
+\definecolor{tvline}{HTML}{555555}
+\definecolor{tvshade}{HTML}{EEEEEE}
+
+\begin{tikzpicture}[
+  >=Stealth,
+  x=1mm, y=1mm,
+  font=\sffamily\scriptsize,
+  box/.style={
+    draw=tvink,
+    line width=0.55pt,
+    rounded corners=1.2pt,
+    fill=white,
+    align=center,
+    inner xsep=1.4pt,
+    inner ysep=1.4pt,
+    font=\sffamily\tiny,
+    minimum height=7.2mm,
+  },
+  hub/.style={
+    box,
+    line width=1.0pt,
+    fill=tvshade,
+    font=\sffamily\tiny\bfseries,
+  },
+  arr/.style={
+    ->,
+    draw=tvline,
+    line width=0.5pt,
+    shorten >=0.6pt,
+    shorten <=0.6pt,
+  },
+]
+\pgfmathsetmacro{\W}{\columnwidth/1mm - 0.8}
+
+\draw[tvink, line width=0.55pt, rounded corners=1.6pt]
+  (0, 0.2) rectangle (\W, 16.4);
+
+\node[font=\sffamily\tiny, text=tvmute, anchor=east] (xin)
+  at (0.07*\W, 8.3) {int32};
+\node[box, anchor=west] (conv) at (0.09*\W, 8.3)
+  {\textbf{Conv}\\[0.05em]
+   {\color{tvmute}\ttfamily\tiny im2col+GEMM}};
+\node[box] (leaky) at (0.42*\W, 8.3)
+  {\textbf{Leaky ReLU}\\[0.05em]
+   {\color{tvmute}\ttfamily\tiny Zve32x}};
+\node[hub] (rq) at (0.66*\W, 8.3)
+  {\texttt{requant\_i32}\\[0.05em]
+   {\normalfont\color{tvmute}\ttfamily\tiny (mul, shift)}};
+\node[box] (pool) at (0.88*\W, 8.3)
+  {\textbf{Max-pool}\\[0.05em]
+   {\color{tvmute}\ttfamily\tiny Zve32x}};
+
+\draw[arr] (xin) -- (conv);
+\draw[arr] (conv) -- (leaky);
+\draw[arr] (leaky) -- (rq);
+\draw[arr] (rq) -- (pool);
+
+\end{tikzpicture}

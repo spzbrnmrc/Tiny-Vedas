@@ -1,0 +1,66 @@
+% arXiv wrapper --- author-visible, no review line numbers.
+% Longer than the conference cut is fine; appendix stays in this PDF.
+% Prose lock: paper/ARXIV.md. Do not invent metrics. Do not post
+% until sign-off against that file.
+
+\documentclass[sigplan,nonacm,authorversion,screen]{acmart}
+
+\settopmatter{printfolios=true}
+\acmConference[ASPLOS '27]{ACM International Conference on
+  Architectural Support for Programming Languages and Operating
+  Systems}{2027}{TBD}
+\acmYear{2027}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+\input{macros}
+
+\title{Tiny-Vedas: {RISC-V} Infrastructure for {AI} Accelerator Design}
+
+\input{authors-acm}
+
+\begin{document}
+
+\begin{abstract}
+\input{abstract}
+\end{abstract}
+
+\begin{CCSXML}
+<ccs2012>
+ <concept>
+  <concept_id>10011007.10011006.10011041</concept_id>
+  <concept_desc>Software and its engineering~Compilers</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010583.10010687</concept_id>
+  <concept_desc>Computer systems organization~Architectures</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010583.10010786.10010804</concept_id>
+  <concept_desc>Computer systems organization~System on a chip</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+</ccs2012>
+\end{CCSXML}
+\ccsdesc[500]{Software and its engineering~Compilers}
+\ccsdesc[300]{Computer systems organization~Architectures}
+\ccsdesc[300]{Computer systems organization~System on a chip}
+
+\keywords{{RISC-V}, System on Chip, just-in-time compilers,
+  Memory-Mapped {I/O}, Artificial Intelligence accelerators}
+
+\maketitle
+
+\input{body}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{refs}
+
+\appendix
+\input{appendix}
+
+\end{document}

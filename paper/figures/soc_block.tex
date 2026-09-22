@@ -1,0 +1,95 @@
+% Single-column SoC block: core → XDAI → devices / memories.
+% Theme match pyvedas_flow / core_pipeline.
+\definecolor{tvink}{HTML}{111111}
+\definecolor{tvmute}{HTML}{333333}
+\definecolor{tvline}{HTML}{555555}
+\definecolor{tvshade}{HTML}{EEEEEE}
+
+\pgfdeclarelayer{backarrows}
+\pgfsetlayers{backarrows,main}
+
+\begin{tikzpicture}[
+  >=Stealth,
+  x=1mm, y=1mm,
+  font=\sffamily\scriptsize,
+  box/.style={
+    draw=tvink,
+    line width=0.6pt,
+    rounded corners=1.5pt,
+    fill=white,
+    align=center,
+    inner xsep=2.5pt,
+    inner ysep=2.2pt,
+    font=\sffamily\scriptsize,
+  },
+  hub/.style={
+    box,
+    line width=1.15pt,
+    fill=tvshade,
+    font=\sffamily\footnotesize\bfseries,
+  },
+  arr/.style={
+    ->,
+    draw=tvline,
+    line width=0.55pt,
+    shorten >=0.8pt,
+    shorten <=0.8pt,
+  },
+]
+\pgfmathsetmacro{\W}{\columnwidth/1mm - 0.8}
+
+\draw[tvink, line width=0.55pt, rounded corners=2pt]
+  (0, 0.6) rectangle (\W, 58.5);
+
+\node[font=\sffamily\footnotesize\bfseries, text=tvink, anchor=west]
+  at (1.6, 55.8) {SoC};
+\draw[tvink, line width=0.4pt]
+  (1.6, 53.8) -- (\W-1.6, 53.8);
+
+\node[box, minimum width=0.18*\W] (iccm) at (0.14*\W, 48.2) {ICCM};
+\node[hub, minimum width=0.48*\W, align=center,
+  inner ysep=2.2pt] (core) at (0.5*\W, 48.2)
+  {Core\\[0.12em]
+   {\normalfont\sffamily\scriptsize\color{tvmute}scalar + vector}};
+
+\node[hub, minimum width=0.72*\W, inner ysep=2.0pt] (bus)
+  at (0.5*\W, 39.6)
+  {XDAI};
+
+\node[font=\sffamily\scriptsize\bfseries, text=tvink, anchor=west]
+  at (1.6, 33.4) {Devices};
+\node[box, minimum width=0.24*\W] (uart) at (0.22*\W, 28.4)
+  {UART\\[-0.1em]{\normalfont\sffamily\tiny\color{tvmute}0x00200000}};
+\node[box, line width=0.9pt, minimum width=0.24*\W] (gemm) at (0.50*\W, 28.4)
+  {{GEMM}\\[-0.1em]{\normalfont\sffamily\tiny\color{tvmute}0x00300000}};
+\node[box, minimum width=0.24*\W] (eot) at (0.78*\W, 28.4)
+  {EOT\\[-0.1em]{\normalfont\sffamily\tiny\color{tvmute}0x10000000}};
+
+\node[font=\sffamily\scriptsize\bfseries, text=tvink, anchor=west]
+  at (1.6, 21.6) {Memories};
+\node[box, minimum width=0.24*\W] (dccm) at (0.50*\W, 11.0) {DCCM};
+\node[box, minimum width=0.24*\W] (sram) at (0.78*\W, 11.0)
+  {SRAM stub\\[-0.1em]{\normalfont\sffamily\tiny\color{tvmute}0x40000000}};
+
+\begin{pgfonlayer}{backarrows}
+  \draw[arr] (core.west) -- (iccm.east);
+  \draw[arr] (core.south) -- (bus.north);
+
+  \draw[tvline, line width=0.5pt]
+    (bus.south) -- ++(0,-2.0) coordinate (devrail);
+  \draw[tvline, line width=0.5pt]
+    (uart.north |- devrail) -- (eot.north |- devrail);
+  \draw[arr] (uart.north |- devrail) -- (uart.north);
+  \draw[arr] (gemm.north |- devrail) -- (gemm.north);
+  \draw[arr] (eot.north |- devrail) -- (eot.north);
+
+  % Memories leave the XDAI on the east side, then drop.
+  \draw[tvline, line width=0.55pt]
+    (bus.east) -- (0.92*\W, 0 |- bus.east) -- (0.92*\W, 19.8);
+  \draw[tvline, line width=0.55pt]
+    (0.50*\W, 19.8) -- (0.92*\W, 19.8);
+  \draw[arr] (0.50*\W, 19.8) -- (dccm.north);
+  \draw[arr] (0.78*\W, 19.8) -- (sram.north);
+\end{pgfonlayer}
+
+\end{tikzpicture}

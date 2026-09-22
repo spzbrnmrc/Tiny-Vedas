@@ -1,0 +1,39 @@
+\section{Application-Specific Integrated Circuit ({ASIC}) Implementation}
+\label{sec:impl}
+
+% Locked receipts only. No 100 MHz overlay / Dhrystone / old GDS
+% without vector. No 3 GHz target / WNS in the PDF.
+
+I ran the {SoC}---scalar core, {Zve32x}, and the {GEMM}---through
+Open{ROAD}~\cite{ajayi2019openroad} on the {ASAP7} 7\,nm predictive
+Process Design Kit ({PDK})~\cite{clark2016asap7}.
+Memories are ports, so Table~\ref{tab:asap7} is logic only.
+Figure~\ref{fig:die} is that finish.
+Post-route $F_{\max}$ is 540.23\,{MHz}.
+
+\begin{table}[H]
+  \caption{{ASAP7} area (memories as {IOs}).}
+  \label{tab:asap7}
+  \centering
+  \small
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    Block & Area ($\mu$m$^{2}$) & Cells \\
+    \midrule
+    Core   & 3{,}187  & 27{,}000 \\
+    Vector & 28{,}466 & 258{,}854 \\
+    {GEMM} & 19{,}992 & 165{,}998 \\
+    Other  & 1{,}874  & 14{,}729 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \input{die_layout}
+  \caption{{ASAP7} layout of the {SoC} (memories as {IOs}).
+    Convolution hits the {GEMM}; leaky {ReLU} and max-pool use
+    {Zve32x}.
+    Areas in Table~\ref{tab:asap7}.}
+  \label{fig:die}
+\end{figure}

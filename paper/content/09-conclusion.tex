@@ -1,0 +1,22 @@
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+% Close on the infrastructure. Future work only what the paper
+% already deferred: stub hierarchy, scalar requant, new MMIO DAs.
+
+\tv{} is infrastructure for hanging a matrix datapath on a stock
+{RISC-V} {SoC} and naming it from {PyTorch}, without a new opcode.
+The base machine is {RV32IM} with {Zve32x}; the example stitch is an
+$8{\times}8$ integer {GEMM} on the bus.
+{YOLOv3-Tiny} closes the loop: the host integer graph and the card
+{ELF} both report {mAP@0.5} of 0.274089.
+That {ELF} is the same binary the {ISS} and the Register-Transfer
+Level ({RTL}) run.
+
+What I want next is the memory behind the stub.
+The 16\,{MiB} {SRAM} window is a placeholder for a shared {L2} into
+{HBM}, and for more than one core on that window.
+The requant can grow with it: a $(\mathrm{mul},\mathrm{shift})$ per
+channel, if the kernel grows.
+New engines stay the same plug---a codegen handler, an {XCL} body,
+and the tiles they need.

@@ -1,0 +1,30 @@
+\section{FPGA Evaluation}
+\label{sec:eval}
+
+% Locked numbers only. Do not glue n=16 mAP to n=1 ms/frame.
+% No 0.3469 / 416 / 0.002. No Gemmini bake-off.
+
+The Alveo~{U280} sits on {PCIe} behind a {Xilinx} Queue {DMA} ({QDMA}) endpoint.
+The host maps a control base-address register ({BAR}) into the {SoC}.
+While the core is halted I write instruction memory, on-chip data
+memory, and the {SRAM} stub through that {BAR}; then I release the
+core and poll an end-of-test register.
+The stub is the device memory---16\,{MiB} of on-chip {SRAM} today,
+the same window a later {HBM} hierarchy can occupy.
+
+That is the split a {PCIe} accelerator uses.
+The host letterboxes the frame, builds the integer canvas, and loads
+the {ELF}, the weights, and that canvas.
+The card runs the backbone: convolution on the {GEMM}, leaky {ReLU}
+and max-pool on {Zve32x}.
+When end-of-test fires, the host reads the detect heads back over the
+same {BAR}, decodes boxes, and runs {NMS}.
+
+To verify accuracy I used Tiny-208, coco128 with sixteen images,
+integer weights, and \texttt{--cal} with the requant calibration
+file of \S\ref{sec:example}.
+On the host, int32 mean Average Precision at
+Intersection-over-Union 0.5 ({mAP@0.5}) is 0.274089.
+On the card, the same graph is 0.274089 at 80\,{MHz}.
+Separately, one Tiny-208 frame with \texttt{cache\_col} finishes
+in 295907.7\,{ms} (Figure~\ref{fig:card-det}).

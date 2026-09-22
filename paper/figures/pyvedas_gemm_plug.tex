@@ -1,0 +1,92 @@
+% How PyVedas learns the GEMM DA. Column-width, print theme.
+\definecolor{tvink}{HTML}{111111}
+\definecolor{tvmute}{HTML}{333333}
+\definecolor{tvline}{HTML}{555555}
+\definecolor{tvshade}{HTML}{EEEEEE}
+
+\pgfdeclarelayer{backarrows}
+\pgfsetlayers{backarrows,main}
+
+\begin{tikzpicture}[
+  >=Stealth,
+  x=1mm, y=1mm,
+  font=\sffamily\tiny,
+  box/.style={
+    draw=tvink,
+    line width=0.55pt,
+    rounded corners=1.2pt,
+    fill=white,
+    align=left,
+    inner xsep=2.4pt,
+    inner ysep=2.0pt,
+    font=\ttfamily\fontsize{5.2}{6.4}\selectfont,
+  },
+  stepnum/.style={
+    draw=tvink,
+    line width=0.85pt,
+    rounded corners=1.2pt,
+    fill=tvshade,
+    font=\sffamily\tiny\bfseries,
+    inner xsep=2.2pt,
+    inner ysep=1.2pt,
+  },
+  arr/.style={
+    ->,
+    draw=tvline,
+    line width=0.5pt,
+    shorten >=0.5pt,
+    shorten <=0.5pt,
+  },
+]
+\pgfmathsetmacro{\W}{\columnwidth/1mm - 0.8}
+
+\draw[tvink, line width=0.55pt, rounded corners=2pt]
+  (0, -1.0) rectangle (\W, 72.0);
+
+\node[font=\sffamily\scriptsize\bfseries, text=tvink, anchor=west]
+  at (1.6, 69.0) {Plugging the {GEMM} into \pyv{}};
+\draw[tvink, line width=0.4pt]
+  (1.6, 67.0) -- (\W-1.6, 67.0);
+
+\node[stepnum] (s1) at (0.12*\W, 61.5) {1};
+\node[box, text width=0.72*\columnwidth, anchor=west]
+  (c1) at (0.22*\W, 61.5) {%
+  \textcolor{tvmute}{\# hw/soc/default.yaml}\\
+  - name: gemm\\
+  \quad role: accelerator\\
+  \quad module: gemm\_top%
+};
+
+\node[stepnum] (s2) at (0.12*\W, 46.5) {2};
+\node[box, text width=0.72*\columnwidth, anchor=west]
+  (c2) at (0.22*\W, 46.5) {%
+  \textcolor{tvmute}{\# ops.yaml}\\
+  pyvedas.gemm\_mmio.default:\\
+  \quad codegen: gemm\_mmio\\
+  \quad symbol: pyvedas\_gemm\_job\\
+  \quad sources: gemm\_mmio.c%
+};
+
+\node[stepnum] (s3) at (0.12*\W, 29.5) {3};
+\node[box, text width=0.72*\columnwidth, anchor=west]
+  (c3) at (0.22*\W, 29.5) {%
+  \textcolor{tvmute}{\# codegen\_handlers.py}\\
+  emit\_gemm\_mmio(...)\\
+  \quad $\rightarrow$ calls in generated C%
+};
+
+\node[stepnum] (s4) at (0.12*\W, 12.5) {4};
+\node[box, text width=0.72*\columnwidth, anchor=west]
+  (c4) at (0.22*\W, 12.5) {%
+  \textcolor{tvmute}{\# gemm\_mmio.c (XCL)}\\
+  write BASE\_A/B/C, M, N, K\\
+  \quad store START on MMIO\_GEMM\_ADDR%
+};
+
+\begin{pgfonlayer}{backarrows}
+  \draw[arr] (c1.south) -- (c2.north);
+  \draw[arr] (c2.south) -- (c3.north);
+  \draw[arr] (c3.south) -- (c4.north);
+\end{pgfonlayer}
+
+\end{tikzpicture}

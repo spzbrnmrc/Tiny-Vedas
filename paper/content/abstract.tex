@@ -1,0 +1,28 @@
+% LOCKED — do not rewrite. Author-signed abstract (2026-09-21).
+% Typo fixes only if the author asks. No clock, area, or seconds.
+
+ASIC-based Artificial Intelligence (AI) accelerators have drawn intense interest
+and funding in recent years, yet their reduction to practice remained elusive.
+I argue that the issue relies in an old, abstraction-based development model
+tied to general-purpose computing CPU design.
+
+
+This paper presents \tv{}, an open-source toolkit for designing {RISC-V} accelerators
+for {AI}, including both hardware and software for out-of-the box
+support for PyTorch models acceleration.
+At the center of the system is an in-order, single-issue, four-stage
+32-bit {RISC-V} core supporting {RV32IM} integer extension and {Zve32x} vector extension.
+The core can be complemented with memory-mapped datapath accelerators to form a System-on-Chip,
+such as an $8{\times}8$ integer General Matrix
+Multiply engine.
+
+A just-in-time compiler ingests a {PyTorch} model, extracts
+its computational graph, and turns that graph into {C} code that the stock
+{RISC-V} {GNU} Compiler Collection can build.
+The compiler extends cleanly to new datapath accelerators and to the
+pre- and post-processing they may need, such as tensor tiling.
+
+I prove the stack with {YOLOv3-Tiny} vision model running on Tiny-Vedas.
+The design is implemented through the Open{ROAD}
+{ASIC} flow on {ASAP7}
+Process Design Kit ({PDK}), and exercised on an AMD/Xilinx Alveo~{U280} FPGA.

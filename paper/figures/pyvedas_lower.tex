@@ -1,0 +1,157 @@
+% Full-width lowering walk: graph → ops.yaml → generated call → XCL.
+% Print-friendly: white ground, black ink, gray only for selection.
+\definecolor{tvink}{HTML}{111111}
+\definecolor{tvmute}{HTML}{333333}
+\definecolor{tvline}{HTML}{555555}
+\definecolor{tvshade}{HTML}{EEEEEE}
+
+\usetikzlibrary{fit}
+\pgfdeclarelayer{backcards}
+\pgfdeclarelayer{backarrows}
+\pgfsetlayers{backcards,backarrows,main}
+
+\begin{tikzpicture}[
+  >=Stealth,
+  x=1mm, y=1mm,
+  font=\sffamily\scriptsize,
+  box/.style={
+    draw=tvink,
+    line width=0.6pt,
+    rounded corners=1.5pt,
+    fill=white,
+    align=center,
+    inner sep=2.4pt,
+    font=\ttfamily\tiny,
+  },
+  leaf/.style={
+    box,
+    font=\ttfamily\tiny,
+    minimum width=9mm,
+  },
+  selected/.style={
+    box,
+    line width=1.15pt,
+    fill=tvshade,
+  },
+  card/.style={
+    draw=tvink,
+    line width=0.6pt,
+    rounded corners=2pt,
+    fill=white,
+    align=left,
+    inner xsep=3pt,
+    inner ysep=2.6pt,
+    font=\ttfamily\tiny,
+  },
+  hit/.style={
+    font=\ttfamily\tiny,
+    draw=tvink,
+    line width=0.5pt,
+    rounded corners=0.7pt,
+    fill=tvshade,
+    inner xsep=1.2pt,
+    inner ysep=0.35pt,
+  },
+  arr/.style={
+    ->,
+    draw=tvline,
+    line width=0.55pt,
+    shorten >=1.0pt,
+    shorten <=1.0pt,
+  },
+]
+\pgfmathsetmacro{\W}{\textwidth/1mm - 2}
+
+\draw[tvink, line width=0.6pt, rounded corners=2.5pt]
+  (0,-2.2) rectangle (\W,51.5);
+
+\node[font=\sffamily\footnotesize\bfseries, text=tvink, anchor=west]
+  at (2.0,48.8) {One node through PyVedas};
+\draw[tvink, line width=0.45pt]
+  (2.0,46.6) -- (\W-2.0,46.6);
+
+\node[font=\sffamily\footnotesize\bfseries, text=tvink, anchor=west]
+  at (2.0,43.5) {1.\ Graph};
+\node[font=\sffamily\footnotesize\bfseries, text=tvink, anchor=west]
+  at (0.255*\W,43.5) {2.\ Select + look up};
+\node[font=\sffamily\footnotesize\bfseries, text=tvink, anchor=west]
+  at (0.50*\W,43.5) {3.\ Emit into C};
+\node[font=\sffamily\footnotesize\bfseries, text=tvink, anchor=west]
+  at (0.74*\W,43.5) {4.\ XCL function body};
+
+\node[leaf] (n_x) at (0.04*\W, 34.0) {x};
+\node[leaf] (n_w) at (0.19*\W, 34.0) {weight};
+\node[box]  (n_conv) at (0.115*\W, 23.0) {conv2d};
+\node[selected] (n_pool) at (0.115*\W, 12.0) {max\_pool2d};
+\node[leaf] (n_y) at (0.115*\W, 2.2) {y};
+
+\node[font=\sffamily\scriptsize\bfseries, text=tvink, anchor=south west]
+  at ([xshift=1.2mm,yshift=0.6mm]n_pool.north east) {selected};
+
+\node[font=\ttfamily\tiny, anchor=north west, align=left]
+  (yl0) at (0.26*\W, 40.6) {\textcolor{tvmute}{\# ops.yaml}};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (yl1) at ([yshift=-0.3mm]yl0.south west) {aten.max\_pool2d.default:};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (yl2) at ([yshift=-0.3mm]yl1.south west) {\quad codegen: max\_pool2d};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (yl3) at ([yshift=-0.3mm]yl2.south west) {\quad symbol:};
+\node[hit, anchor=north west]
+  (sym) at ([xshift=4.0mm,yshift=-0.4mm]yl3.south west)
+  {pyvedas\_aten\_max\_pool2d};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (yl4) at ([yshift=-1.0mm]yl0.west |- sym.south) {\quad sources:};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (yl5) at ([yshift=-0.3mm]yl4.south west) {\qquad aten\_max\_pool2d.c};
+
+\node[font=\ttfamily\tiny, anchor=north west, align=left]
+  (cl0) at (0.505*\W, 40.6) {\textcolor{tvmute}{/* generated */}};
+\node[hit, anchor=north west]
+  (call) at ([yshift=-0.3mm]cl0.south west) {pyvedas\_aten\_max\_pool2d(};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (cl2) at ([yshift=-0.3mm]call.south west) {\quad x, out, n, c, h, w,};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (cl3) at ([yshift=-0.3mm]cl2.south west) {\quad oh, ow, kh, kw,};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (cl4) at ([yshift=-0.3mm]cl3.south west) {\quad sh, sw, pad\_h, pad\_w);};
+
+\node[font=\ttfamily\tiny, anchor=north west, align=left]
+  (xl0) at (0.745*\W, 40.6) {\textcolor{tvmute}{/* aten\_max\_pool2d.c */}};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (xclfn) at ([yshift=-0.3mm]xl0.south west) {void pyvedas\_aten\_max\_pool2d(};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (xl2) at ([yshift=-0.3mm]xclfn.south west) {\quad const int32\_t *x,};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (xl3) at ([yshift=-0.3mm]xl2.south west) {\quad int32\_t *out, \ldots)};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (xl4) at ([yshift=-0.3mm]xl3.south west) {\{};
+\node[font=\ttfamily\tiny, text=tvmute, anchor=north west]
+  (xl5) at ([yshift=-0.3mm]xl4.south west) {\quad /* max-pool body here */};
+\node[font=\ttfamily\tiny, anchor=north west]
+  (xl6) at ([yshift=-0.3mm]xl5.south west) {\}};
+
+\begin{pgfonlayer}{backcards}
+  \node[card, fit=(yl0)(yl1)(yl2)(yl3)(sym)(yl4)(yl5),
+    inner xsep=3.2pt, inner ysep=2.4pt] (yaml) {};
+  \node[card, fit=(cl0)(call)(cl2)(cl3)(cl4),
+    inner xsep=3.2pt, inner ysep=2.4pt] (cout) {};
+  \node[card, fit=(xl0)(xclfn)(xl2)(xl3)(xl4)(xl5)(xl6),
+    inner xsep=3.2pt, inner ysep=2.4pt] (xcl) {};
+\end{pgfonlayer}
+
+\begin{pgfonlayer}{backarrows}
+  \draw[arr] (n_x.south) -- (n_conv.north west);
+  \draw[arr] (n_w.south) -- (n_conv.north east);
+  \draw[arr] (n_conv.south) -- (n_pool.north);
+  \draw[arr] (n_pool.south) -- (n_y.north);
+  \draw[arr, line width=0.6pt]
+    (n_pool.east) -- ([xshift=-4.5mm]yaml.west |- n_pool.east)
+    -- ([xshift=-4.5mm,yshift=1.2mm]yaml.west)
+    -- ([yshift=1.2mm]yaml.west);
+  \draw[arr, line width=0.6pt]
+    (sym.east) -- (call.west);
+  \draw[arr, line width=0.6pt]
+    (call.east) -- (xclfn.west);
+\end{pgfonlayer}
+
+\end{tikzpicture}

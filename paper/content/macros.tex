@@ -1,0 +1,33 @@
+% HOUSE RULE: anything a reader should not see goes in comments.
+% Before treating a PDF as a draft, re-read comments in content/*.tex
+% and paper/ARXIV.md (forbidden claims, locked numbers).
+% Shared macros. Keep this file class-agnostic (acmart and mlsys2025).
+\newcommand{\tv}{Tiny-Vedas}
+\newcommand{\pyv}{PyVedas}
+\newcommand{\locked}[1]{#1} % ARXIV.md Status only; do not invent siblings.
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+
+% Breakable monospace for long paths / symbols (no column overflow).
+% Prefer explicit \allowbreak sites; \path fights acmart's hyperref timing.
+\newcommand{\code}[1]{\texttt{#1}}
+
+\usepackage{listings}
+\lstset{
+  basicstyle=\small\ttfamily,
+  columns=flexible,
+  keepspaces=true,
+  breaklines=true,
+  breakatwhitespace=true,
+  frame=single,
+  framesep=6pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  backgroundcolor=\color{black!3},
+  aboveskip=0.35em,
+  belowskip=0.15em,
+}
+% Listing in a minipage so the frame never splits mid-column.
+\newcommand{\tvcmdopen}{\par\nopagebreak\noindent\begin{minipage}{\linewidth}}
+\newcommand{\tvcmdclose}{\end{minipage}\par}

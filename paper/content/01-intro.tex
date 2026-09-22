@@ -1,0 +1,114 @@
+\section{Introduction}
+\label{sec:intro}
+
+% Story lock (ARXIV.md). Author voice for the four-part stack is
+% LOCKED in spirit --- polish only; do not delete or replace with the
+% old ops.yaml claim list. Die figure lives in §impl (first cite).
+
+% ---------- START CHECKING HERE ----------
+
+The recent wave of Generative Artificial Intelligence ({Gen-AI}) models has
+pushed large model operators toward designing custom accelerator
+silicon~\cite{openai2026jalapeno,carter2026anthropic} in search of better performance per watt, 
+a broader supplier base, and lower capital and operating cost.
+That same demand has also drawn a crowded field of startups and open-source
+efforts trying to fill the gaps at different levels of the stack.
+Having worked inside several of them, I find the landscape sorts into
+three camps:
+
+\begin{itemize}
+  \item \textbf{Pure-technology efforts}
+        that invent a new way to do a hard kernel---an analog General
+        Matrix Multiply ({GEMM}) or an in-memory compute fabric.
+  \item \textbf{{RISC-V} intellectual-property ({IP}) efforts}
+        that build high-end cores aimed at the datacenter.
+        That market is still dominated by x86---about 87\% of
+        datacenter server {CPU}s in early
+        2025~\cite{mercury2025q1}---with Arm a distant second;
+        a large share of the spend on this kind of effort goes to bringing those 
+        cores up to run Linux, which is the wrong bar for bare-metal Artificial
+        Intelligence ({AI}) acceleration anyway.
+  \item \textbf{{AI} compiler efforts}
+        that promise a holistic software stack, pushing yet another level of abstraction
+        on hardware that is not yet shipping.
+        Gemmini~\cite{genc2021gemmini} generates arrays;
+        {LLVM}~\cite{lattner2004llvm}, {MLIR}~\cite{lattner2021mlir},
+        and kin lower graphs onto backends someone else already built,
+        with bloated and rapidly-changing codebases.
+\end{itemize}
+
+In general-purpose computing, the hardware-software\footnote{Unless otherwise specified, software means compiler} 
+contract has always been an Instruction Set Architecture (ISA) and an Application Binary Interface (ABI), defining
+what operations the CPU supports, general-purpose and purpose-specific registers, and how those registers should be
+used by a compiler, and how memory accesses are treated.
+The silent, underlying assumption was the homogeneity of the systems: every general-purpose computer built in the last 40+ years
+had the same architectural shape. A CPU talking to a DRAM controller, with multiple level of caches interposed in between.
+The functionality of the system could be extended by adding a card on an expansion slot, such as a Peripheral Component Interconnect Express ({PCIe}) network card or a Graphics Processing Unit ({GPU}).
+The card, which we can think of as an accelerator per se, was its own microsystem that lived in a vacuum, interfacing with the main 
+system by means of interrupts, PCIe transactions and kernel drivers.
+
+This approach has served us well for the last five decades in computer organization and design, but it is now shortchanging us when we try to design a simple, and yet elusive accelerator system.
+The heterogeneous nature of these systems makes it virtually impossible to have a clean, abstracted interface between hardware and software.
+The same way Linux had to introduce Device Tree ({DT}) files to support the growing pool of heterogeneous, ARM-based Systems-on-Chip ({SoCs}), we need to rethink the shape
+of the hardware--software interface in the era of AI accelerators.
+
+That is why I built \tv{}: an open-source, {RISC-V}-based {AI}
+accelerator infrastructure, composed of:
+\begin{itemize}
+  \item an extensible just-in-time ({JIT}) {AI} compiler (\pyv{});
+  \item a runtime eXtensible {C} Library ({XCL}).
+  \item a {RISC-V} core supporting {RV32IM} and the {RISC-V} Vector
+        embedded integer profile ({Zve32x});
+  \item an eXtensible Datapath Accelerator Interconnect ({XDAI});
+\end{itemize}
+
+\begin{figure}[t]
+  \centering
+  \input{pyvedas_flow}
+  \caption{\pyv{} compile flow: model and {SoC} description in;
+    graph and weights extracted; {C} against the {XCL}; stock
+    {RISC-V} {GNU} toolchain out.}
+  \label{fig:pyvedas-flow}
+\end{figure}
+
+The compiler, the runtime, the core, and that bus are the stack.
+
+\section{Concept and Overview}
+
+\pyv{} ingests a {PyTorch} model and a description of the target hardware, 
+including any Datapath Accelerator ({DA}) present on the
+{XDAI}.
+It extracts the model's computational graph and its weights, then
+lowers that graph into a {C} file whose calls target the {XCL}.
+The {XCL} holds the mappings from {PyTorch} primitives to their
+implementations.\footnote{For example, \texttt{aten.conv2d}.}
+Those lowering passes extend to new {DA}s on the {XDAI}, including the
+pre- and post-processing they need, such as tensor tiling and quantization
+calibration.
+The {C} is then linked against the {XCL} and built with the stock
+{RISC-V} {GNU} toolchain.
+
+
+To support a new {PyTorch} operator, \pyv{} needs a lowering candidate
+and the {XCL} needs the matching {C} function---an \texttt{ops.yaml}
+row, a codegen handler, and the sources it names.
+To hang a new datapath, the same recipe plus the hardware {YAML} so
+the {XDAI} decode and the {C} macros share one address window.
+The {XCL} body then programs that window instead of unrolling the
+work into {RISC-V}.
+
+Each {DA} is a Memory-Mapped Input/Output ({MMIO}) device onto the core address space.
+The reason why I choose to adopt an {MMIO} approach rather than implement
+custom RISC-V instruction is mainly ease of integration, and to define a clear
+boundary between Tiny-Vedas and third-party DAs. Supporting custom instructions
+means maintaining a custom version of the {RISC-V} {GNU} Compiler Collection ({GCC}), or an out-of-tree version of
+the RISC-V LLVM backend, which is simply impractical for most small teams.
+
+As a running example throughout the paper, I choose an \texttt{int8} quantized version of 
+{YOLOv3-Tiny}~\cite{redmon2018yolov3}, a popular computer vision model. The model is small enough to fit inside the
+available Static Random-Access Memory ({SRAM}) on the Xilinx Alveo~{U280} Field-Programmable Gate Array ({FPGA}), but complex enough to present challenges when implementing
+both software and hardware.
+
+As a DA, I designed an \texttt{int8} $8{\times}8$ GEMM unit, 
+representative of any third-party datapath accelerator you might want to attach to Tiny-Vedas,
+and used it to offload the backbone of {YOLOv3-Tiny}.

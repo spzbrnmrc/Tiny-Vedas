@@ -1,0 +1,38 @@
+% Separate MLSys appendix upload. Reviewers are not required to read it.
+\documentclass{article}
+
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\usepackage{mlsys2025}
+
+\mlsystitlerunning{Appendix --- Tiny-Vedas}
+
+\input{macros}
+
+\begin{document}
+
+\twocolumn[
+\mlsystitle{Appendix: Tiny-Vedas}
+
+\input{authors-mlsys}
+\mlsyskeywords{appendix}
+
+\vskip 0.3in
+\begin{abstract}
+Additional measurements and artifact notes for the main paper.
+The evaluation tables in the main text are self-contained.
+\end{abstract}
+]
+
+\printAffiliationsAndNotice{}
+
+\input{appendix}
+
+\bibliography{refs}
+\bibliographystyle{mlsys2025}
+
+\end{document}
