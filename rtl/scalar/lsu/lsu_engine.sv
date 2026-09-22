@@ -239,6 +239,12 @@ module lsu_engine (
 
   assign dc2_store_v = dc2_legal & dc2_store;
   assign dc2_load_v  = dc2_legal & dc2_load;
+  logic dc1_dram, dc2_dram, dram_dc2_wait;
+  assign dc1_dram = dc1_load & dc1_lsu_valid &
+                    (dc1_word0_addr >= DRAM_BASE) &&
+                    (dc1_word0_addr < (DRAM_BASE + DRAM_BYTES));
+  assign dram_dc2_wait = dc2_load_v & dc2_dram &
+                         ~(dccm_rvalid_out[0] | (dc2_unaligned_addr & dccm_rvalid_out[1]));
   assign dc2_word0_addr = {dc2_computed_addr[XLEN-1:2], 2'b00};
   assign dc2_word1_addr = {dc2_computed_addr[XLEN-1:2] + 30'd1, 2'b00};
   assign dc2_strb_wide = lsu_strb_wide(dc2_by, dc2_half, dc2_word, dc2_computed_addr[1:0]);
@@ -259,7 +265,7 @@ module lsu_engine (
   assign load_cross_hold  = dc1_lsu_valid & dc1_load & dc1_line_cross & ~load_cross_beat &
                             ~store_cross_hold;
   assign engine_stall = (dc1_lsu_valid & dc1_load & dc2_store_v) | store_cross_hold |
-                        load_cross_hold;
+                        load_cross_hold | dram_dc2_wait;
   assign dc1_hold = engine_stall;
 
   assign dc1_pipe_fwd0 = (dc1_load & dc1_legal) & dc2_store_v & (
@@ -329,13 +335,14 @@ module lsu_engine (
             dc1_fwd0_strb,
             dc1_fwd1_valid,
             dc1_fwd1_value,
-            dc1_fwd1_strb
+            dc1_fwd1_strb,
+            dc1_dram
           }
       ))
   ) dc2_dccm_rdata_reg (
       .clk(clk),
       .rstn(rstn),
-      .en(~store_cross_hold),
+      .en(~store_cross_hold & ~dram_dc2_wait),
       .din({
         dc1_by,
         dc1_half,
@@ -355,7 +362,8 @@ module lsu_engine (
         dc1_fwd0_strb,
         dc1_fwd1_valid,
         dc1_fwd1_value,
-        dc1_fwd1_strb
+        dc1_fwd1_strb,
+        dc1_dram
       }),
       .dout({
         dc2_by,
@@ -376,7 +384,8 @@ module lsu_engine (
         dc2_fwd0_strb,
         dc2_fwd1_valid,
         dc2_fwd1_value,
-        dc2_fwd1_strb
+        dc2_fwd1_strb,
+        dc2_dram
       })
   );
 
@@ -386,7 +395,7 @@ module lsu_engine (
   ) dc2_instr_tag_reg (
       .clk (clk),
       .rstn(rstn),
-      .en  (~store_cross_hold),
+      .en  (~store_cross_hold & ~dram_dc2_wait),
       .din (dc1_lsu_instr_tag_out),
       .dout(dc2_lsu_instr_tag_out)
   );
@@ -396,7 +405,7 @@ module lsu_engine (
   ) dc2_instr_out_reg (
       .clk (clk),
       .rstn(rstn),
-      .en  (~store_cross_hold),
+      .en  (~store_cross_hold & ~dram_dc2_wait),
       .din (dc1_lsu_instr_out),
       .dout(dc2_lsu_instr_out)
   );
@@ -437,7 +446,7 @@ module lsu_engine (
   assign dc2_load_buffer = dc2_load_shifted[XLEN-1:0];
 
   /* ****** DC3 ***** */
-  register_sync_rstn #(
+  register_en_sync_rstn #(
       .WIDTH($bits(
           {
             dc3_load_buffer,
@@ -457,6 +466,7 @@ module lsu_engine (
   ) dc3_dccm_rdata_reg (
       .clk(clk),
       .rstn(rstn),
+      .en(~dram_dc2_wait),
       .din({
         dc2_load_buffer,
         dc2_unaligned_addr,
@@ -488,20 +498,22 @@ module lsu_engine (
   );
 
 `ifdef TV_HAS_CORE_DEBUG
-  register_sync_rstn #(
+  register_en_sync_rstn #(
       .WIDTH(XLEN)
   ) dc3_instr_tag_reg (
       .clk (clk),
       .rstn(rstn),
+      .en  (~dram_dc2_wait),
       .din (dc2_lsu_instr_tag_out),
       .dout(dc3_lsu_instr_tag_out)
   );
 
-  register_sync_rstn #(
+  register_en_sync_rstn #(
       .WIDTH(32)
   ) dc3_instr_out_reg (
       .clk (clk),
       .rstn(rstn),
+      .en  (~dram_dc2_wait),
       .din (dc2_lsu_instr_out),
       .dout(dc3_lsu_instr_out)
   );

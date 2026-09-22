@@ -1063,13 +1063,14 @@ class RISC_V_ISS:
         """
         with open(hex_file, 'r') as f:
             addr = base_addr
-            for line in f:
-                line = line.strip()
+            for raw in f:
+                line = raw.split("//")[0].strip()
                 if not line:
                     continue
-                # Parse hex value (8 hex digits)
-                word = int(line, 16) & 0xFFFFFFFF
-                # Store as little-endian bytes
+                if line.startswith("@"):
+                    addr = base_addr + (int(line[1:], 16) & 0xFFFFFFFF) * 4
+                    continue
+                word = int(line.split()[0], 16) & 0xFFFFFFFF
                 self.mem.write_word(addr, word)
                 addr += 4
     
@@ -1078,6 +1079,8 @@ class RISC_V_ISS:
         # Load hex file first (preload data memory)
         if hex_file:
             self.load_hex_file(hex_file, base_addr=0)
+        if getattr(self, "dram_hex", None):
+            self.load_hex_file(self.dram_hex, base_addr=self.dram_base)
         
         # Load ELF file
         text_size = 0
@@ -1116,7 +1119,7 @@ class RISC_V_ISS:
         text_end_addr = text_section_addr + text_size
         
         # Execute instructions
-        max_instructions = 20000000  # Pack loops at -O0 exceed 1M on large GEMMs
+        max_instructions = getattr(self, "max_instructions", 20000000)
         instruction_count = 0
 
         with open(output_file, 'w') as trace_file:
@@ -1262,6 +1265,23 @@ Examples:
         default=None,
         help='HwConfig YAML; sets --vlen from vector.width_bits when enabled',
     )
+    parser.add_argument(
+        '--dram-file',
+        default=None,
+        help='Hex file to preload DRAM (32-bit words starting at --dram-base)',
+    )
+    parser.add_argument(
+        '--dram-base',
+        default='0x40000000',
+        type=lambda x: int(x, 0),
+        help='DRAM stub base address (default: 0x40000000)',
+    )
+    parser.add_argument(
+        '--max-instructions',
+        default=20000000,
+        type=int,
+        help='Stop after this many retired instructions (default: 20M)',
+    )
     
     args = parser.parse_args()
 
@@ -1272,6 +1292,7 @@ Examples:
         hw = load_hw_config(args.hw_config)
         if hw.has_vector_unit:
             vlen = hw.vector.width_bits
+        args.dram_base = hw.memory.dram_base
     
     iss = RISC_V_ISS(
         args.text_start,
@@ -1283,6 +1304,9 @@ Examples:
         gemm_size=args.gemm_size,
         vlen=vlen,
     )
+    iss.dram_hex = args.dram_file
+    iss.dram_base = args.dram_base
+    iss.max_instructions = args.max_instructions
     iss.run(args.elf_file, args.output, args.mem_file)
 
 

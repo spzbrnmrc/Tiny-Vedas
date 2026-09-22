@@ -11,6 +11,7 @@ fit the given byte budget. Software tiles are PE/K-aligned except remainders.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from os import environ
 from typing import List, Sequence, Tuple
 
 PE_DIM = 8
@@ -146,6 +147,114 @@ def matmul_out_shape(
         raise ValueError(f"inner dims differ ({k} vs {k2})")
     batch = broadcast_batch_shape(a_shape[:-2], b_shape[:-2])
     return batch + (m, n)
+
+
+# GEMM-K (cin*kh*kw) at or above this is a STREAM weight-reuse layer.
+# One OC of int32-expanded K is then >= 4 KiB; packing that blob is the pole.
+WEIGHT_REUSE_KDIM = 1024
+# int32 elements. Tiny-208 ``c21`` 384×13×13 = 64896; ``c12`` is 18432.
+STREAM_ACT_CAP = 65536
+
+
+def stream_act_fits(
+    n: int, cin: int, h: int, w: int, *, cap: int = STREAM_ACT_CAP
+) -> bool:
+    return int(n) * int(cin) * int(h) * int(w) <= int(cap)
+
+
+def conv_oc_tiles(cout: int, oc_t: int) -> int:
+    """Pack count when ``oc`` is outer (one ``pack_weight`` per OC tile)."""
+    t = max(1, int(oc_t))
+    return (int(cout) + t - 1) // t
+
+
+def conv_spatial_tiles(oh: int, ow: int, oh_t: int, ow_t: int) -> int:
+    if oh_t < 1 or ow_t < 1:
+        return 0
+    return ((int(oh) + oh_t - 1) // oh_t) * ((int(ow) + ow_t - 1) // ow_t)
+
+
+def choose_stream_conv_nest(
+    oh: int,
+    ow: int,
+    oh_t: int,
+    ow_t: int,
+    cout: int,
+    oc_t: int,
+    m_t: int,
+    kdim: int,
+    *,
+    act_n: int = 0,
+    forced: str | None = None,
+) -> str:
+    """Pick STREAM conv loop nest.
+
+    ``cache_col``: im2col once per spatial tile into distinct DCCM slots, then
+    ``oc``-outer pack. ``spatial_outer``: one ``stream_col``, pack inside ``ow``.
+    ``oc_outer``: one pack per OC tile, re-im2col per spatial tile.
+
+    ``act_n`` is call-site compatibility. The col cache overlays
+    activations from other layers, so it is not added to ``need``.
+    """
+    del act_n
+    name = (forced or environ.get("PYVEDAS_STREAM_NEST") or "").strip()
+    if name in ("oc_outer", "spatial_outer", "cache_col"):
+        return name
+    spatial = conv_spatial_tiles(oh, ow, oh_t, ow_t)
+    oc = conv_oc_tiles(cout, oc_t)
+    need = spatial * 4 * int(m_t) * int(kdim)
+    cap = (
+        DCCM_BYTES
+        - DCCM_RESERVE_BYTES
+        - SCRATCH_CAP_BYTES
+        - 128 * 1024
+    )
+    if spatial > 1 and spatial < oc and need <= cap:
+        return "cache_col"
+    return "spatial_outer"
+
+
+def choose_conv_tiles(
+    n: int,
+    cin: int,
+    cout: int,
+    kh: int,
+    kw: int,
+    oh: int,
+    ow: int,
+    budget: int = 196 * 1024,
+) -> Tuple[int, int, int]:
+    """Pick (oh_t, ow_t, oc_t) so col+wt+gemm fit *budget* bytes.
+
+    STREAM emit keeps ``oc`` outer (one pack per weight tile). When
+    ``kdim`` is huge, equal-MAC ties prefer a wider ``oc_t`` (fewer
+    packs) then more spatial under that tile, not a taller ``oh`` strip.
+    """
+    kdim = cin * kh * kw
+    oh_cands = [d for d in (oh, 16, 8, 4, 2, 1) if 0 < d <= oh]
+    ow_cands = [d for d in (ow, 16, 8, 4, 2, 1) if 0 < d <= ow]
+    oc_cands = [d for d in (cout, 64, 32, 16, 8, 4, 1) if 0 < d <= cout]
+    weight_reuse = kdim >= WEIGHT_REUSE_KDIM
+    best: Tuple[Tuple[int, ...], int, int, int] | None = None
+    for oh_t in oh_cands:
+        for ow_t in ow_cands:
+            m_t = n * oh_t * ow_t
+            for oc_t in oc_cands:
+                need = 4 * (m_t * kdim + kdim * oc_t + m_t * oc_t)
+                if need > budget:
+                    continue
+                work = m_t * oc_t * kdim
+                if weight_reuse:
+                    key: Tuple[int, ...] = (work, oc_t, m_t)
+                else:
+                    key = (work, oh_t, ow_t, oc_t)
+                cand = (key, oh_t, ow_t, oc_t)
+                if best is None or cand[0] > best[0]:
+                    best = cand
+    if best is None:
+        return 1, 1, 1
+    _, oh_t, ow_t, oc_t = best
+    return oh_t, ow_t, oc_t
 
 
 def numel(shape: Sequence[int]) -> int:

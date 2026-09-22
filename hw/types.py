@@ -57,6 +57,8 @@ class MemoryConfig:
     uart_address: int
     eot_address: int
     eot_magic: int
+    dram_base: int
+    dram_bytes: int
 
 
 @dataclass(frozen=True)

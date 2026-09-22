@@ -73,5 +73,6 @@ $PROJ/rtl/bus/lsu_dccm_bridge.sv
 $PROJ/rtl/bus/axi32_to_dccm.sv
 $PROJ/rtl/bus/gemm_dccm_pair.sv
 $PROJ/rtl/bus/soc_dccm.sv
+$PROJ/rtl/bus/axi4_dram_fpga.sv
 $BOARD_DIR/rtl/vedas_fpga_soc.sv
 $BOARD_DIR/rtl/vedas_fpga_soc_bd.v

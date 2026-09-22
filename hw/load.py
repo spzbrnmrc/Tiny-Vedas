@@ -328,6 +328,8 @@ def load_hw_config(path: Path | str | None = None) -> HwConfig:
             uart_address=uart.base,
             eot_address=eot.base,
             eot_magic=eot_magic,
+            dram_base=int(memory_raw.get("dram_base", 0x40000000)),
+            dram_bytes=int(memory_raw.get("dram_bytes", 16 * 1024 * 1024)),
         ),
         software=SoftwareHints(
             materializer=str(_require(software_raw, "materializer", "software")),

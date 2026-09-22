@@ -78,6 +78,8 @@ def render_soc_defines_h(hw: HwConfig) -> str:
     lines = [
         f"#define SOC_NAME           \"{soc.name}\"",
         f"#define SOC_LINK_ADDRESS   {_c_hex(hw.memory.link_address)}",
+        f"#define DRAM_BASE          {_c_hex(hw.memory.dram_base)}",
+        f"#define DRAM_BYTES         {_c_hex(hw.memory.dram_bytes)}",
         "",
     ]
     for d in soc.devices:
@@ -109,6 +111,8 @@ def render_soc_defines_inc(hw: HwConfig) -> str:
         ".ifndef SOC_DEFINES_INC",
         ".set SOC_DEFINES_INC, 1",
         f".equ SOC_LINK_ADDRESS, {_asm_hex(hw.memory.link_address)}",
+        f".equ DRAM_BASE, {_asm_hex(hw.memory.dram_base)}",
+        f".equ DRAM_BYTES, {_asm_hex(hw.memory.dram_bytes)}",
     ]
     for d in soc.devices:
         lines.append(f".equ {d.addr_macro}, {_asm_hex(d.base)}")

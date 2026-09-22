@@ -216,6 +216,14 @@ ops:
       - kind: c
         path: runtime/c/pyvedas_sigmoid_i32.c
 
+  pyvedas.requant_i32.default:
+    codegen: requant_i32
+    symbol: pyvedas_requant_i32
+    signature: "void pyvedas_requant_i32(const int32_t *x, int32_t *out, size_t n, int32_t mul, int32_t shift)"
+    sources:
+      - kind: c
+        path: runtime/c/pyvedas_requant_i32.c
+
   pyvedas.exp_i32.default:
     codegen: unary_same
     symbol: pyvedas_exp_i32

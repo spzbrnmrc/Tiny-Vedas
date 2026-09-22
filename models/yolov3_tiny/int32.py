@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Mapping, Tuple
 
 import torch
 import torch.nn as nn
@@ -40,12 +40,40 @@ from conv_op import conv2d  # noqa: E402
 from int_ops import (  # noqa: E402
     exp_i32,
     leaky_relu,
+    requant_i32,
     sigmoid_i32,
     upsample_bilinear,
     upsample_nearest,
 )
+from requant_cal import (  # noqa: E402
+    RequantCal,
+    apply_requant_calibration,
+    load_requant_cal,
+)
+
+INT32_CONV_NAMES = (
+    "c0",
+    "c2",
+    "c4",
+    "c6",
+    "c8",
+    "c10",
+    "c12",
+    "c13",
+    "c14",
+    "c15",
+    "c18",
+    "c21",
+    "c22",
+)
 
 Q8_ONE = 256
+
+
+def requant_params(cin: int, kh: int, kw: int) -> Tuple[int, int]:
+    """Fixed shift: keep spatial structure, land in int8 for the next GEMM pack."""
+    del cin, kh, kw
+    return 1, 7
 
 
 class Int32Conv(nn.Module):
@@ -58,6 +86,12 @@ class Int32Conv(nn.Module):
         stride: int,
         padding: int,
         leaky: bool,
+        *,
+        requant: bool = True,
+        requant_mul: int | None = None,
+        requant_shift: int | None = None,
+        weight_scale: torch.Tensor | None = None,
+        bias_f: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
         self.register_buffer("weight", weight_i8.to(torch.int32))
@@ -65,11 +99,29 @@ class Int32Conv(nn.Module):
         self.stride = int(stride)
         self.padding = int(padding)
         self.leaky = bool(leaky)
+        self.do_requant = bool(requant)
+        cin, kh, kw = int(weight_i8.shape[1]), int(weight_i8.shape[2]), int(weight_i8.shape[3])
+        mul, shift = requant_params(cin, kh, kw)
+        self.requant_mul = int(mul if requant_mul is None else requant_mul)
+        self.requant_shift = int(shift if requant_shift is None else requant_shift)
+        # Not buffers: unused in forward so export / STREAM skip them.
+        self.weight_scale = (
+            None
+            if weight_scale is None
+            else weight_scale.detach().to(torch.float32).reshape(-1).cpu()
+        )
+        self.bias_f = (
+            None
+            if bias_f is None
+            else bias_f.detach().to(torch.float32).reshape(-1).cpu()
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = conv2d(x, self.weight, self.bias, self.stride, self.padding)
         if self.leaky:
             y = leaky_relu(y)
+        if self.do_requant:
+            y = requant_i32(y, self.requant_mul, self.requant_shift)
         return y
 
 
@@ -128,17 +180,26 @@ class YoloV3TinyInt32(nn.Module):
         return det32, det16
 
 
-def _int32_from_int8_conv(layer: Int8Conv) -> Int32Conv:
+def _int32_from_int8_conv(layer: Int8Conv, *, requant: bool = True) -> Int32Conv:
     return Int32Conv(
         layer.weight_i8,
         torch.round(layer.bias).to(torch.int32),
         layer.stride,
         layer.padding,
         layer.leaky,
+        requant=requant,
+        weight_scale=layer.scale,
+        bias_f=layer.bias,
     )
 
 
-def _fused_int32_conv(layer: nn.Module, leaky: bool) -> Int32Conv:
+def _fused_int32_conv(
+    layer: nn.Module,
+    leaky: bool,
+    *,
+    requant: bool = True,
+    requant_shift: int | None = None,
+) -> Int32Conv:
     if isinstance(layer, nn.Conv2d):
         w = layer.weight.detach()
         b = (
@@ -153,9 +214,9 @@ def _fused_int32_conv(layer: nn.Module, leaky: bool) -> Int32Conv:
         leaky = True
     else:
         raise TypeError(f"cannot fuse {type(layer)}")
-    from .model import _quantize_per_out
+    from .model import _quantize_per_tensor
 
-    w_i8, _scale = _quantize_per_out(w)
+    w_i8, scale_w = _quantize_per_tensor(w)
     stride_i = stride if isinstance(stride, int) else int(stride[0])
     padding_i = padding if isinstance(padding, int) else int(padding[0])
     return Int32Conv(
@@ -164,38 +225,66 @@ def _fused_int32_conv(layer: nn.Module, leaky: bool) -> Int32Conv:
         stride_i,
         padding_i,
         leaky=leaky,
+        requant=requant,
+        requant_shift=requant_shift,
+        weight_scale=scale_w,
+        bias_f=b,
     )
 
 
-def quantize_int32(model: YoloV3Tiny) -> YoloV3TinyInt32:
-    """BN-fuse + per-channel weight int8, integer conv/leaky (JIT export)."""
+def _load_cal(cal: Path | str | RequantCal | Mapping[str, object] | None) -> RequantCal | None:
+    if cal is None:
+        return None
+    if isinstance(cal, RequantCal):
+        return cal
+    if isinstance(cal, Mapping):
+        raise TypeError("pass a RequantCal or a YAML path, not a raw mapping")
+    return load_requant_cal(cal)
+
+
+def quantize_int32(
+    model: YoloV3Tiny,
+    *,
+    requant: bool = True,
+    cal: Path | str | RequantCal | None = None,
+) -> YoloV3TinyInt32:
+    """BN-fuse + per-tensor weight int8, integer conv/leaky (JIT export).
+
+    Per-tensor ``scale_w`` is what scalar ``requant_i32`` can invert.
+    Without ``cal``, requant stays ``(1, 7)`` (detect heads ``>>6``) and
+    bias is ``round(b)``. With ``cal``, ``apply_requant_calibration``
+    writes per-layer ``(M, S)`` and scaled bias.
+    """
     model.eval()
     leaky_tail = {9: False, 12: False}
     convs: List[Int32Conv] = []
     for i, layer in enumerate(model.darknet_convs()):
-        convs.append(_fused_int32_conv(layer, leaky=i not in leaky_tail))
-    return YoloV3TinyInt32(convs)
+        if i in leaky_tail:
+            convs.append(
+                _fused_int32_conv(
+                    layer, leaky=False, requant=requant, requant_shift=6
+                )
+            )
+        else:
+            convs.append(
+                _fused_int32_conv(
+                    layer, leaky=True, requant=requant
+                )
+            )
+    out = YoloV3TinyInt32(convs)
+    loaded = _load_cal(cal)
+    if loaded is not None:
+        apply_requant_calibration(out, loaded)
+    return out
 
 
-def int32_from_int8(model: YoloV3TinyInt8) -> YoloV3TinyInt32:
+def int32_from_int8(model: YoloV3TinyInt8, *, requant: bool = True) -> YoloV3TinyInt32:
     """Drop float scales; reuse int8 kernels and rounded bias."""
     convs = [
-        _int32_from_int8_conv(getattr(model, name))
-        for name in (
-            "c0",
-            "c2",
-            "c4",
-            "c6",
-            "c8",
-            "c10",
-            "c12",
-            "c13",
-            "c14",
-            "c15",
-            "c18",
-            "c21",
-            "c22",
+        _int32_from_int8_conv(
+            getattr(model, name), requant=requant and getattr(model, name).leaky
         )
+        for name in INT32_CONV_NAMES
     ]
     return YoloV3TinyInt32(convs)
 

@@ -142,7 +142,7 @@ if {![regexp {clk_out1_pcie_bd_clk_wiz_0_0\s+(-?[0-9]+\.[0-9]+)\s+(-?[0-9]+\.[0-
   error "Could not parse core clk_out1 WNS from timing report"
 }
 if {$core_wns < 0} {
-  error "Core 100 MHz timing failed: clk_out1 WNS=$core_wns ns"
+  error "Core clk_out1 timing failed: WNS=$core_wns ns"
 }
 puts "TIMING_OK: core_clk WNS=${core_wns} ns TNS=${core_tns} ns (CDC waived)"
 

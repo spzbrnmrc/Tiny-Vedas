@@ -17,11 +17,17 @@ if str(_PYVEDAS) not in sys.path:
 
 from jit.memory.gemm_tiles import (  # noqa: E402
     SCRATCH_CAP_BYTES,
+    STREAM_ACT_CAP,
+    WEIGHT_REUSE_KDIM,
+    choose_conv_tiles,
+    choose_stream_conv_nest,
     choose_tile,
+    conv_oc_tiles,
     live_bytes_2d,
     matmul_out_shape,
     plan_gemm_jobs,
     scratch_budget,
+    stream_act_fits,
     tile_scratch_bytes,
 )
 
@@ -82,6 +88,43 @@ class TestForcedSmallBudget(unittest.TestCase):
     def test_no_fit_returns_empty(self) -> None:
         self.assertEqual(plan_gemm_jobs(8, 8, 32, 16), [])
         self.assertIsNone(choose_tile(8, 8, 32, 16))
+
+
+class TestChooseConvTiles(unittest.TestCase):
+    def test_c12_tiny208_same_196kib_tiles(self) -> None:
+        # Tiny-208 c12: 1x512x6x6, 1024x512x3x3 → oh=ow=6, kdim=4608.
+        oh_t, ow_t, oc_t = choose_conv_tiles(1, 512, 1024, 3, 3, 6, 6)
+        self.assertEqual((oh_t, ow_t, oc_t), (6, 1, 4))
+        kdim = 512 * 3 * 3
+        self.assertGreaterEqual(kdim, WEIGHT_REUSE_KDIM)
+        m_t = 1 * oh_t * ow_t
+        need = 4 * (m_t * kdim + kdim * oc_t + m_t * oc_t)
+        self.assertLessEqual(need, 196 * 1024)
+        # oc-outer pack count (was 6 * 256 = 1536 when pack sat in ow).
+        self.assertEqual(conv_oc_tiles(1024, oc_t), 256)
+        self.assertTrue(stream_act_fits(1, 512, 6, 6))
+        self.assertEqual(
+            choose_stream_conv_nest(
+                6, 6, oh_t, ow_t, 1024, oc_t, m_t, kdim, act_n=0
+            ),
+            "cache_col",
+        )
+        # 13x13 7-tile cache is 838 KiB; live set with wt/acc/gemm misses 1 MiB.
+        oh13, ow13, oc13 = choose_conv_tiles(1, 128, 256, 3, 3, 13, 13)
+        m13 = 1 * oh13 * ow13
+        k13 = 128 * 3 * 3
+        self.assertEqual(
+            choose_stream_conv_nest(
+                13, 13, oh13, ow13, 256, oc13, m13, k13, act_n=0
+            ),
+            "spatial_outer",
+        )
+        self.assertTrue(stream_act_fits(1, 384, 13, 13, cap=STREAM_ACT_CAP))
+        self.assertFalse(stream_act_fits(1, 3, 208, 208))
+
+    def test_small_k_maximizes_mac_work(self) -> None:
+        oh_t, ow_t, oc_t = choose_conv_tiles(1, 1, 2, 3, 3, 4, 4)
+        self.assertEqual((oh_t, ow_t, oc_t), (4, 4, 2))
 
 
 class TestMatmulShapes(unittest.TestCase):

@@ -28,6 +28,7 @@
 module soc_top #(
     parameter string ICCM_INIT_FILE = "",
     parameter string DCCM_INIT_FILE = "",
+    parameter string DRAM_INIT_FILE = "",
     parameter logic [XLEN-1:0] STACK_POINTER_INIT_VALUE = 32'h80000000
 ) (
 
@@ -82,6 +83,10 @@ module soc_top #(
 
   function automatic logic gemm_addr_hit(input logic [31:0] a);
     return (a >= MMIO_GEMM_ADDR) && (a < (MMIO_GEMM_ADDR + MMIO_GEMM_SIZE));
+  endfunction
+
+  function automatic logic dram_addr_hit(input logic [31:0] a);
+    return (a >= DRAM_BASE) && (a < (DRAM_BASE + DRAM_BYTES));
   endfunction
 
   core_top #(
@@ -203,10 +208,21 @@ module soc_top #(
   logic            gemm_rd_hit_q  [LSU_DCCM_PORT_COUNT-1:0];
   logic            lsu_rvalid_mem [LSU_DCCM_PORT_COUNT-1:0];
 
+  logic            dram_rd_hit    [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dram_rd_hit_q  [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dram_wen       [LSU_DCCM_PORT_COUNT-1:0];
+  logic [XLEN-1:0] dram_rdata     [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dram_rvalid    [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dccm_wen_core  [LSU_DCCM_PORT_COUNT-1:0];
+
   generate
     for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_lsu_gate
       assign gemm_rd_hit[gp]    = dccm_rvalid_in[gp] && gemm_addr_hit(dccm_raddr[gp]);
-      assign lsu_rvalid_mem[gp] = dccm_rvalid_in[gp] && !gemm_rd_hit[gp] && !gemm_busy_w;
+      assign dram_rd_hit[gp]    = dccm_rvalid_in[gp] && dram_addr_hit(dccm_raddr[gp]);
+      assign dram_wen[gp]       = dccm_wen_mem[gp] && dram_addr_hit(dccm_waddr[gp]);
+      assign dccm_wen_core[gp]  = dccm_wen_mem[gp] && !dram_addr_hit(dccm_waddr[gp]);
+      assign lsu_rvalid_mem[gp] = dccm_rvalid_in[gp] && !gemm_rd_hit[gp] &&
+                                  !dram_rd_hit[gp] && !gemm_busy_w;
     end
   endgenerate
 
@@ -223,7 +239,7 @@ module soc_top #(
       .lsu_rdata     (lsu_rdata),
       .lsu_rvalid_out(lsu_rvalid_out),
       .lsu_waddr     (dccm_waddr),
-      .lsu_wen       (dccm_wen_mem),
+      .lsu_wen       (dccm_wen_core),
       .lsu_wdata     (dccm_wdata),
       .lsu_wstrb     (dccm_wstrb),
       .dccm_req      (s_req),
@@ -273,18 +289,211 @@ module soc_top #(
 
   always_ff @(posedge clk) begin
     if (!rstn) begin
-      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) gemm_rd_hit_q[p] <= 1'b0;
+      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) begin
+        gemm_rd_hit_q[p] <= 1'b0;
+        dram_rd_hit_q[p] <= 1'b0;
+      end
     end else begin
-      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) gemm_rd_hit_q[p] <= gemm_rd_hit[p];
+      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) begin
+        gemm_rd_hit_q[p] <= gemm_rd_hit[p];
+        if (dram_rd_hit[p])
+          dram_rd_hit_q[p] <= 1'b1;
+        else if (dram_rvalid[p])
+          dram_rd_hit_q[p] <= 1'b0;
+      end
     end
   end
 
   generate
     for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_rdata_mux
-      assign dccm_rdata[gp]      = gemm_rd_hit_q[gp] ? gemm_rdata : lsu_rdata[gp];
-      assign dccm_rvalid_out[gp] = gemm_rd_hit_q[gp] ? gemm_rvalid : lsu_rvalid_out[gp];
+      assign dccm_rdata[gp]      = gemm_rd_hit_q[gp] ? gemm_rdata :
+                                   (dram_rd_hit_q[gp] ? dram_rdata[gp] : lsu_rdata[gp]);
+      assign dccm_rvalid_out[gp] = gemm_rd_hit_q[gp] ? gemm_rvalid :
+                                   (dram_rd_hit_q[gp] ? dram_rvalid[gp] : lsu_rvalid_out[gp]);
     end
   endgenerate
+
+  /* LSU → AXI DRAM stub (GEMM stays on DCCM). */
+  logic [   AXI_ID_WIDTH-1:0] d0_arid, d1_arid;
+  logic [ AXI_ADDR_WIDTH-1:0] d0_araddr, d1_araddr;
+  logic [   AXI_LEN_WIDTH-1:0] d0_arlen, d1_arlen;
+  logic [  AXI_SIZE_WIDTH-1:0] d0_arsize, d1_arsize;
+  logic [ AXI_BURST_WIDTH-1:0] d0_arburst, d1_arburst;
+  logic                        d0_arvalid, d1_arvalid, d0_arready, d1_arready;
+  logic [   AXI_ID_WIDTH-1:0] d0_rid, d1_rid;
+  logic [AXI_DATA_WIDTH-1:0]  d0_rdata, d1_rdata;
+  logic [ AXI_RESP_WIDTH-1:0] d0_rresp, d1_rresp;
+  logic                        d0_rlast, d1_rlast, d0_rvalid, d1_rvalid, d0_rready, d1_rready;
+  logic [   AXI_ID_WIDTH-1:0] d0_awid, d1_awid;
+  logic [ AXI_ADDR_WIDTH-1:0] d0_awaddr, d1_awaddr;
+  logic [   AXI_LEN_WIDTH-1:0] d0_awlen, d1_awlen;
+  logic [  AXI_SIZE_WIDTH-1:0] d0_awsize, d1_awsize;
+  logic [ AXI_BURST_WIDTH-1:0] d0_awburst, d1_awburst;
+  logic                        d0_awvalid, d1_awvalid, d0_awready, d1_awready;
+  logic [AXI_DATA_WIDTH-1:0]  d0_wdata, d1_wdata;
+  logic [AXI_STRB_WIDTH-1:0]  d0_wstrb, d1_wstrb;
+  logic                        d0_wlast, d1_wlast, d0_wvalid, d1_wvalid, d0_wready, d1_wready;
+  logic [   AXI_ID_WIDTH-1:0] d0_bid, d1_bid;
+  logic [ AXI_RESP_WIDTH-1:0] d0_bresp, d1_bresp;
+  logic                        d0_bvalid, d1_bvalid, d0_bready, d1_bready;
+
+  dmem_to_axi4 u_dram0 (
+      .clk            (clk),
+      .rstn           (rstn),
+      .dccm_raddr     (dccm_raddr[0]),
+      .dccm_rvalid_in (dram_rd_hit[0]),
+      .dccm_rdata     (dram_rdata[0]),
+      .dccm_rvalid_out(dram_rvalid[0]),
+      .dccm_waddr     (dccm_waddr[0]),
+      .dccm_wen       (dram_wen[0]),
+      .dccm_wdata     (dccm_wdata[0]),
+      .dccm_wstrb     (dccm_wstrb[0]),
+      .m_axi_arid     (d0_arid),
+      .m_axi_araddr   (d0_araddr),
+      .m_axi_arlen    (d0_arlen),
+      .m_axi_arsize   (d0_arsize),
+      .m_axi_arburst  (d0_arburst),
+      .m_axi_arvalid  (d0_arvalid),
+      .m_axi_arready  (d0_arready),
+      .m_axi_rid      (d0_rid),
+      .m_axi_rdata    (d0_rdata),
+      .m_axi_rresp    (d0_rresp),
+      .m_axi_rlast    (d0_rlast),
+      .m_axi_rvalid   (d0_rvalid),
+      .m_axi_rready   (d0_rready),
+      .m_axi_awid     (d0_awid),
+      .m_axi_awaddr   (d0_awaddr),
+      .m_axi_awlen    (d0_awlen),
+      .m_axi_awsize   (d0_awsize),
+      .m_axi_awburst  (d0_awburst),
+      .m_axi_awvalid  (d0_awvalid),
+      .m_axi_awready  (d0_awready),
+      .m_axi_wdata    (d0_wdata),
+      .m_axi_wstrb    (d0_wstrb),
+      .m_axi_wlast    (d0_wlast),
+      .m_axi_wvalid   (d0_wvalid),
+      .m_axi_wready   (d0_wready),
+      .m_axi_bid      (d0_bid),
+      .m_axi_bresp    (d0_bresp),
+      .m_axi_bvalid   (d0_bvalid),
+      .m_axi_bready   (d0_bready)
+  );
+
+  dmem_to_axi4 u_dram1 (
+      .clk            (clk),
+      .rstn           (rstn),
+      .dccm_raddr     (dccm_raddr[1]),
+      .dccm_rvalid_in (dram_rd_hit[1]),
+      .dccm_rdata     (dram_rdata[1]),
+      .dccm_rvalid_out(dram_rvalid[1]),
+      .dccm_waddr     (dccm_waddr[1]),
+      .dccm_wen       (dram_wen[1]),
+      .dccm_wdata     (dccm_wdata[1]),
+      .dccm_wstrb     (dccm_wstrb[1]),
+      .m_axi_arid     (d1_arid),
+      .m_axi_araddr   (d1_araddr),
+      .m_axi_arlen    (d1_arlen),
+      .m_axi_arsize   (d1_arsize),
+      .m_axi_arburst  (d1_arburst),
+      .m_axi_arvalid  (d1_arvalid),
+      .m_axi_arready  (d1_arready),
+      .m_axi_rid      (d1_rid),
+      .m_axi_rdata    (d1_rdata),
+      .m_axi_rresp    (d1_rresp),
+      .m_axi_rlast    (d1_rlast),
+      .m_axi_rvalid   (d1_rvalid),
+      .m_axi_rready   (d1_rready),
+      .m_axi_awid     (d1_awid),
+      .m_axi_awaddr   (d1_awaddr),
+      .m_axi_awlen    (d1_awlen),
+      .m_axi_awsize   (d1_awsize),
+      .m_axi_awburst  (d1_awburst),
+      .m_axi_awvalid  (d1_awvalid),
+      .m_axi_awready  (d1_awready),
+      .m_axi_wdata    (d1_wdata),
+      .m_axi_wstrb    (d1_wstrb),
+      .m_axi_wlast    (d1_wlast),
+      .m_axi_wvalid   (d1_wvalid),
+      .m_axi_wready   (d1_wready),
+      .m_axi_bid      (d1_bid),
+      .m_axi_bresp    (d1_bresp),
+      .m_axi_bvalid   (d1_bvalid),
+      .m_axi_bready   (d1_bready)
+  );
+
+  axi4_dram #(
+      .DEPTH(DRAM_BYTES / 4),
+      .BASE(DRAM_BASE),
+      .INIT_FILE(DRAM_INIT_FILE)
+  ) u_dram (
+      .clk          (clk),
+      .rstn         (rstn),
+      .s0_axi_arid  (d0_arid),
+      .s0_axi_araddr(d0_araddr),
+      .s0_axi_arlen (d0_arlen),
+      .s0_axi_arsize(d0_arsize),
+      .s0_axi_arburst(d0_arburst),
+      .s0_axi_arvalid(d0_arvalid),
+      .s0_axi_arready(d0_arready),
+      .s0_axi_rid   (d0_rid),
+      .s0_axi_rdata (d0_rdata),
+      .s0_axi_rresp (d0_rresp),
+      .s0_axi_rlast (d0_rlast),
+      .s0_axi_rvalid(d0_rvalid),
+      .s0_axi_rready(d0_rready),
+      .s0_axi_awid  (d0_awid),
+      .s0_axi_awaddr(d0_awaddr),
+      .s0_axi_awlen (d0_awlen),
+      .s0_axi_awsize(d0_awsize),
+      .s0_axi_awburst(d0_awburst),
+      .s0_axi_awvalid(d0_awvalid),
+      .s0_axi_awready(d0_awready),
+      .s0_axi_wdata (d0_wdata),
+      .s0_axi_wstrb (d0_wstrb),
+      .s0_axi_wlast (d0_wlast),
+      .s0_axi_wvalid(d0_wvalid),
+      .s0_axi_wready(d0_wready),
+      .s0_axi_bid   (d0_bid),
+      .s0_axi_bresp (d0_bresp),
+      .s0_axi_bvalid(d0_bvalid),
+      .s0_axi_bready(d0_bready),
+      .s1_axi_arid  (d1_arid),
+      .s1_axi_araddr(d1_araddr),
+      .s1_axi_arlen (d1_arlen),
+      .s1_axi_arsize(d1_arsize),
+      .s1_axi_arburst(d1_arburst),
+      .s1_axi_arvalid(d1_arvalid),
+      .s1_axi_arready(d1_arready),
+      .s1_axi_rid   (d1_rid),
+      .s1_axi_rdata (d1_rdata),
+      .s1_axi_rresp (d1_rresp),
+      .s1_axi_rlast (d1_rlast),
+      .s1_axi_rvalid(d1_rvalid),
+      .s1_axi_rready(d1_rready),
+      .s1_axi_awid  (d1_awid),
+      .s1_axi_awaddr(d1_awaddr),
+      .s1_axi_awlen (d1_awlen),
+      .s1_axi_awsize(d1_awsize),
+      .s1_axi_awburst(d1_awburst),
+      .s1_axi_awvalid(d1_awvalid),
+      .s1_axi_awready(d1_awready),
+      .s1_axi_wdata (d1_wdata),
+      .s1_axi_wstrb (d1_wstrb),
+      .s1_axi_wlast (d1_wlast),
+      .s1_axi_wvalid(d1_wvalid),
+      .s1_axi_wready(d1_wready),
+      .s1_axi_bid   (d1_bid),
+      .s1_axi_bresp (d1_bresp),
+      .s1_axi_bvalid(d1_bvalid),
+      .s1_axi_bready(d1_bready),
+      .host_en      (1'b0),
+      .host_wr      (1'b0),
+      .host_addr    (32'd0),
+      .host_din     (32'd0),
+      .host_wstrb   (4'd0),
+      .host_dout    (),
+      .host_rvalid  ()
+  );
 
   /* GEMM DMA AXI masters */
   logic [   AXI_ID_WIDTH-1:0] g0_arid, g1_arid;

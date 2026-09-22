@@ -23,6 +23,7 @@ c.helloworld
 c.iaxpy
 c.gemm_8x8
 c.gemm_multi
+c.dram_memcpy
 pyvedas.vector_add
 pyvedas.matrix_add
 pyvedas.tensor_add
@@ -44,6 +45,9 @@ pyvedas.permute
 pyvedas.sigmoid_exp
 pyvedas.decode_heads
 pyvedas.yolo_mini
+pyvedas.conv2d_stream
+pyvedas.yolo_mini_stream
+pyvedas.requant
 elf.dhrystone
 asm.rvv_vset if vector.enabled
 asm.rvv_csrr if vector.enabled

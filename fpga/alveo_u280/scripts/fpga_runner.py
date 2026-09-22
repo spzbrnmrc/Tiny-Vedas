@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from elftools.elf.elffile import ELFFile
+from elftools.elf.sections import SymbolTableSection
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
@@ -55,7 +56,46 @@ ICCM_BYTES = ICCM_SIZE
 DCCM_BYTES = DCCM_SIZE
 LINK_BASE_OFFSET = 0x00100000
 
-DATA_SECTIONS = (".data", ".rodata", ".bss", ".sdata", ".init_array", ".fini_array")
+DATA_SECTIONS = (
+    ".data",
+    ".rodata",
+    ".bss",
+    ".sbss",
+    ".sdata",
+    ".init_array",
+    ".fini_array",
+)
+
+
+def elf_symbol_addr(elf_path: Path, name: str) -> int:
+    with elf_path.open("rb") as f:
+        elf = ELFFile(f)
+        for sec in elf.iter_sections():
+            if not isinstance(sec, SymbolTableSection):
+                continue
+            for sym in sec.iter_symbols():
+                if sym.name == name:
+                    return int(sym["st_value"])
+    raise RuntimeError(f"{elf_path}: no symbol {name}")
+
+
+def parse_dram_hex(path: Path, nbytes: int) -> bytes:
+    """Sparse ``$readmemh`` word image at DRAM_BASE → dense byte blob."""
+    blob = bytearray(nbytes)
+    idx = 0
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("//")[0].strip()
+        if not line:
+            continue
+        if line.startswith("@"):
+            idx = int(line[1:], 16)
+            continue
+        word = int(line.split()[0], 16) & 0xFFFFFFFF
+        off = idx * 4
+        if 0 <= off + 4 <= nbytes:
+            blob[off : off + 4] = word.to_bytes(4, "little")
+        idx += 1
+    return bytes(blob)
 
 # Known UART goldens (when --no-uart-check is not set)
 UART_GOLDEN = {
@@ -105,6 +145,7 @@ class FpgaImage:
     reset_vector: int
     iccm: bytes
     dccm: bytes  # full DCCM_BYTES image (zeros + sections)
+    dram: bytes = b""  # DRAM stub image; empty if unused
 
 
 @dataclass
@@ -175,7 +216,11 @@ def prepare_test(test: str, hw_config) -> FpgaImage:
     elf_path = _REPO_ROOT / "work" / test / "test.elf"
     if not elf_path.is_file():
         raise RuntimeError(f"{test}: missing {elf_path}")
-    return elf_to_fpga_image(elf_path, test, reset_vector)
+    img = elf_to_fpga_image(elf_path, test, reset_vector)
+    dram_hex = _REPO_ROOT / "work" / test / "dram.hex"
+    if dram_hex.is_file():
+        img.dram = parse_dram_hex(dram_hex, hw_config.memory.dram_bytes)
+    return img
 
 
 def check_ctrl(bar: VedasBar2) -> None:
@@ -208,6 +253,8 @@ def load_and_run(
     bar.write_bytes(DCCM_BASE, b"\x00" * DCCM_BYTES)
     bar.load_iccm(img.iccm, link_addr=LINK_BASE)
     bar.load_dccm(img.dccm, offset=0)
+    if img.dram:
+        bar.load_dram(img.dram)
     bar.set_reset_vector(img.reset_vector)
 
     try:
@@ -312,12 +359,16 @@ def main() -> int:
             print(
                 f"[fpga_runner] load iccm={len(img.iccm)}B "
                 f"dccm_nonzero={sum(1 for b in img.dccm if b)}B "
+                f"dram={len(img.dram)}B "
                 f"reset=0x{img.reset_vector:08x}"
             )
+            timeout = args.timeout
+            if img.dram and timeout < 120.0:
+                timeout = 120.0
             rr = load_and_run(
                 bar,
                 img,
-                timeout_s=args.timeout,
+                timeout_s=timeout,
                 expect_uart=expect,
             )
             results.append(rr)
@@ -335,6 +386,11 @@ def main() -> int:
                     f"[fpga_runner] PASS {test} EOT={rr.elapsed_s*1e3:.2f}ms "
                     f"UART={uart_s!r}{extra}"
                 )
+                if img.dram:
+                    print(
+                        f"[fpga_runner] {test} card ms/frame={rr.elapsed_s*1e3:.2f} "
+                        f"(host EOT, same clock as Dhrystone)"
+                    )
             else:
                 uart_s = rr.uart.decode("utf-8", errors="replace") if rr.uart else ""
                 print(

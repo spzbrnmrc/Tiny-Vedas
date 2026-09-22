@@ -237,6 +237,15 @@ def _quantize_per_out(weight: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]
     return q.to(torch.int8), scale.to(torch.float32)
 
 
+def _quantize_per_tensor(weight: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """One scale for all out-channels so scalar ``requant_i32`` can invert it."""
+    max_abs = weight.detach().abs().amax().clamp(min=1e-8)
+    scale = max_abs / 127.0
+    q = torch.clamp(torch.round(weight / scale), -128, 127)
+    out_ch = int(weight.shape[0])
+    return q.to(torch.int8), scale.to(torch.float32).expand(out_ch).contiguous()
+
+
 def _fused_int8_conv(layer: nn.Module, leaky: bool) -> Int8Conv:
     if isinstance(layer, nn.Conv2d):
         w = layer.weight.detach()

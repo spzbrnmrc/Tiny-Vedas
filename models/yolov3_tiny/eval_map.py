@@ -15,8 +15,9 @@ from typing import List, Tuple
 import torch
 import torch.nn as nn
 
+from .int32 import DecodeHeadsInt32, quantize_int32
 from .model import YoloV3Tiny, quantize_int8
-from .post import detections, letterbox, map50, xywhn_to_xyxy
+from .post import detections, detections_from_i32, letterbox, map50, xywhn_to_xyxy
 from .weights import default_cache_dir, default_weights_path, download_weights, load_darknet_weights
 
 COCO128_URL = (
@@ -125,6 +126,98 @@ def evaluate(
     return map50(preds, tgts)
 
 
+@torch.no_grad()
+def evaluate_int32(
+    backbone: nn.Module,
+    decode: nn.Module,
+    pairs: List[Tuple[Path, Path]],
+    size: int,
+    *,
+    conf_thresh: float,
+    iou_thresh: float,
+    limit: int | None,
+) -> float:
+    """Integer backbone+decode, host NMS. Not equated to float-dequant 0.3469."""
+    backbone.eval()
+    decode.eval()
+    preds: List[torch.Tensor] = []
+    tgts: List[torch.Tensor] = []
+    use = pairs if limit is None else pairs[:limit]
+    for img_path, lab_path in use:
+        image = load_image(img_path)
+        _, h, w = image.shape
+        canvas, scale, left, top = letterbox(image, size)
+        canvas_i = torch.round(canvas * 255.0).clamp(0, 255).to(torch.int32) - 128
+        canvas_i = canvas_i.clamp(-127, 127)
+        d32, d16 = backbone(canvas_i.unsqueeze(0))
+        boxes, obj, cls = decode(d32, d16)
+        det = detections_from_i32(
+            boxes,
+            obj,
+            cls,
+            conf_thresh=conf_thresh,
+            iou_thresh=iou_thresh,
+            orig_hw=(h, w),
+            scale=scale,
+            left=left,
+            top=top,
+        )[0]
+        labels = read_yolo_txt(lab_path)
+        tgts.append(xywhn_to_xyxy(labels, h, w))
+        preds.append(det)
+    return map50(preds, tgts)
+
+
+@torch.no_grad()
+def evaluate_card(
+    pairs: List[Tuple[Path, Path]],
+    size: int,
+    *,
+    weights: Path,
+    work_dir: Path,
+    conf_thresh: float,
+    iou_thresh: float,
+    limit: int | None,
+    timeout_s: float,
+    cal: Path | None,
+) -> Tuple[float, float]:
+    """STREAM backbone on the U280, host decode+NMS. Returns (mAP@0.5, mean ms)."""
+    from .card import detect_card
+
+    preds: List[torch.Tensor] = []
+    tgts: List[torch.Tensor] = []
+    times_ms: List[float] = []
+    use = pairs if limit is None else pairs[:limit]
+    n = len(use)
+    for i, (img_path, lab_path) in enumerate(use, start=1):
+        image = load_image(img_path)
+        _, h, w = image.shape
+        det, elapsed = detect_card(
+            image,
+            size,
+            conf_thresh,
+            iou_thresh,
+            work_dir,
+            weights=weights,
+            timeout_s=timeout_s,
+            cal=cal,
+            decode_on_core=False,
+        )
+        ms = elapsed * 1e3
+        times_ms.append(ms)
+        labels = read_yolo_txt(lab_path)
+        tgts.append(xywhn_to_xyxy(labels, h, w))
+        preds.append(det)
+        print(
+            f"[card] {i}/{n} {img_path.name} eot={ms:.1f}ms "
+            f"boxes={int(det.shape[0])}",
+            flush=True,
+        )
+    score = map50(preds, tgts)
+    mean_ms = (sum(times_ms) / len(times_ms)) if times_ms else 0.0
+    return score, mean_ms
+
+
 def build_model(*, int8: bool, weights: Path) -> nn.Module:
     model = YoloV3Tiny()
     load_darknet_weights(model, weights)
@@ -152,6 +245,34 @@ def main(argv: List[str] | None = None) -> int:
         action="store_true",
         help="Evaluate fused-off float Darknet weights (default is int8)",
     )
+    parser.add_argument(
+        "--int32",
+        action="store_true",
+        help="Integer backbone+decode (requant) and host NMS; not 0.3469",
+    )
+    parser.add_argument(
+        "--card",
+        action="store_true",
+        help="U280 STREAM backbone, host decode+NMS; prints mAP and ms/frame",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=Path,
+        default=None,
+        help="STREAM ELF directory (default work/yolo_card_<size>)",
+    )
+    parser.add_argument(
+        "--eot-timeout",
+        type=float,
+        default=400.0,
+        help="Card host-EOT timeout in seconds (default 400)",
+    )
+    parser.add_argument(
+        "--cal",
+        type=Path,
+        default=None,
+        help="Requant calibration YAML (off = first-design (1,7)/(1,6))",
+    )
     parser.add_argument("--download", action="store_true")
     args = parser.parse_args(argv)
 
@@ -162,6 +283,52 @@ def main(argv: List[str] | None = None) -> int:
     data = args.data
     if data is None:
         data = download_coco128(default_cache_dir())
+
+    pairs = iter_dataset(data)
+    if args.card and args.int32:
+        raise SystemExit("use --card or --int32, not both")
+    if args.card:
+        work_dir = (args.work_dir or Path(f"work/yolo_card_{args.size}")).resolve()
+        conf = 0.05 if args.conf == 0.25 else args.conf
+        score, mean_ms = evaluate_card(
+            pairs,
+            args.size,
+            weights=weights,
+            work_dir=work_dir,
+            conf_thresh=conf,
+            iou_thresh=args.nms_iou,
+            limit=args.limit,
+            timeout_s=args.eot_timeout,
+            cal=args.cal,
+        )
+        cal_note = f" cal={args.cal}" if args.cal is not None else ""
+        n = args.limit or len(pairs)
+        print(
+            f"mAP@0.5 card size={args.size} n={n}: {score:.6f} "
+            f"(80 MHz; mean {mean_ms:.1f} ms/frame; integer requant; "
+            f"not 0.3469){cal_note}"
+        )
+        return 0 if score > 0 else 1
+    if args.int32:
+        float_m = YoloV3Tiny()
+        load_darknet_weights(float_m, weights)
+        backbone = quantize_int32(float_m, requant=True, cal=args.cal)
+        decode = DecodeHeadsInt32(args.size)
+        score = evaluate_int32(
+            backbone,
+            decode,
+            pairs,
+            args.size,
+            conf_thresh=0.05,
+            iou_thresh=args.nms_iou,
+            limit=args.limit,
+        )
+        cal_note = f" cal={args.cal}" if args.cal is not None else ""
+        print(
+            f"mAP@0.5 int32 size={args.size} n={args.limit or len(pairs)}: "
+            f"{score:.6f} (integer requant; not 0.3469){cal_note}"
+        )
+        return 0 if score > 0 else 1
 
     model = build_model(int8=not args.float, weights=weights)
     pairs = iter_dataset(data)

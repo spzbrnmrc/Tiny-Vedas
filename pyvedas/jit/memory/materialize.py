@@ -15,6 +15,7 @@ from typing import Tuple
 import torch
 
 from ..registry import RegistryError
+from .dram import DramImage
 from .types import BufferLayout, ElementType, StaticBuffer
 
 
@@ -62,4 +63,51 @@ class FlatRowMajorMaterializer(BufferMaterializer):
             element=element,
             layout=BufferLayout.flat_row_major(numel),
             values=values,
+        )
+
+
+class DramMaterializer(BufferMaterializer):
+    """Place trace / get_attr tensors in the DRAM stub (int8 when in range)."""
+
+    def __init__(self, image: DramImage) -> None:
+        self.image = image
+
+    def materialize(self, name: str, tensor: torch.Tensor) -> StaticBuffer:
+        return self._place(name, tensor, compact_int8=False)
+
+    def materialize_weight(self, name: str, tensor: torch.Tensor) -> StaticBuffer:
+        # OIHW conv kernels only; bias and scalars stay int32 pointers.
+        return self._place(name, tensor, compact_int8=tensor.ndim == 4)
+
+    def _place(
+        self, name: str, tensor: torch.Tensor, *, compact_int8: bool
+    ) -> StaticBuffer:
+        tensor = tensor.detach().contiguous()
+        shape = tuple(int(dim) for dim in tensor.shape)
+        flat = tensor.reshape(-1)
+        if compact_int8 and (
+            tensor.dtype == torch.int8
+            or (
+                tensor.dtype in (torch.int32, torch.int64)
+                and bool(((flat >= -128) & (flat <= 127)).all())
+            )
+        ):
+            values = tuple(int(x) for x in flat.to(torch.int32).tolist())
+            off = self.image.write_i8(values)
+            return StaticBuffer(
+                name=name,
+                shape=shape,
+                element=ElementType(c_type="int8_t", size_bytes=1),
+                layout=BufferLayout.dram_buffer(len(values), off, elem_bytes=1),
+                values=tuple(),
+            )
+        element = resolve_element_type(tensor)
+        values = flatten_row_major(tensor, element)
+        off = self.image.write_i32(values)
+        return StaticBuffer(
+            name=name,
+            shape=shape,
+            element=element,
+            layout=BufferLayout.dram_buffer(len(values), off, elem_bytes=4),
+            values=tuple(),
         )

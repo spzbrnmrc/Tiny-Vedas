@@ -39,7 +39,9 @@ make -C fpga/alveo_u280/sw
 | `0x1000` | ICCM 32 KiB (host only while `core_run=0`) |
 | `0x9000` | DCCM 1 MiB (host only while `core_run=0`) |
 
-CTRL: `0x00` VERSION, `0x04` SCRATCH, `0x08` HEARTBEAT, `0x0C` CORE_CTRL `[0]=run [1]=locked`, `0x10` RESET_VECTOR, `0x14` EOT, `0x18` EOT_CLEAR, `0x1C`/`0x20`/`0x24` UART.
+CTRL: `0x00` VERSION, `0x04` SCRATCH, `0x08` HEARTBEAT, `0x0C` CORE_CTRL `[0]=run [1]=locked`, `0x10` RESET_VECTOR, `0x14` EOT, `0x18` EOT_CLEAR, `0x1C`/`0x20`/`0x24` UART, `0x28` DRAM_WIN (byte offset into the AXI stub), `0x2C` DRAM_SEL `[0]=remap the DCCM BAR window onto the stub`.
+
+Streamed PyVedas tests emit `work/<test>/dram.hex`. `fpga_runner.py` loads that image in 1 MiB chunks through the DCCM window (halted) before run. ELF `.text`/`.data` size checks are unchanged. Host EOT time is the card ms/frame figure (same clock as Dhrystone). The stub is URAM/BRAM (`axi4_dram`), not HBM IP.
 
 ## Notes
 

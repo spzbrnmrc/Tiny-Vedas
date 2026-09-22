@@ -58,6 +58,9 @@ localparam bit HAS_VECTOR = {1 if hw.has_vector_unit else 0};
 localparam int VLEN = {hw.vector.width_bits};
 localparam int DLEN = {hw.vector.dlen_bits};
 
+localparam logic [31:0] DRAM_BASE  = 32'h{hw.memory.dram_base & 0xFFFFFFFF:08X};
+localparam logic [31:0] DRAM_BYTES = 32'h{hw.memory.dram_bytes & 0xFFFFFFFF:08X};
+
 `endif
 """
 

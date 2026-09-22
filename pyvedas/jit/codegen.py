@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Set, Tuple
 import torch
 import torch.fx as fx
 
-from .codegen_handlers import CODEGEN_HANDLERS, LoweringCtx
+from .codegen_handlers import CODEGEN_HANDLERS, DCCM_SLAB, LoweringCtx
 from .memory import (
     BufferMaterializer,
     FlatRowMajorMaterializer,
@@ -20,6 +20,8 @@ from .memory import (
     emit_static_buffers,
     format_shape,
 )
+from .memory.dram import DramImage
+from .memory.materialize import DramMaterializer
 from .registry import (
     RegistryError,
     RuntimeOp,
@@ -36,7 +38,18 @@ class CompilePlan:
     runtime_sources: List[Path]
     includes: List[str]
     result_names: List[str] = field(default_factory=list)
+    input_names: List[str] = field(default_factory=list)
     result_goldens: List[Tuple[str, Tuple[int, ...]]] = field(default_factory=list)
+    dram_image: DramImage | None = None
+    checksum_goldens: bool = False
+    stream_col_n: int = 0
+    stream_col_cache_n: int = 0
+    stream_wt_n: int = 0
+    stream_acc_n: int = 0
+    stream_gemm_n: int = 0
+    stream_need_stage: bool = False
+    stream_act_n: int = 0
+    op_names: List[str] = field(default_factory=list)
 
     @property
     def result_name(self) -> str | None:
@@ -98,6 +111,44 @@ def _fetch_attr(root: Any, target: Any) -> Any:
     return obj
 
 
+def _last_use_index(graph: fx.Graph) -> Dict[str, int]:
+    last: Dict[str, int] = {}
+    for i, node in enumerate(graph.nodes):
+        for inp in node.all_input_nodes:
+            last[inp.name] = i
+    return last
+
+
+def _release_dead(
+    ctx: LoweringCtx,
+    node: fx.Node,
+    last_use: Dict[str, int],
+    idx: int,
+    pinned: Set[str],
+) -> None:
+    if ctx.dram_image is None:
+        return
+    for inp in node.all_input_nodes:
+        if last_use.get(inp.name) != idx:
+            continue
+        cname = ctx.buf.get(inp.name)
+        if not cname or cname in pinned:
+            continue
+        shared_live = False
+        for fxn, cn in ctx.buf.items():
+            if cn == cname and last_use.get(fxn, -1) > idx:
+                shared_live = True
+                break
+        if shared_live:
+            continue
+        buf = ctx.memory.buffers.get(cname)
+        if buf is None or not buf.layout.is_dram:
+            continue
+        ctx.dram_image.free(
+            buf.layout.offset, buf.layout.numel * buf.layout.elem_bytes
+        )
+
+
 def lower_graph(
     graph: fx.Graph,
     registry: Dict[str, RuntimeOp],
@@ -106,11 +157,15 @@ def lower_graph(
     materializer: BufferMaterializer | None = None,
     gemm_scratch_bytes: int | None = None,
     graph_module: fx.GraphModule | None = None,
+    stream: bool = False,
+    dram_image: DramImage | None = None,
 ) -> CompilePlan:
     materializer = materializer or FlatRowMajorMaterializer()
 
     placeholders = [n for n in graph.nodes if n.op == "placeholder"]
     memory, buf, shape = _bind_trace_inputs(placeholders, trace_inputs, materializer)
+    last_use = _last_use_index(graph)
+    pinned: Set[str] = set()
 
     ctx = LoweringCtx(
         memory=memory,
@@ -120,14 +175,19 @@ def lower_graph(
         gemm_scratch_bytes=gemm_scratch_bytes,
         graph_module=graph_module,
         materializer=materializer,
+        stream=stream,
+        dram_image=dram_image,
     )
 
     statements: List[str] = []
+    op_names: List[str] = []
     runtime_sources: List[Path] = []
     seen_sources: Set[Path] = set()
     result_names: List[str] = []
+    input_names = [buf[n.name] for n in placeholders]
+    pinned.update(input_names)
 
-    for node in graph.nodes:
+    for idx, node in enumerate(graph.nodes):
         if node.op == "placeholder":
             continue
         if node.op == "output":
@@ -153,15 +213,20 @@ def lower_graph(
                     f"get_attr '{node.target}' is not a tensor (node {node.name})"
                 )
             cname = _buffer_name(node)
-            buffer = materializer.materialize(cname, tensor)
+            if isinstance(materializer, DramMaterializer):
+                buffer = materializer.materialize_weight(cname, tensor)
+            else:
+                buffer = materializer.materialize(cname, tensor)
             memory.add(buffer)
             ctx.buf[node.name] = cname
             ctx.shape[node.name] = buffer.shape
+            pinned.add(cname)
             continue
         if node.op != "call_function":
             raise RegistryError(f"Unsupported FX node type: {node.op} ({node.name})")
 
         if canonical_graph_target(node.target) in _EXPORT_SKIP_TARGETS:
+            _release_dead(ctx, node, last_use, idx, pinned)
             continue
 
         op = resolve_op(registry, node.target)
@@ -178,14 +243,78 @@ def lower_graph(
             )
 
         statements.append(handler(op, node, ctx))
+        op_names.append(f"{node.name}:{canonical_graph_target(node.target)}")
+        _release_dead(ctx, node, last_use, idx, pinned)
+
+    memcpy = pyvedas_root_memcpy()
+    if stream and memcpy not in seen_sources:
+        runtime_sources.append(memcpy)
 
     return CompilePlan(
         memory=memory,
         statements=statements,
         runtime_sources=runtime_sources,
-        includes=["pyvedas.h"],
+        includes=["pyvedas.h"] + (["soc_defines.h"] if stream else []),
         result_names=result_names,
+        input_names=input_names,
+        dram_image=dram_image,
+        stream_col_n=ctx.stream_col_n,
+        stream_col_cache_n=ctx.stream_col_cache_n,
+        stream_wt_n=ctx.stream_wt_n,
+        stream_acc_n=ctx.stream_acc_n,
+        stream_gemm_n=ctx.stream_gemm_n,
+        stream_need_stage=ctx.stream_need_stage,
+        stream_act_n=ctx.stream_act_n,
+        op_names=op_names,
     )
+
+
+def pyvedas_root_memcpy() -> Path:
+    return Path(__file__).resolve().parents[1] / "runtime" / "c" / "pyvedas_memcpy.c"
+
+
+def checksum_i32(values: Tuple[int, ...]) -> int:
+    """Rotate-XOR checksum matching the generated target compare."""
+    cs = 0
+    for raw in values:
+        cs ^= int(raw) & 0xFFFFFFFF
+        cs = ((cs << 1) | (cs >> 31)) & 0xFFFFFFFF
+    return cs
+
+
+def _emit_stream_dccm(lines: List[str], plan: CompilePlan) -> None:
+    """Layer kinds do not overlap: cache_col vs staged act+one col vs pool."""
+    tile_n = int(plan.stream_col_n)
+    cache_n = int(plan.stream_col_cache_n)
+    act_n = int(plan.stream_act_n)
+    stage_n = 2 * DCCM_SLAB if plan.stream_need_stage else 0
+    staged_n = act_n + tile_n
+    union_n = max(cache_n, staged_n, stage_n, act_n)
+    if union_n:
+        lines.append(
+            "static int32_t stream_dccm["
+            f"{union_n}] __attribute__((aligned(4)));"
+        )
+        if plan.stream_need_stage:
+            lines.append("#define stream_stage_a (stream_dccm)")
+            lines.append(f"#define stream_stage_b (stream_dccm + {DCCM_SLAB})")
+        if act_n:
+            lines.append("#define stream_act (stream_dccm)")
+        if tile_n:
+            lines.append(f"#define stream_col (stream_dccm + {act_n})")
+        if cache_n:
+            lines.append("#define stream_col_cache (stream_dccm)")
+    elif act_n:
+        lines.append(f"static int32_t stream_act[{act_n}];")
+    if plan.stream_wt_n:
+        lines.append(f"static int32_t stream_wt[{plan.stream_wt_n}];")
+    if plan.stream_acc_n:
+        lines.append(f"static int32_t stream_acc[{plan.stream_acc_n}];")
+    if plan.stream_gemm_n:
+        lines.append(
+            f"static uint8_t stream_gemm_scratch[{plan.stream_gemm_n}] "
+            "__attribute__((aligned(4)));"
+        )
 
 
 def emit_c(plan: CompilePlan, out_path: Path, *, target: bool = False) -> None:
@@ -204,6 +333,13 @@ def emit_c(plan: CompilePlan, out_path: Path, *, target: bool = False) -> None:
 
     lines.append("")
     lines.extend(emit_static_buffers(plan.memory))
+    _emit_stream_dccm(lines, plan)
+    if target:
+        lines.append(
+            "volatile uint32_t _pyvedas_op_limit "
+            "__attribute__((section(\".data\"))) = 0xFFFFFFFFu;"
+        )
+        lines.append("static uint32_t _pyvedas_ops_done;")
 
     lines.append("")
     lines.append("int main(void) {")
@@ -219,25 +355,63 @@ def emit_c(plan: CompilePlan, out_path: Path, *, target: bool = False) -> None:
         lines.append('        :')
         lines.append('        : "gp"')
         lines.append("    );")
+        lines.append("    _pyvedas_ops_done = 0;")
+    op_i = 0
     for stmt in plan.statements:
-        for line in stmt.split("\n"):
-            lines.append(f"    {line}" if line else "")
+        is_comment = all(
+            (not ln.strip() or ln.strip().startswith("/*"))
+            for ln in stmt.split("\n")
+        )
+        if target and not is_comment:
+            name = (
+                plan.op_names[op_i] if op_i < len(plan.op_names) else f"op{op_i + 1}"
+            )
+            op_i += 1
+            lines.append(f"    /* op {op_i}: {name} */")
+            lines.append("    {")
+            for line in stmt.split("\n"):
+                lines.append(f"        {line}" if line else "")
+            lines.append("    }")
+            lines.append("    _pyvedas_ops_done++;")
+            lines.append(
+                "    if (_pyvedas_ops_done >= _pyvedas_op_limit) "
+                "goto _pyvedas_eot;"
+            )
+        else:
+            for line in stmt.split("\n"):
+                lines.append(f"    {line}" if line else "")
 
     if target:
-        for out_name, vals in plan.result_goldens:
-            info = plan.memory.get(out_name)
-            joined = ", ".join(str(v) for v in vals)
-            lines.append(
-                f"    static const {info.c_type} _eot_golden_{out_name}"
-                f"[{info.numel}] = {{ {joined} }};"
-            )
-            lines.append(f"    for (size_t i = 0; i < {info.numel}; i++) {{")
-            lines.append(
-                f"        if ({out_name}[i] != _eot_golden_{out_name}[i]) {{"
-            )
-            lines.append("            for (;;);")
-            lines.append("        }")
-            lines.append("    }")
+        if plan.checksum_goldens:
+            for out_name, vals in plan.result_goldens:
+                info = plan.memory.get(out_name)
+                cs = checksum_i32(vals)
+                lines.append("    {")
+                lines.append("        uint32_t _cs = 0;")
+                lines.append(f"        for (size_t i = 0; i < {info.numel}; i++) {{")
+                lines.append(f"            _cs ^= (uint32_t){out_name}[i];")
+                lines.append("            _cs = (_cs << 1) | (_cs >> 31);")
+                lines.append("        }")
+                lines.append(f"        if (_cs != {cs}u) {{")
+                lines.append("            for (;;);")
+                lines.append("        }")
+                lines.append("    }")
+        else:
+            for out_name, vals in plan.result_goldens:
+                info = plan.memory.get(out_name)
+                joined = ", ".join(str(v) for v in vals)
+                lines.append(
+                    f"    static const {info.c_type} _eot_golden_{out_name}"
+                    f"[{info.numel}] = {{ {joined} }};"
+                )
+                lines.append(f"    for (size_t i = 0; i < {info.numel}; i++) {{")
+                lines.append(
+                    f"        if ({out_name}[i] != _eot_golden_{out_name}[i]) {{"
+                )
+                lines.append("            for (;;);")
+                lines.append("        }")
+                lines.append("    }")
+        lines.append("_pyvedas_eot:")
         lines.append("    eot_sequence();")
     else:
         output_names = list(plan.result_names)

@@ -5,7 +5,7 @@
 # don't burn a full U280 route with CDC still timed as sync paths.
 #
 # Verified clock names (this BD):
-#   clk_out1_pcie_bd_clk_wiz_0_0      — MMCM 100 MHz core
+#   clk_out1_pcie_bd_clk_wiz_0_0      — MMCM 80 MHz core
 #   axi_bram_ctrl_mm_BRAM_PORTA_CLK   — QDMA axi_aclk ~250 MHz
 
 set _core_clk [get_clocks -quiet clk_out1_pcie_bd_clk_wiz_0_0]

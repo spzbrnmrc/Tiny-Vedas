@@ -23,12 +23,18 @@ from .memory import (
     StaticBuffer,
     format_shape,
 )
+from .memory.dram import DramImage
 from .memory.gemm_tiles import (
     SCRATCH_CAP_BYTES,
+    STREAM_ACT_CAP,
+    choose_conv_tiles,
+    choose_stream_conv_nest,
     choose_tile,
+    conv_spatial_tiles,
     matmul_out_shape,
     numel,
     scratch_budget,
+    stream_act_fits,
     tile_scratch_bytes,
 )
 from .registry import RegistryError, RuntimeOp
@@ -66,6 +72,15 @@ class LoweringCtx:
     graph_module: Any
     materializer: BufferMaterializer
     scratch_id: int = 0
+    stream: bool = False
+    dram_image: DramImage | None = None
+    stream_col_n: int = 0
+    stream_col_cache_n: int = 0
+    stream_wt_n: int = 0
+    stream_acc_n: int = 0
+    stream_gemm_n: int = 0
+    stream_need_stage: bool = False
+    stream_act_n: int = 0
 
     def cname(self, node: fx.Node) -> str:
         try:
@@ -82,7 +97,21 @@ class LoweringCtx:
     def alloc(self, fx_name: str, shape: Sequence[int]) -> str:
         cname = fx_name.replace("%", "v_")
         shp = tuple(int(d) for d in shape)
-        self.memory.allocate_shape(cname, shp)
+        n = 1
+        for dim in shp:
+            n *= int(dim)
+        if self.stream and self.dram_image is not None:
+            off = self.dram_image.alloc(n * 4)
+            self.memory.add(
+                StaticBuffer(
+                    name=cname,
+                    shape=shp,
+                    element=I32,
+                    layout=BufferLayout.dram_buffer(n, off, elem_bytes=4),
+                )
+            )
+        else:
+            self.memory.allocate_shape(cname, shp)
         self.buf[fx_name] = cname
         self.shape[fx_name] = shp
         return cname
@@ -105,6 +134,26 @@ class LoweringCtx:
             )
         )
         return name
+
+    def note_stream_conv(
+        self,
+        col_n: int,
+        wt_n: int,
+        acc_n: int,
+        gemm_n: int,
+        *,
+        cache: bool = False,
+    ) -> None:
+        if cache:
+            self.stream_col_cache_n = max(self.stream_col_cache_n, int(col_n))
+        else:
+            self.stream_col_n = max(self.stream_col_n, int(col_n))
+        self.stream_wt_n = max(self.stream_wt_n, int(wt_n))
+        self.stream_acc_n = max(self.stream_acc_n, int(acc_n))
+        self.stream_gemm_n = max(self.stream_gemm_n, int(gemm_n))
+
+    def note_stream_act(self, n: int) -> None:
+        self.stream_act_n = max(self.stream_act_n, int(n))
 
 
 def _buffer_name(node: fx.Node) -> str:
@@ -328,7 +377,77 @@ def emit_unary_same(
     shp = ctx.logical_shape(node.args[0])
     out = ctx.alloc(node.name, _node_meta_shape(node) or shp)
     n = numel(_node_meta_shape(node) or shp)
+    if ctx.stream:
+        ctx.stream_need_stage = True
+        return _stage_unary(op.symbol, src, out, n)
     return f"{op.symbol}({src}, {out}, {n});"
+
+
+DCCM_SLAB = 32768
+
+
+# Matches ``aten_max_pool2d.c`` RVV rowmax[] / ``w <= 64``.
+POOL_RVV_MAX_W = 64
+
+
+def choose_pool_stream_tiles(
+    c: int,
+    h: int,
+    w: int,
+    oh: int,
+    ow: int,
+    kh: int,
+    kw: int,
+    sh: int,
+    sw: int,
+    *,
+    slab: int = DCCM_SLAB,
+    max_w_span: int = POOL_RVV_MAX_W,
+) -> tuple[int, int, int] | None:
+    """``(c_t, oh_t, ow_t)`` so one pad-0 window fits ``slab`` and RVV ``W``."""
+    del h, w
+    if (
+        c < 1
+        or oh < 1
+        or ow < 1
+        or kh < 1
+        or kw < 1
+        or sh < 1
+        or sw < 1
+        or slab < 1
+        or max_w_span < 1
+    ):
+        return None
+    ow_hi = min(ow, max(1, (max_w_span - kw) // sw + 1))
+    for ow_t in range(ow_hi, 0, -1):
+        w_span = (ow_t - 1) * sw + kw
+        if w_span < 1 or w_span > max_w_span:
+            continue
+        for oh_t in range(oh, 0, -1):
+            h_span = (oh_t - 1) * sh + kh
+            inn_c = h_span * w_span
+            onn_c = oh_t * ow_t
+            if inn_c < 1 or onn_c < 1 or inn_c > slab or onn_c > slab:
+                continue
+            c_t = min(c, slab // inn_c, slab // onn_c)
+            if c_t >= 1:
+                return c_t, oh_t, ow_t
+    return None
+
+
+def _stage_unary(symbol: str, src: str, out: str, n: int) -> str:
+    return (
+        "{\n"
+        f"    const size_t slab = {DCCM_SLAB};\n"
+        f"    for (size_t off = 0; off < {n}; off += slab) {{\n"
+        "        size_t m = " + str(n) + " - off;\n"
+        "        if (m > slab) { m = slab; }\n"
+        f"        pyvedas_memcpy(stream_stage_a, {src} + off, m * sizeof(int32_t));\n"
+        f"        {symbol}(stream_stage_a, stream_stage_b, m);\n"
+        f"        pyvedas_memcpy({out} + off, stream_stage_b, m * sizeof(int32_t));\n"
+        "    }\n"
+        "}"
+    )
 
 
 def emit_alias(
@@ -640,10 +759,77 @@ def emit_max_pool2d(
     oh = (h + 2 * pad_h - kh) // sh + 1
     ow = (w + 2 * pad_w - kw) // sw + 1
     out = ctx.alloc(node.name, _node_meta_shape(node) or (n, c, oh, ow))
-    return (
-        f"{op.symbol}({ctx.cname(src)}, {out}, {n}, {c}, {h}, {w}, "
+    call = (
+        f"{op.symbol}(%s, %s, {n}, {c}, {h}, {w}, "
         f"{oh}, {ow}, {kh}, {kw}, {sh}, {sw}, {pad_h}, {pad_w});"
     )
+    inn = n * c * h * w
+    onn = n * c * oh * ow
+    # Whole map in one DCCM slab (RVV path wants W<=64 and DCCM pointers).
+    if ctx.stream and pad_h == 0 and pad_w == 0 and inn <= DCCM_SLAB and onn <= DCCM_SLAB:
+        ctx.stream_need_stage = True
+        return (
+            "{\n"
+            f"    pyvedas_memcpy(stream_stage_a, {ctx.cname(src)}, {inn} * sizeof(int32_t));\n"
+            "    " + call % ("stream_stage_a", "stream_stage_b") + "\n"
+            f"    pyvedas_memcpy({out}, stream_stage_b, {onn} * sizeof(int32_t));\n"
+            "}"
+        )
+    # Wide / tall maps (Tiny c0 is 16x208x208) cannot walk the AXI stub.
+    # Keep W_span <= 64 so aten_max_pool2d takes the DCCM RVV path.
+    if ctx.stream and pad_h == 0 and pad_w == 0:
+        tiles = choose_pool_stream_tiles(c, h, w, oh, ow, kh, kw, sh, sw)
+        if tiles is not None:
+            ctx.stream_need_stage = True
+            c_t, oh_t, ow_t = tiles
+            src_n = ctx.cname(src)
+            tiled = (
+                f"{op.symbol}(stream_stage_a, stream_stage_b, 1, ct, hs, "
+                f"ws, oht, owt, {kh}, {kw}, {sh}, {sw}, {pad_h}, {pad_w});"
+            )
+            return (
+                "{\n"
+                f"    const size_t c_t = {c_t};\n"
+                f"    const size_t oh_t = {oh_t};\n"
+                f"    const size_t ow_t = {ow_t};\n"
+                f"    for (size_t ni = 0; ni < {n}; ni++) {{\n"
+                f"    for (size_t ci0 = 0; ci0 < {c}; ci0 += c_t) {{\n"
+                f"        size_t ct = {c} - ci0;\n"
+                "        if (ct > c_t) { ct = c_t; }\n"
+                f"        for (size_t oy0 = 0; oy0 < {oh}; oy0 += oh_t) {{\n"
+                f"            size_t oht = {oh} - oy0;\n"
+                "            if (oht > oh_t) { oht = oh_t; }\n"
+                f"            size_t h0 = oy0 * {sh};\n"
+                f"            size_t hs = (oht - 1) * {sh} + {kh};\n"
+                f"            if (h0 + hs > {h}) {{ hs = {h} - h0; }}\n"
+                f"            for (size_t ox0 = 0; ox0 < {ow}; ox0 += ow_t) {{\n"
+                f"                size_t owt = {ow} - ox0;\n"
+                "                if (owt > ow_t) { owt = ow_t; }\n"
+                f"                size_t w0 = ox0 * {sw};\n"
+                f"                size_t ws = (owt - 1) * {sw} + {kw};\n"
+                f"                if (w0 + ws > {w}) {{ ws = {w} - w0; }}\n"
+                "                for (size_t t = 0; t < ct; t++) {\n"
+                "                    for (size_t r = 0; r < hs; r++) {\n"
+                f"                        pyvedas_memcpy(stream_stage_a + (t * hs + r) * ws,\n"
+                f"                            {src_n} + (((ni * {c} + (ci0 + t)) * {h} + h0 + r) * {w} + w0),\n"
+                "                            ws * sizeof(int32_t));\n"
+                "                    }\n"
+                "                }\n"
+                f"                {tiled}\n"
+                "                for (size_t t = 0; t < ct; t++) {\n"
+                "                    for (size_t r = 0; r < oht; r++) {\n"
+                f"                        pyvedas_memcpy({out} + (((ni * {c} + (ci0 + t)) * {oh} + oy0 + r) * {ow} + ox0),\n"
+                "                            stream_stage_b + (t * oht + r) * owt,\n"
+                "                            owt * sizeof(int32_t));\n"
+                "                    }\n"
+                "                }\n"
+                "            }\n"
+                "        }\n"
+                "    }\n"
+                "    }\n"
+                "}"
+            )
+    return call % (ctx.cname(src), out)
 
 
 def emit_upsample_nearest(
@@ -717,7 +903,10 @@ def emit_gemm_c(
     a_shape: Sequence[int],
     b_shape: Sequence[int],
     scratch_cap: int,
-) -> str:
+    *,
+    scratch_name: str | None = None,
+    declare_scratch: bool = True,
+) -> Tuple[str, int]:
     """Emit a compiler-planned GEMM: tile sizes are constants, runtime runs jobs."""
     a_shape = tuple(int(d) for d in a_shape)
     b_shape = tuple(int(d) for d in b_shape)
@@ -740,17 +929,18 @@ def emit_gemm_c(
         )
     mt, nt, kt = tile
     scratch_bytes = tile_scratch_bytes(mt, nt, kt, n, k)
-    scratch = f"scratch_{out}"
+    scratch = scratch_name or f"scratch_{out}"
     coords = [f"b{i}" for i in range(len(out_batch))]
     a_off = _batch_offset_expr(coords, a_batch, out_batch, m * k)
     b_off = _batch_offset_expr(coords, b_batch, out_batch, k * n)
     c_off = _batch_offset_expr(coords, out_batch, out_batch, m * n)
 
     lines: List[str] = ["{"]
-    lines.append(
-        f"    static uint8_t {scratch}[{scratch_bytes}] "
-        "__attribute__((aligned(4)));"
-    )
+    if declare_scratch:
+        lines.append(
+            f"    static uint8_t {scratch}[{scratch_bytes}] "
+            "__attribute__((aligned(4)));"
+        )
     lines.append(f"    const size_t mt = {mt};")
     lines.append(f"    const size_t nt = {nt};")
     lines.append(f"    const size_t kt = {kt};")
@@ -818,7 +1008,7 @@ def emit_gemm_c(
         add("}")
 
     lines.append("}")
-    return "\n".join(lines)
+    return "\n".join(lines), scratch_bytes
 
 
 def emit_gemm_mmio(
@@ -855,7 +1045,7 @@ def emit_gemm_mmio(
         if ctx.gemm_scratch_bytes is None
         else int(ctx.gemm_scratch_bytes)
     )
-    return emit_gemm_c(
+    block, _nbytes = emit_gemm_c(
         op.symbol,
         lhs,
         rhs,
@@ -864,6 +1054,7 @@ def emit_gemm_mmio(
         rhs_shape,
         cap,
     )
+    return block
 
 
 def emit_conv2d(
@@ -885,27 +1076,21 @@ def emit_conv2d(
     ow = (w + 2 * pad_i - kw) // stride_i + 1
     m = n * oh * ow
     kdim = cin * kh * kw
-    col = ctx.alloc(f"{node.name}_col", (m, kdim))
-    wt = ctx.alloc(f"{node.name}_wt", (kdim, cout))
-    gemm = ctx.alloc(f"{node.name}_gemm", (m, cout))
     out = ctx.alloc(node.name, _node_meta_shape(node) or (n, cout, oh, ow))
     cap = (
         SCRATCH_CAP_BYTES
         if ctx.gemm_scratch_bytes is None
         else int(ctx.gemm_scratch_bytes)
     )
-    lines = [
-        "{",
-        f"    pyvedas_im2col({ctx.cname(x_n)}, {col}, {n}, {cin}, {h}, {w}, "
-        f"{kh}, {kw}, {stride_i}, {pad_i}, {oh}, {ow});",
-        f"    pyvedas_pack_weight_crs({ctx.cname(w_n)}, {wt}, {cout}, {cin}, {kh}, {kw});",
-        emit_gemm_c("pyvedas_gemm_job", col, wt, gemm, (m, kdim), (kdim, cout), cap),
-        f"    pyvedas_conv_bias_nchw({gemm}, {ctx.cname(b_n)}, {out}, "
-        f"{n}, {cout}, {oh}, {ow});",
-        "}",
-    ]
-    # emit_gemm_c already returns a brace block; nest it.
-    gemm_block = emit_gemm_c(
+    if ctx.stream:
+        return _emit_conv2d_stream(
+            ctx, node, x_n, w_n, b_n, n, cin, cout, h, w, kh, kw,
+            stride_i, pad_i, oh, ow, m, kdim, out, cap,
+        )
+    col = ctx.alloc(f"{node.name}_col", (m, kdim))
+    wt = ctx.alloc(f"{node.name}_wt", (kdim, cout))
+    gemm = ctx.alloc(f"{node.name}_gemm", (m, cout))
+    gemm_block, _nbytes = emit_gemm_c(
         "pyvedas_gemm_job", col, wt, gemm, (m, kdim), (kdim, cout), cap
     )
     return (
@@ -920,6 +1105,199 @@ def emit_conv2d(
         f"{n}, {cout}, {oh}, {ow});\n"
         "}"
     )
+
+
+def _emit_conv2d_stream(
+    ctx: LoweringCtx,
+    node: fx.Node,
+    x_n: fx.Node,
+    w_n: fx.Node,
+    b_n: fx.Node,
+    n: int,
+    cin: int,
+    cout: int,
+    h: int,
+    w: int,
+    kh: int,
+    kw: int,
+    stride_i: int,
+    pad_i: int,
+    oh: int,
+    ow: int,
+    m: int,
+    kdim: int,
+    out: str,
+    cap: int,
+) -> str:
+    del m
+    oh_t, ow_t, oc_t = choose_conv_tiles(n, cin, cout, kh, kw, oh, ow)
+    m_t = n * oh_t * ow_t
+    wbuf = ctx.memory.get(ctx.cname(w_n))
+    pack = (
+        "pyvedas_pack_weight_i8_crs_tile"
+        if wbuf.element.c_type == "int8_t"
+        else "pyvedas_pack_weight_crs_tile"
+    )
+    x_dram = ctx.cname(x_n)
+    act_n = n * cin * h * w
+    nest = choose_stream_conv_nest(
+        oh, ow, oh_t, ow_t, cout, oc_t, m_t, kdim,
+        act_n=0,
+    )
+    spatial = max(conv_spatial_tiles(oh, ow, oh_t, ow_t), 1)
+    col_tile = max(m_t * kdim, 1)
+    col_n = col_tile * spatial if nest == "cache_col" else col_tile
+    # cache_col keeps every spatial col tile; do not also stage the map
+    # (act+col together miss the 1 MiB DCCM).
+    stage_act = nest != "cache_col" and stream_act_fits(
+        n, cin, h, w, cap=STREAM_ACT_CAP
+    )
+    gemm_block, gemm_n = emit_gemm_c(
+        "pyvedas_gemm_job",
+        "stream_col_as",
+        "stream_wt",
+        "stream_acc",
+        (m_t, kdim),
+        (kdim, oc_t),
+        cap,
+        scratch_name="stream_gemm_scratch",
+        declare_scratch=False,
+    )
+    ctx.note_stream_conv(
+        col_n,
+        max(kdim * oc_t, 1),
+        max(m_t * oc_t, 1),
+        gemm_n,
+        cache=nest == "cache_col",
+    )
+    if stage_act:
+        ctx.note_stream_act(act_n)
+        x_src = "stream_act"
+        stage_stmt = (
+            f"    pyvedas_memcpy(stream_act, {x_dram}, "
+            f"{act_n} * sizeof(int32_t));\n"
+        )
+    else:
+        x_src = x_dram
+        stage_stmt = ""
+    im2col_dst = (
+        "stream_col_cache + si * col_tile"
+        if nest == "cache_col"
+        else "stream_col"
+    )
+    im2col = (
+        f"pyvedas_im2col_tile({x_src}, {im2col_dst}, {n}, {cin}, {h}, {w}, "
+        f"{kh}, {kw}, {stride_i}, {pad_i}, {oh}, {ow}, oh0, ow0, oh_t, ow_t);"
+    )
+    pack_call = (
+        f"{pack}({ctx.cname(w_n)}, stream_wt, {cout}, {cin}, {kh}, {kw}, "
+        f"oc0, oc_t);"
+    )
+    bias = (
+        f"pyvedas_conv_bias_nchw_tile(stream_acc, {ctx.cname(b_n)}, {out}, "
+        f"{n}, {cout}, {oh}, {ow}, oh0, ow0, oh_t, ow_t, oc0, oc_t);"
+    )
+    gemm_inner = "\n".join(
+        "            " + ln if ln else "" for ln in gemm_block.split("\n")
+    )
+    header = (
+        "{\n"
+        f"    const size_t oh_t = {oh_t};\n"
+        f"    const size_t ow_t = {ow_t};\n"
+        f"    const size_t oc_t = {oc_t};\n"
+        + stage_stmt
+    )
+    if nest == "cache_col":
+        gemm_cached = "\n".join(
+            "                " + ln if ln else "" for ln in gemm_block.split("\n")
+        )
+        return (
+            header
+            + f"    const size_t col_tile = {col_tile};\n"
+            + "    size_t si = 0;\n"
+            + f"    for (size_t oh0 = 0; oh0 < {oh}; oh0 += oh_t) {{\n"
+            + f"    for (size_t ow0 = 0; ow0 < {ow}; ow0 += ow_t) {{\n"
+            + f"        {im2col}\n"
+            + "        si++;\n"
+            + "    }\n"
+            + "    }\n"
+            + f"    for (size_t oc0 = 0; oc0 < {cout}; oc0 += oc_t) {{\n"
+            + f"        {pack_call}\n"
+            + "        si = 0;\n"
+            + f"        for (size_t oh0 = 0; oh0 < {oh}; oh0 += oh_t) {{\n"
+            + f"        for (size_t ow0 = 0; ow0 < {ow}; ow0 += ow_t) {{\n"
+            + "            const int32_t *stream_col_as = stream_col_cache + si * col_tile;\n"
+            + gemm_cached
+            + "\n"
+            + f"            {bias}\n"
+            + "            si++;\n"
+            + "        }\n"
+            + "        }\n"
+            + "    }\n"
+            + "}"
+        )
+    if nest == "spatial_outer":
+        return (
+            header
+            + f"    for (size_t oh0 = 0; oh0 < {oh}; oh0 += oh_t) {{\n"
+            + f"    for (size_t ow0 = 0; ow0 < {ow}; ow0 += ow_t) {{\n"
+            + f"        {im2col}\n"
+            + f"        for (size_t oc0 = 0; oc0 < {cout}; oc0 += oc_t) {{\n"
+            + f"            {pack_call}\n"
+            + "            const int32_t *stream_col_as = stream_col;\n"
+            + gemm_inner
+            + "\n"
+            + f"            {bias}\n"
+            + "        }\n"
+            + "    }\n"
+            + "    }\n"
+            + "}"
+        )
+    return (
+        header
+        + f"    for (size_t oc0 = 0; oc0 < {cout}; oc0 += oc_t) {{\n"
+        + f"        {pack_call}\n"
+        + f"        for (size_t oh0 = 0; oh0 < {oh}; oh0 += oh_t) {{\n"
+        + f"        for (size_t ow0 = 0; ow0 < {ow}; ow0 += ow_t) {{\n"
+        + f"            {im2col}\n"
+        + "            const int32_t *stream_col_as = stream_col;\n"
+        + gemm_inner
+        + "\n"
+        + f"            {bias}\n"
+        + "        }\n"
+        + "        }\n"
+        + "    }\n"
+        + "}"
+    )
+
+
+def emit_requant_i32(
+    op: RuntimeOp,
+    node: fx.Node,
+    ctx: LoweringCtx,
+    **_kwargs,
+) -> str:
+    src = node.args[0]
+    if not isinstance(src, fx.Node):
+        raise RegistryError("requant_i32 expects a tensor")
+    mul = _as_int(node.args[1])
+    shift = _as_int(node.args[2])
+    shp = ctx.logical_shape(src)
+    out = ctx.alloc(node.name, _node_meta_shape(node) or shp)
+    n = numel(shp)
+    call = f"{op.symbol}({ctx.cname(src)}, {out}, {n}, {mul}, {shift});"
+    if ctx.stream:
+        ctx.stream_need_stage = True
+        return _stage_unary(
+            f"{op.symbol}",
+            ctx.cname(src),
+            out,
+            n,
+        ).replace(
+            f"{op.symbol}(stream_stage_a, stream_stage_b, m);",
+            f"{op.symbol}(stream_stage_a, stream_stage_b, m, {mul}, {shift});",
+        )
+    return call
 
 
 CODEGEN_HANDLERS = {
@@ -942,4 +1320,5 @@ CODEGEN_HANDLERS = {
     "upsample_bilinear": emit_upsample_bilinear,
     "gemm_mmio": emit_gemm_mmio,
     "conv2d": emit_conv2d,
+    "requant_i32": emit_requant_i32,
 }

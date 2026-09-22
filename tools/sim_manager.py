@@ -37,7 +37,7 @@ def safe_write(msg: str) -> None:
         tqdm.write(msg)
 
 IMEM_DEPTH = 2 ** 18
-DMEM_DEPTH = 2 ** 18
+DMEM_DEPTH = 2 ** 20  # 1 MiB DCCM (matches RTL / Alveo)
 
 
 def _write_hw_config_artifact(test: str, hw_config: HwConfig) -> None:
@@ -249,6 +249,13 @@ def run_iss(test: str, reset_vector: int, hw_config: HwConfig) -> None:
         if gemm_hits:
             gemm_flags = f"--gemm-addr {hex(gemm_hits[0].base)} --gemm-size {hex(gemm_hits[0].size)}"
         extra = f"{eot_flags} {gemm_flags} --hw-config {hw_config.source_path}".strip()
+        dram_hex = os.path.join("work", test, "dram.hex")
+        if os.path.exists(dram_hex):
+            extra += (
+                f" --dram-file {dram_hex} "
+                f"--dram-base {hex(hw_config.memory.dram_base)} "
+                f"--max-instructions 500000000"
+            )
         if has_dmem:
             cmd = f"{sys.executable} ./tools/rv_iss.py {elf_path} {hex(reset_vector)} 0x7FFFF000 0x1000 {extra} -o {os.path.join('work', test, 'iss.log')} -m {os.path.join('work', test, 'dmem.hex')}"
         else:
@@ -425,6 +432,9 @@ def run_verilator(test: str, reset_vector: int, enable_vcd: bool = False) -> Non
         verilator_cmd += f" -DDCCM_INIT_FILE='\"dmem.hex\"'"
     else:
         verilator_cmd += f" -DDCCM_INIT_FILE='\"\"'"
+    has_dram = os.path.exists(os.path.join("work", test, "dram.hex"))
+    if has_dram:
+        verilator_cmd += f" -DDRAM_INIT_FILE='\"dram.hex\"'"
     verilator_cmd += f" && make -j -C obj_dir -f Vcore_top_tb.mk Vcore_top_tb"
     verilator_cmd += f" && ./obj_dir/Vcore_top_tb"
     
@@ -455,6 +465,9 @@ def run_xsim(test: str, reset_vector: int) -> None:
         xsim_cmd += f" --define DCCM_INIT_FILE='\"dmem.hex\"'"
     else:
         xsim_cmd += f" --define DCCM_INIT_FILE='\"\"'"
+    has_dram = os.path.exists(os.path.join("work", test, "dram.hex"))
+    if has_dram:
+        xsim_cmd += f" --define DRAM_INIT_FILE='\"dram.hex\"'"
     xsim_cmd += f" && xelab -top core_top_tb -snapshot sim --debug wave && xsim sim --runall"
     
     # Redirect both stdout and stderr to sim.log

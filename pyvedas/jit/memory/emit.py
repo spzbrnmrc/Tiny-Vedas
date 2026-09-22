@@ -23,6 +23,13 @@ def buffer_header_comment(buffer: StaticBuffer) -> str:
 
 def emit_static_declaration(buffer: StaticBuffer) -> List[str]:
     lines = [buffer_header_comment(buffer)]
+    if buffer.layout.is_dram:
+        off = buffer.layout.offset
+        lines.append(
+            f"#define {buffer.name} "
+            f"(({buffer.c_type} *)((uintptr_t)DRAM_BASE + {off}u))"
+        )
+        return lines
     if buffer.is_initialized:
         vals = ", ".join(str(v) for v in buffer.values)
         lines.append(

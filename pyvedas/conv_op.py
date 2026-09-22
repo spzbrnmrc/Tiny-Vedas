@@ -26,23 +26,20 @@ def im2col_nchw(
     """Row-major im2col: (N*OH*OW, Cin*KH*KW), int32."""
     n, cin, h, w = (int(d) for d in x.shape)
     oh, ow = conv_out_hw(h, w, kh, kw, stride, padding)
-    if padding:
-        xpad = torch.nn.functional.pad(x, (padding, padding, padding, padding))
-    else:
-        xpad = x
-    m = n * oh * ow
-    kdim = cin * kh * kw
-    col = torch.zeros(m, kdim, dtype=torch.int32, device=x.device)
-    idx = 0
-    for ni in range(n):
-        for hi in range(oh):
-            for wi in range(ow):
-                hs = hi * stride
-                ws = wi * stride
-                patch = xpad[ni, :, hs : hs + kh, ws : ws + kw]
-                col[idx] = patch.reshape(-1).to(torch.int32)
-                idx += 1
-    return col
+    x32 = x.to(torch.int32)
+    col = torch.nn.functional.unfold(
+        x32.to(torch.float32),
+        kernel_size=(kh, kw),
+        padding=padding,
+        stride=stride,
+    )
+    # unfold is exact for |x| < 2^24 (YOLO int8-range activations).
+    return (
+        col.to(torch.int32)
+        .permute(0, 2, 1)
+        .contiguous()
+        .reshape(n * oh * ow, cin * kh * kw)
+    )
 
 
 def conv2d_int32(

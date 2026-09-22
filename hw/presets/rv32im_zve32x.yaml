@@ -32,6 +32,8 @@ memory:
   iccm_depth_words: 262144   # 2^18
   dccm_depth_words: 65536    # 128-bit lines, 1 MiB
   link_address: 0x00100000
+  dram_base: 0x40000000
+  dram_bytes: 16777216       # 16 MiB AXI stub (not U280 HBM)
 
 software:
   vliw_compiler: false

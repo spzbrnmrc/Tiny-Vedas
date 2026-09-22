@@ -204,4 +204,72 @@ void pyvedas_sigmoid_i32(const int32_t *x, int32_t *out, size_t n);
 
 void pyvedas_exp_i32(const int32_t *x, int32_t *out, size_t n);
 
+/* STREAM DRAM↔DCCM slabs. ``n`` is a byte count, a multiple of 4. */
+void pyvedas_memcpy(void *dst, const void *src, size_t n);
+
+void pyvedas_requant_i32(
+    const int32_t *x,
+    int32_t *out,
+    size_t n,
+    int32_t mul,
+    int32_t shift
+);
+
+void pyvedas_im2col_tile(
+    const int32_t *x,
+    int32_t *col,
+    size_t n,
+    size_t cin,
+    size_t h,
+    size_t w,
+    size_t kh,
+    size_t kw,
+    size_t stride,
+    size_t pad,
+    size_t oh,
+    size_t ow,
+    size_t oh0,
+    size_t ow0,
+    size_t oh_t,
+    size_t ow_t
+);
+
+void pyvedas_pack_weight_i8_crs_tile(
+    const int8_t *weight,
+    int32_t *wt,
+    size_t cout,
+    size_t cin,
+    size_t kh,
+    size_t kw,
+    size_t oc0,
+    size_t oc_t
+);
+
+void pyvedas_pack_weight_crs_tile(
+    const int32_t *weight,
+    int32_t *wt,
+    size_t cout,
+    size_t cin,
+    size_t kh,
+    size_t kw,
+    size_t oc0,
+    size_t oc_t
+);
+
+void pyvedas_conv_bias_nchw_tile(
+    const int32_t *gemm,
+    const int32_t *bias,
+    int32_t *out,
+    size_t n,
+    size_t cout,
+    size_t oh,
+    size_t ow,
+    size_t oh0,
+    size_t ow0,
+    size_t oh_t,
+    size_t ow_t,
+    size_t oc0,
+    size_t oc_t
+);
+
 #endif

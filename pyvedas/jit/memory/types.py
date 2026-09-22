@@ -27,17 +27,28 @@ class ElementType:
 class BufferLayout:
     """Physical view of a logical buffer.
 
-    Today every buffer is a flat row-major vector (``flat_row_major``).
-    Future layout kinds may include tiled views, explicit DCCM sections, or
-    strided windows — without changing runtime op signatures (ptr + numel).
+    ``flat_row_major`` is a DCCM ``static`` array. ``dram_buffer`` is a
+    pointer into the AXI DRAM stub (``DRAM_BASE + offset``).
     """
 
     kind: str
     numel: int
+    offset: int = 0
+    elem_bytes: int = 4
 
     @staticmethod
     def flat_row_major(numel: int) -> BufferLayout:
         return BufferLayout(kind="flat_row_major", numel=numel)
+
+    @staticmethod
+    def dram_buffer(numel: int, offset: int, elem_bytes: int = 4) -> BufferLayout:
+        return BufferLayout(
+            kind="dram_buffer", numel=numel, offset=offset, elem_bytes=elem_bytes
+        )
+
+    @property
+    def is_dram(self) -> bool:
+        return self.kind == "dram_buffer"
 
 
 @dataclass

@@ -1,0 +1,55 @@
+version: 1
+layers:
+  c0:
+    scale_x: 0.00392156862745098
+    requant_mul: 2988793
+    requant_shift: 31
+    zero_point: 128
+  c2:
+    scale_x: 0.4731284314253199
+    requant_mul: 5793433
+    requant_shift: 29
+  c4:
+    scale_x: 0.2962297154223825
+    requant_mul: 31351023
+    requant_shift: 31
+  c6:
+    scale_x: 0.244767677126907
+    requant_mul: 20455213
+    requant_shift: 31
+  c8:
+    scale_x: 0.16549589502529835
+    requant_mul: 16070985
+    requant_shift: 31
+  c10:
+    scale_x: 0.1477928011436162
+    requant_mul: 4524299
+    requant_shift: 30
+  c12:
+    scale_x: 0.15997557752714384
+    requant_mul: 1508791
+    requant_shift: 28
+  c13:
+    scale_x: 0.39183978583869034
+    requant_mul: 12282991
+    requant_shift: 30
+  c14:
+    scale_x: 0.08294208406463383
+    requant_mul: 9531667
+    requant_shift: 31
+  c15:
+    scale_x: 0.09618634501780111
+    requant_mul: 1700043
+    requant_shift: 31
+  c18:
+    scale_x: 0.08294208406463383
+    requant_mul: 1191471
+    requant_shift: 28
+  c21:
+    scale_x: 0.1477928011436162
+    requant_mul: 1945469
+    requant_shift: 29
+  c22:
+    scale_x: 0.10262794945183701
+    requant_mul: 657779
+    requant_shift: 30

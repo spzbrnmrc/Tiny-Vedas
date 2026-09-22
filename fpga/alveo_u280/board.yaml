@@ -11,7 +11,7 @@ qdma:
   link_width: x16
   link_speed_gts: 8.0
   axi_clock_mhz: 250
-  core_clock_mhz: 100
+  core_clock_mhz: 80
   axil_bar: 2
   axil_bar_size: 0x200000
   ctrl_offset: 0x0000
@@ -23,7 +23,7 @@ qdma:
 
 # Clocks:
 #   QDMA axi_aclk ~250 MHz — AXI-Lite, host ICCM/DCCM port, CTRL
-#   MMCM → core_clk 100 MHz — Tiny-Vedas core + core mem port + GEMM
+#   MMCM → core_clk 80 MHz — Tiny-Vedas core + core mem port + GEMM
 # CDC: SVLib cdc_sync (levels + UART/EOT/host-mem req/ack toggles)
 #
 # BAR2 (2 MiB):
@@ -37,4 +37,5 @@ qdma:
 #   0x0C CORE_CTRL [0]=core_run [1]=mmcm_locked
 #   0x10 RESET_VECTOR, 0x14 STATUS eot_done, 0x18 EOT_CLEAR
 #   0x1C UART_STATUS, 0x20 UART_POP, 0x24 UART_CLEAR
+#   0x28 DRAM_WIN (byte offset), 0x2C DRAM_SEL [0]=remap DCCM window onto stub
 # Pass = EOT (+ optional UART golden). No retire TRACE on FPGA.

@@ -53,6 +53,11 @@ module core_top_tb;
 
   localparam string ICCM_INIT_FILE = `ICCM_INIT_FILE;
   localparam string DCCM_INIT_FILE = `DCCM_INIT_FILE;
+`ifdef DRAM_INIT_FILE
+  localparam string DRAM_INIT_FILE = `DRAM_INIT_FILE;
+`else
+  localparam string DRAM_INIT_FILE = "";
+`endif
   localparam logic [XLEN-1:0] STACK_POINTER_INIT_VALUE = `STACK_POINTER_INIT_VALUE;
   localparam int TB_LANE = 0;
 
@@ -78,6 +83,7 @@ module core_top_tb;
   soc_top #(
       .ICCM_INIT_FILE          (ICCM_INIT_FILE),
       .DCCM_INIT_FILE          (DCCM_INIT_FILE),
+      .DRAM_INIT_FILE          (DRAM_INIT_FILE),
       .STACK_POINTER_INIT_VALUE(STACK_POINTER_INIT_VALUE)
   ) soc_top_i (
       .*

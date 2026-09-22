@@ -223,6 +223,58 @@ def detections(
     return out
 
 
+def detections_from_i32(
+    boxes: torch.Tensor,
+    obj: torch.Tensor,
+    cls: torch.Tensor,
+    *,
+    conf_thresh: float = 0.25,
+    iou_thresh: float = 0.45,
+    orig_hw: Tuple[int, int] | None = None,
+    scale: float = 1.0,
+    left: int = 0,
+    top: int = 0,
+    q8: float = 256.0,
+) -> List[torch.Tensor]:
+    """Host NMS on integer decode heads. Scores are Q8 (``q8`` == 1.0)."""
+    obj_f = obj.to(torch.float32) / q8
+    cls_f = cls.to(torch.float32) / q8
+    boxes_f = boxes.to(torch.float32)
+    cls_score, cls_id = cls_f.max(dim=-1)
+    score = obj_f * cls_score
+    out: List[torch.Tensor] = []
+    for b in range(boxes_f.shape[0]):
+        mask = score[b] > conf_thresh
+        bb = boxes_f[b][mask]
+        ss = score[b][mask]
+        cc = cls_id[b][mask]
+        if bb.numel() == 0:
+            out.append(bb.new_zeros((0, 6)))
+            continue
+        keep_parts: List[torch.Tensor] = []
+        for c in cc.unique():
+            sel = cc == c
+            idx = nms(bb[sel], ss[sel], iou_thresh)
+            picked = torch.cat(
+                (
+                    bb[sel][idx],
+                    ss[sel][idx, None],
+                    cc[sel][idx, None].to(bb.dtype),
+                ),
+                dim=1,
+            )
+            keep_parts.append(picked)
+        det = torch.cat(keep_parts, dim=0) if keep_parts else bb.new_zeros((0, 6))
+        det[:, [0, 2]] = (det[:, [0, 2]] - left) / scale
+        det[:, [1, 3]] = (det[:, [1, 3]] - top) / scale
+        if orig_hw is not None:
+            h, w = orig_hw
+            det[:, [0, 2]] = det[:, [0, 2]].clamp(0, w)
+            det[:, [1, 3]] = det[:, [1, 3]].clamp(0, h)
+        out.append(det)
+    return out
+
+
 def xywhn_to_xyxy(labels: torch.Tensor, height: int, width: int) -> torch.Tensor:
     """YOLO-txt ``(cls, cx, cy, w, h)`` normalized → ``(cls, x1, y1, x2, y2)``."""
     if labels.numel() == 0:

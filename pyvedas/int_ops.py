@@ -14,6 +14,20 @@ EXP_MAX = 8
 EXP_LUT = tuple(Q8_ONE * (2 ** e) for e in range(EXP_MIN, EXP_MAX + 1))
 
 
+@torch.library.custom_op("pyvedas::requant_i32", mutates_args=())
+def requant_i32(x: torch.Tensor, mul: int, shift: int) -> torch.Tensor:
+    """y = clamp((x * mul) >> shift, -127, 127)."""
+    x64 = x.to(torch.int64) * int(mul)
+    if int(shift) > 0:
+        x64 = torch.bitwise_right_shift(x64, int(shift))
+    return torch.clamp(x64, -127, 127).to(torch.int32)
+
+
+@requant_i32.register_fake
+def _(x: torch.Tensor, mul: int, shift: int) -> torch.Tensor:
+    return torch.empty_like(x, dtype=torch.int32)
+
+
 @torch.library.custom_op("pyvedas::leaky_relu", mutates_args=())
 def leaky_relu(x: torch.Tensor) -> torch.Tensor:
     """int32 leaky: x >= 0 ? x : trunc(x / 10)."""

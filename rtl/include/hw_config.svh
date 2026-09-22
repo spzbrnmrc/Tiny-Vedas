@@ -25,4 +25,7 @@ localparam bit HAS_VECTOR = 1;
 localparam int VLEN = 512;
 localparam int DLEN = 128;
 
+localparam logic [31:0] DRAM_BASE  = 32'h40000000;
+localparam logic [31:0] DRAM_BYTES = 32'h01000000;
+
 `endif

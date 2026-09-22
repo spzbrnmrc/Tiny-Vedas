@@ -13,7 +13,8 @@
 module sync_tdp_mem #(
     parameter int DEPTH = 1024,
     parameter int WIDTH = 32,
-    parameter string INIT_FILE = ""
+    parameter string INIT_FILE = "",
+    parameter string RAM_STYLE = "block"
 ) (
     input  logic                         clka,
     input  logic                         clkb,
@@ -31,40 +32,57 @@ module sync_tdp_mem #(
 
   localparam int NBYTES = WIDTH / 8;
 
-  (* ram_style = "block" *) logic [WIDTH-1:0] ram[DEPTH];
-
-  /* Byte strobes leave other bytes untouched. Start at 0 so xsim (and ISS)
-   * see defined data instead of X in unwritten bytes / unread words. */
-  initial begin
-    for (int i = 0; i < DEPTH; i++) begin
-      ram[i] = '0;
-    end
-    if (INIT_FILE != "") begin
-      $readmemh(INIT_FILE, ram);
-    end
-  end
-
-  always_ff @(posedge clka) begin
-    if (ena) begin
-      for (int i = 0; i < NBYTES; i++) begin
-        if (wea[i]) begin
-          ram[addra][8*i+:8] <= dia[8*i+:8];
+  /* ram_style must be a string literal — Vivado rejects a parameter here. */
+  generate
+    if (RAM_STYLE == "ultra") begin : g_ram
+      (* ram_style = "ultra" *) logic [WIDTH-1:0] ram[DEPTH];
+      initial begin
+        if (INIT_FILE != "") begin
+          $readmemh(INIT_FILE, ram);
         end
       end
-      doa <= ram[addra];
-    end
-  end
-
-  always_ff @(posedge clkb) begin
-    if (enb) begin
-      for (int i = 0; i < NBYTES; i++) begin
-        if (web[i]) begin
-          ram[addrb][8*i+:8] <= dib[8*i+:8];
+      always_ff @(posedge clka) begin
+        if (ena) begin
+          for (int i = 0; i < NBYTES; i++) begin
+            if (wea[i]) ram[addra][8*i+:8] <= dia[8*i+:8];
+          end
+          doa <= ram[addra];
         end
       end
-      dob <= ram[addrb];
+      always_ff @(posedge clkb) begin
+        if (enb) begin
+          for (int i = 0; i < NBYTES; i++) begin
+            if (web[i]) ram[addrb][8*i+:8] <= dib[8*i+:8];
+          end
+          dob <= ram[addrb];
+        end
+      end
+    end else begin : g_ram
+      (* ram_style = "block" *) logic [WIDTH-1:0] ram[DEPTH];
+      initial begin
+        for (int i = 0; i < DEPTH; i++) ram[i] = '0;
+        if (INIT_FILE != "") begin
+          $readmemh(INIT_FILE, ram);
+        end
+      end
+      always_ff @(posedge clka) begin
+        if (ena) begin
+          for (int i = 0; i < NBYTES; i++) begin
+            if (wea[i]) ram[addra][8*i+:8] <= dia[8*i+:8];
+          end
+          doa <= ram[addra];
+        end
+      end
+      always_ff @(posedge clkb) begin
+        if (enb) begin
+          for (int i = 0; i < NBYTES; i++) begin
+            if (web[i]) ram[addrb][8*i+:8] <= dib[8*i+:8];
+          end
+          dob <= ram[addrb];
+        end
+      end
     end
-  end
+  endgenerate
 
 endmodule
 

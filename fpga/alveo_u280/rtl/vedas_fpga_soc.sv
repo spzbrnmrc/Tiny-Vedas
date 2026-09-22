@@ -5,7 +5,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny-Vedas FPGA SoC (Slice B):
 //   AXI + CTRL + UART/EOT @ s_axi_aclk (~250 MHz)
-//   core + ICCM/DCCM @ core_clk (100 MHz)
+//   core + ICCM/DCCM @ core_clk (80 MHz)
 //
 //   Memories are single-clock on core_clk. Host ICCM/DCCM: req/ack CDC
 //   (halt-and-load) via AXI4 slave host ports with byte strobes (no RMW).
@@ -100,6 +100,8 @@ module vedas_fpga_soc #(
   reg        eot_clear_a;
   reg        uart_clear_a;
   reg [3:0]  uart_clear_hold;
+  reg [31:0] dram_win_a;
+  reg        dram_sel_a;
 
   wire host_mem_ok = ~core_run;
 
@@ -144,6 +146,10 @@ module vedas_fpga_soc #(
   cdc_sync #(.N(3), .WIDTH(1))  u_cdc_ureq   (.clk(s_axi_aclk), .din(uart_req_c),                      .dout(uart_req_a));
   cdc_sync #(.N(3), .WIDTH(8))  u_cdc_udata  (.clk(s_axi_aclk), .din(uart_data_c),                     .dout(uart_data_a));
   cdc_sync #(.N(3), .WIDTH(1))  u_cdc_uack   (.clk(core_clk),   .din(uart_ack_a),                      .dout(uart_ack_c));
+  wire        dram_sel_c;
+  wire [31:0] dram_win_c;
+  cdc_sync #(.N(3), .WIDTH(1))  u_cdc_dsel  (.clk(core_clk), .din(dram_sel_a), .dout(dram_sel_c));
+  cdc_sync #(.N(3), .WIDTH(32)) u_cdc_dwin  (.clk(core_clk), .din(dram_win_a), .dout(dram_win_c));
 
   wire core_rstn = axi_rstn_c & core_run_c;
 
@@ -191,24 +197,26 @@ module vedas_fpga_soc #(
   typedef enum logic [1:0] {
     H_IDLE    = 2'd0,
     H_ICCM_RD = 2'd1,
-    H_DCCM_RD = 2'd2
+    H_DCCM_RD = 2'd2,
+    H_DRAM_WR = 2'd3
   } host_mem_state_e;
 
   host_mem_state_e host_st;
   reg              host_req_c_q;
+  reg [1:0]        host_settle;
   wire             host_req_edge = host_req_c ^ host_req_c_q;
+  // Per-bit CDC on addr/data can trail the req toggle; wait before use.
+  wire             host_go = (host_st == H_IDLE) && (host_settle == 2'd1) && !core_run_c;
 
   wire [ICCM_AW-1:0] host_iccm_widx = host_addr_c[ICCM_AW-1:0];
   wire [DCCM_WORD_AW-1:0] host_dccm_idx = host_addr_c[DCCM_WORD_AW-1:0];
 
-  wire host_iccm_we = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                      host_wr_c && host_iccm_c;
-  wire host_iccm_re = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                      !host_wr_c && host_iccm_c;
-  wire host_dccm_we = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                      host_wr_c && !host_iccm_c;
-  wire host_dccm_re = (host_st == H_IDLE) && host_req_edge && !core_run_c &&
-                      !host_wr_c && !host_iccm_c;
+  wire host_iccm_we = host_go && host_wr_c && host_iccm_c;
+  wire host_iccm_re = host_go && !host_wr_c && host_iccm_c;
+  wire host_dccm_we = host_go && host_wr_c && !host_iccm_c && !dram_sel_c;
+  wire host_dccm_re = host_go && !host_wr_c && !host_iccm_c && !dram_sel_c;
+  wire host_dram_we = host_go && host_wr_c && !host_iccm_c && dram_sel_c;
+  wire host_dram_re = host_go && !host_wr_c && !host_iccm_c && dram_sel_c;
 
   logic [INSTR_MEM_ADDR_WIDTH-1:0] host_iccm_raddr;
   logic [INSTR_MEM_WIDTH-1:0]      host_iccm_rdata;
@@ -337,11 +345,25 @@ module vedas_fpga_soc #(
     return (a >= MMIO_GEMM_ADDR) && (a < (MMIO_GEMM_ADDR + MMIO_GEMM_SIZE));
   endfunction
 
+  function automatic logic dram_addr_hit(input logic [31:0] a);
+    return (a >= DRAM_BASE) && (a < (DRAM_BASE + DRAM_BYTES));
+  endfunction
+
+  logic            dram_rd_hit    [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dram_rd_hit_q  [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dram_wen       [LSU_DCCM_PORT_COUNT-1:0];
+  logic [XLEN-1:0] dram_rdata     [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dram_rvalid    [LSU_DCCM_PORT_COUNT-1:0];
+  logic            dccm_wen_core  [LSU_DCCM_PORT_COUNT-1:0];
+
   generate
     for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_lsu_gate
       assign gemm_rd_hit[gp]    = dccm_rvalid_in[gp] && gemm_addr_hit(dccm_raddr[gp]);
+      assign dram_rd_hit[gp]    = dccm_rvalid_in[gp] && dram_addr_hit(dccm_raddr[gp]);
+      assign dram_wen[gp]       = dccm_wen_mem[gp] && dram_addr_hit(dccm_waddr[gp]);
+      assign dccm_wen_core[gp]  = dccm_wen_mem[gp] && !dram_addr_hit(dccm_waddr[gp]);
       assign lsu_rvalid_mem[gp] = dccm_rvalid_in[gp] && core_rstn && !gemm_rd_hit[gp] &&
-                                  !gemm_busy_w;
+                                  !dram_rd_hit[gp] && !gemm_busy_w;
     end
   endgenerate
 
@@ -362,7 +384,7 @@ module vedas_fpga_soc #(
       .lsu_rdata     (lsu_rdata),
       .lsu_rvalid_out(lsu_rvalid_out),
       .lsu_waddr     (dccm_waddr),
-      .lsu_wen       (dccm_wen_mem),
+      .lsu_wen       (dccm_wen_core),
       .lsu_wdata     (dccm_wdata),
       .lsu_wstrb     (dccm_wstrb),
       .dccm_req      (s_req),
@@ -412,16 +434,27 @@ module vedas_fpga_soc #(
 
   always_ff @(posedge core_clk) begin
     if (!axi_rstn_c) begin
-      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) gemm_rd_hit_q[p] <= 1'b0;
+      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) begin
+        gemm_rd_hit_q[p] <= 1'b0;
+        dram_rd_hit_q[p] <= 1'b0;
+      end
     end else begin
-      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) gemm_rd_hit_q[p] <= gemm_rd_hit[p];
+      for (int unsigned p = 0; p < LSU_DCCM_PORT_COUNT; p++) begin
+        gemm_rd_hit_q[p] <= gemm_rd_hit[p];
+        if (dram_rd_hit[p])
+          dram_rd_hit_q[p] <= 1'b1;
+        else if (dram_rvalid[p])
+          dram_rd_hit_q[p] <= 1'b0;
+      end
     end
   end
 
   generate
     for (gp = 0; gp < LSU_DCCM_PORT_COUNT; gp++) begin : g_rdata_mux
-      assign dccm_rdata[gp]      = gemm_rd_hit_q[gp] ? gemm_rdata : lsu_rdata[gp];
-      assign dccm_rvalid_out[gp] = gemm_rd_hit_q[gp] ? gemm_rvalid : lsu_rvalid_out[gp];
+      assign dccm_rdata[gp]      = gemm_rd_hit_q[gp] ? gemm_rdata :
+                                   (dram_rd_hit_q[gp] ? dram_rdata[gp] : lsu_rdata[gp]);
+      assign dccm_rvalid_out[gp] = gemm_rd_hit_q[gp] ? gemm_rvalid :
+                                   (dram_rd_hit_q[gp] ? dram_rvalid[gp] : lsu_rvalid_out[gp]);
     end
   endgenerate
 
@@ -609,6 +642,197 @@ module vedas_fpga_soc #(
       .dccm_rvalid  (g_rvalid)
   );
 
+  logic [   AXI_ID_WIDTH-1:0] d0_arid, d1_arid;
+  logic [ AXI_ADDR_WIDTH-1:0] d0_araddr, d1_araddr;
+  logic [   AXI_LEN_WIDTH-1:0] d0_arlen, d1_arlen;
+  logic [  AXI_SIZE_WIDTH-1:0] d0_arsize, d1_arsize;
+  logic [ AXI_BURST_WIDTH-1:0] d0_arburst, d1_arburst;
+  logic                        d0_arvalid, d1_arvalid, d0_arready, d1_arready;
+  logic [   AXI_ID_WIDTH-1:0] d0_rid, d1_rid;
+  logic [AXI_DATA_WIDTH-1:0]  d0_rdata, d1_rdata;
+  logic [ AXI_RESP_WIDTH-1:0] d0_rresp, d1_rresp;
+  logic                        d0_rlast, d1_rlast, d0_rvalid, d1_rvalid, d0_rready, d1_rready;
+  logic [   AXI_ID_WIDTH-1:0] d0_awid, d1_awid;
+  logic [ AXI_ADDR_WIDTH-1:0] d0_awaddr, d1_awaddr;
+  logic [   AXI_LEN_WIDTH-1:0] d0_awlen, d1_awlen;
+  logic [  AXI_SIZE_WIDTH-1:0] d0_awsize, d1_awsize;
+  logic [ AXI_BURST_WIDTH-1:0] d0_awburst, d1_awburst;
+  logic                        d0_awvalid, d1_awvalid, d0_awready, d1_awready;
+  logic [AXI_DATA_WIDTH-1:0]  d0_wdata, d1_wdata;
+  logic [AXI_STRB_WIDTH-1:0]  d0_wstrb, d1_wstrb;
+  logic                        d0_wlast, d1_wlast, d0_wvalid, d1_wvalid, d0_wready, d1_wready;
+  logic [   AXI_ID_WIDTH-1:0] d0_bid, d1_bid;
+  logic [ AXI_RESP_WIDTH-1:0] d0_bresp, d1_bresp;
+  logic                        d0_bvalid, d1_bvalid, d0_bready, d1_bready;
+
+  dmem_to_axi4 u_dram0 (
+      .clk            (core_clk),
+      .rstn           (core_rstn),
+      .dccm_raddr     (dccm_raddr[0]),
+      .dccm_rvalid_in (dram_rd_hit[0]),
+      .dccm_rdata     (dram_rdata[0]),
+      .dccm_rvalid_out(dram_rvalid[0]),
+      .dccm_waddr     (dccm_waddr[0]),
+      .dccm_wen       (dram_wen[0]),
+      .dccm_wdata     (dccm_wdata[0]),
+      .dccm_wstrb     (dccm_wstrb[0]),
+      .m_axi_arid     (d0_arid),
+      .m_axi_araddr   (d0_araddr),
+      .m_axi_arlen    (d0_arlen),
+      .m_axi_arsize   (d0_arsize),
+      .m_axi_arburst  (d0_arburst),
+      .m_axi_arvalid  (d0_arvalid),
+      .m_axi_arready  (d0_arready),
+      .m_axi_rid      (d0_rid),
+      .m_axi_rdata    (d0_rdata),
+      .m_axi_rresp    (d0_rresp),
+      .m_axi_rlast    (d0_rlast),
+      .m_axi_rvalid   (d0_rvalid),
+      .m_axi_rready   (d0_rready),
+      .m_axi_awid     (d0_awid),
+      .m_axi_awaddr   (d0_awaddr),
+      .m_axi_awlen    (d0_awlen),
+      .m_axi_awsize   (d0_awsize),
+      .m_axi_awburst  (d0_awburst),
+      .m_axi_awvalid  (d0_awvalid),
+      .m_axi_awready  (d0_awready),
+      .m_axi_wdata    (d0_wdata),
+      .m_axi_wstrb    (d0_wstrb),
+      .m_axi_wlast    (d0_wlast),
+      .m_axi_wvalid   (d0_wvalid),
+      .m_axi_wready   (d0_wready),
+      .m_axi_bid      (d0_bid),
+      .m_axi_bresp    (d0_bresp),
+      .m_axi_bvalid   (d0_bvalid),
+      .m_axi_bready   (d0_bready)
+  );
+
+  dmem_to_axi4 u_dram1 (
+      .clk            (core_clk),
+      .rstn           (core_rstn),
+      .dccm_raddr     (dccm_raddr[1]),
+      .dccm_rvalid_in (dram_rd_hit[1]),
+      .dccm_rdata     (dram_rdata[1]),
+      .dccm_rvalid_out(dram_rvalid[1]),
+      .dccm_waddr     (dccm_waddr[1]),
+      .dccm_wen       (dram_wen[1]),
+      .dccm_wdata     (dccm_wdata[1]),
+      .dccm_wstrb     (dccm_wstrb[1]),
+      .m_axi_arid     (d1_arid),
+      .m_axi_araddr   (d1_araddr),
+      .m_axi_arlen    (d1_arlen),
+      .m_axi_arsize   (d1_arsize),
+      .m_axi_arburst  (d1_arburst),
+      .m_axi_arvalid  (d1_arvalid),
+      .m_axi_arready  (d1_arready),
+      .m_axi_rid      (d1_rid),
+      .m_axi_rdata    (d1_rdata),
+      .m_axi_rresp    (d1_rresp),
+      .m_axi_rlast    (d1_rlast),
+      .m_axi_rvalid   (d1_rvalid),
+      .m_axi_rready   (d1_rready),
+      .m_axi_awid     (d1_awid),
+      .m_axi_awaddr   (d1_awaddr),
+      .m_axi_awlen    (d1_awlen),
+      .m_axi_awsize   (d1_awsize),
+      .m_axi_awburst  (d1_awburst),
+      .m_axi_awvalid  (d1_awvalid),
+      .m_axi_awready  (d1_awready),
+      .m_axi_wdata    (d1_wdata),
+      .m_axi_wstrb    (d1_wstrb),
+      .m_axi_wlast    (d1_wlast),
+      .m_axi_wvalid   (d1_wvalid),
+      .m_axi_wready   (d1_wready),
+      .m_axi_bid      (d1_bid),
+      .m_axi_bresp    (d1_bresp),
+      .m_axi_bvalid   (d1_bvalid),
+      .m_axi_bready   (d1_bready)
+  );
+
+  logic [31:0] host_dram_dout;
+  logic        host_dram_rvalid;
+  logic        host_dram_wdone;
+  logic        host_dram_en, host_dram_wr;
+  logic [31:0] host_dram_addr;
+  assign host_dram_en = host_dram_we || host_dram_re || ((host_st == H_DCCM_RD) && dram_sel_c);
+  assign host_dram_wr = host_dram_we;
+  assign host_dram_addr = dram_win_c + {host_dccm_idx, 2'b00};
+
+  axi4_dram #(
+      .DEPTH(DRAM_BYTES / 4),
+      .BASE(DRAM_BASE),
+      .INIT_FILE("")
+  ) u_dram (
+      .clk          (core_clk),
+      .rstn         (axi_rstn_c),
+      .s0_axi_arid  (d0_arid),
+      .s0_axi_araddr(d0_araddr),
+      .s0_axi_arlen (d0_arlen),
+      .s0_axi_arsize(d0_arsize),
+      .s0_axi_arburst(d0_arburst),
+      .s0_axi_arvalid(d0_arvalid),
+      .s0_axi_arready(d0_arready),
+      .s0_axi_rid   (d0_rid),
+      .s0_axi_rdata (d0_rdata),
+      .s0_axi_rresp (d0_rresp),
+      .s0_axi_rlast (d0_rlast),
+      .s0_axi_rvalid(d0_rvalid),
+      .s0_axi_rready(d0_rready),
+      .s0_axi_awid  (d0_awid),
+      .s0_axi_awaddr(d0_awaddr),
+      .s0_axi_awlen (d0_awlen),
+      .s0_axi_awsize(d0_awsize),
+      .s0_axi_awburst(d0_awburst),
+      .s0_axi_awvalid(d0_awvalid),
+      .s0_axi_awready(d0_awready),
+      .s0_axi_wdata (d0_wdata),
+      .s0_axi_wstrb (d0_wstrb),
+      .s0_axi_wlast (d0_wlast),
+      .s0_axi_wvalid(d0_wvalid),
+      .s0_axi_wready(d0_wready),
+      .s0_axi_bid   (d0_bid),
+      .s0_axi_bresp (d0_bresp),
+      .s0_axi_bvalid(d0_bvalid),
+      .s0_axi_bready(d0_bready),
+      .s1_axi_arid  (d1_arid),
+      .s1_axi_araddr(d1_araddr),
+      .s1_axi_arlen (d1_arlen),
+      .s1_axi_arsize(d1_arsize),
+      .s1_axi_arburst(d1_arburst),
+      .s1_axi_arvalid(d1_arvalid),
+      .s1_axi_arready(d1_arready),
+      .s1_axi_rid   (d1_rid),
+      .s1_axi_rdata (d1_rdata),
+      .s1_axi_rresp (d1_rresp),
+      .s1_axi_rlast (d1_rlast),
+      .s1_axi_rvalid(d1_rvalid),
+      .s1_axi_rready(d1_rready),
+      .s1_axi_awid  (d1_awid),
+      .s1_axi_awaddr(d1_awaddr),
+      .s1_axi_awlen (d1_awlen),
+      .s1_axi_awsize(d1_awsize),
+      .s1_axi_awburst(d1_awburst),
+      .s1_axi_awvalid(d1_awvalid),
+      .s1_axi_awready(d1_awready),
+      .s1_axi_wdata (d1_wdata),
+      .s1_axi_wstrb (d1_wstrb),
+      .s1_axi_wlast (d1_wlast),
+      .s1_axi_wvalid(d1_wvalid),
+      .s1_axi_wready(d1_wready),
+      .s1_axi_bid   (d1_bid),
+      .s1_axi_bresp (d1_bresp),
+      .s1_axi_bvalid(d1_bvalid),
+      .s1_axi_bready(d1_bready),
+      .host_en      (host_dram_en),
+      .host_wr      (host_dram_wr),
+      .host_addr    (host_dram_addr),
+      .host_din     (host_wdata_c),
+      .host_wstrb   (host_wstrb_c),
+      .host_dout    (host_dram_dout),
+      .host_rvalid  (host_dram_rvalid),
+      .host_wdone   (host_dram_wdone)
+  );
+
   soc_dccm #(
       .DEPTH(DATA_MEM_DEPTH),
       .WIDTH(DATA_MEM_WIDTH),
@@ -638,7 +862,7 @@ module vedas_fpga_soc #(
       .g_rdata    (g_rdata),
       .g_rvalid   (g_rvalid),
       .host_sel   (!core_run_c),
-      .host_en    (host_dccm_we || host_dccm_re || (host_st == H_DCCM_RD)),
+      .host_en    (host_dccm_we || host_dccm_re || ((host_st == H_DCCM_RD) && !dram_sel_c)),
       .host_wr    (host_dccm_we),
       .host_addr  ({{(32-DCCM_WORD_AW){1'b0}}, host_dccm_idx}),
       .host_din   (host_wdata_c),
@@ -665,19 +889,26 @@ module vedas_fpga_soc #(
     if (!axi_rstn_c) begin
       host_st      <= H_IDLE;
       host_req_c_q <= 1'b0;
+      host_settle  <= 2'd0;
       host_ack_c   <= 1'b0;
       host_rdata_c <= 32'h0;
     end else begin
       host_req_c_q <= host_req_c;
+      if (host_req_edge)
+        host_settle <= 2'd3;
+      else if (host_settle != 2'd0)
+        host_settle <= host_settle - 2'd1;
       unique case (host_st)
         H_IDLE: begin
-          if (host_req_edge && !core_run_c) begin
+          if (host_go) begin
             if (host_iccm_c) begin
               if (host_wr_c) host_ack_c <= ~host_ack_c;
               else           host_st <= H_ICCM_RD;
             end else begin
-              if (host_wr_c) host_ack_c <= ~host_ack_c;
-              else           host_st <= H_DCCM_RD;
+              if (host_wr_c) begin
+                if (dram_sel_c) host_st <= H_DRAM_WR;
+                else            host_ack_c <= ~host_ack_c;
+              end else           host_st <= H_DCCM_RD;
             end
           end
         end
@@ -689,10 +920,16 @@ module vedas_fpga_soc #(
           end
         end
         H_DCCM_RD: begin
-          if (host_dccm_rvalid) begin
-            host_rdata_c <= host_dccm_dout;
+          if (dram_sel_c ? host_dram_rvalid : host_dccm_rvalid) begin
+            host_rdata_c <= dram_sel_c ? host_dram_dout : host_dccm_dout;
             host_ack_c   <= ~host_ack_c;
             host_st      <= H_IDLE;
+          end
+        end
+        H_DRAM_WR: begin
+          if (host_dram_wdone) begin
+            host_ack_c <= ~host_ack_c;
+            host_st    <= H_IDLE;
           end
         end
         default: host_st <= H_IDLE;
@@ -778,6 +1015,7 @@ module vedas_fpga_soc #(
 
   reg uart_req_a_q;
   reg [1:0] uart_cap_wait;
+  reg [1:0] host_rd_wait;
   wire host_ack_edge = host_ack_a ^ host_ack_a_q;
 
   always_ff @(posedge s_axi_aclk) begin
@@ -794,6 +1032,7 @@ module vedas_fpga_soc #(
       uart_ack_a      <= 1'b0;
       uart_req_a_q    <= 1'b0;
       uart_cap_wait   <= 2'd0;
+      host_rd_wait    <= 2'd0;
       host_req_a      <= 1'b0;
       host_ack_a_q    <= 1'b0;
       host_wr_a       <= 1'b0;
@@ -803,6 +1042,8 @@ module vedas_fpga_soc #(
       host_wstrb_a    <= 4'h0;
       host_busy_a     <= 1'b0;
       host_is_write_a <= 1'b0;
+      dram_win_a      <= 32'h0;
+      dram_sel_a      <= 1'b0;
       s_axi_bvalid    <= 1'b0;
       s_axi_bresp     <= 2'b00;
       s_axi_rvalid    <= 1'b0;
@@ -839,11 +1080,17 @@ module vedas_fpga_soc #(
       end
 
       if (host_busy_a && host_ack_edge) begin
-        host_busy_a <= 1'b0;
         if (host_is_write_a) begin
+          host_busy_a  <= 1'b0;
           s_axi_bvalid <= 1'b1;
           s_axi_bresp  <= 2'b00;
         end else begin
+          host_rd_wait <= 2'd3;
+        end
+      end else if (host_rd_wait != 2'd0) begin
+        host_rd_wait <= host_rd_wait - 2'd1;
+        if (host_rd_wait == 2'd1) begin
+          host_busy_a  <= 1'b0;
           s_axi_rvalid <= 1'b1;
           s_axi_rresp  <= 2'b00;
           s_axi_rdata  <= host_rdata_a;
@@ -876,6 +1123,13 @@ module vedas_fpga_soc #(
               uart_rd_ptr     <= '0;
               uart_cap_wait   <= 2'd0;
             end
+            8'h28: begin
+              if (s_axi_wstrb[0]) dram_win_a[7:0]   <= s_axi_wdata[7:0];
+              if (s_axi_wstrb[1]) dram_win_a[15:8]  <= s_axi_wdata[15:8];
+              if (s_axi_wstrb[2]) dram_win_a[23:16] <= s_axi_wdata[23:16];
+              if (s_axi_wstrb[3]) dram_win_a[31:24] <= s_axi_wdata[31:24];
+            end
+            8'h2C: dram_sel_a <= s_axi_wdata[0];
             default: ;
           endcase
         end else if ((aw_iccm || aw_dccm) && host_mem_ok) begin
@@ -915,6 +1169,8 @@ module vedas_fpga_soc #(
                 uart_rd_ptr <= uart_rd_ptr + 1'b1;
               end else s_axi_rdata <= 32'hFFFF_FFFF;
             end
+            8'h28: s_axi_rdata <= dram_win_a;
+            8'h2C: s_axi_rdata <= {31'h0, dram_sel_a};
             default: s_axi_rdata <= 32'hDEAD_BEEF;
           endcase
         end else if ((ar_iccm || ar_dccm) && host_mem_ok) begin

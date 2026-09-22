@@ -62,12 +62,12 @@ proc tv_create_pcie_bd {} {
   connect_bd_net [get_bd_pins xlconstant_1/dout] [get_bd_pins qdma_0/tm_dsc_sts_rdy]
   connect_bd_net [get_bd_pins xlconstant_1/dout] [get_bd_pins qdma_0/qsts_out_rdy]
 
-  # --- 100 MHz core clock from QDMA axi_aclk (~250 MHz) ---
+  # --- 80 MHz core clock from QDMA axi_aclk (~250 MHz) ---
   set clkwiz [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_wiz_0]
   set_property -dict [list \
     CONFIG.PRIM_SOURCE {No_buffer} \
     CONFIG.PRIM_IN_FREQ {250.000} \
-    CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {100.000} \
+    CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {80.000} \
     CONFIG.USE_LOCKED {true} \
     CONFIG.USE_RESET {true} \
     CONFIG.RESET_TYPE {ACTIVE_LOW} \
@@ -98,7 +98,7 @@ proc tv_create_pcie_bd {} {
   connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins vedas_fpga_soc_0/core_clk]
   connect_bd_net [get_bd_pins clk_wiz_0/locked] [get_bd_pins vedas_fpga_soc_0/core_clk_locked]
   # Help BD / timing report the core domain frequency
-  set_property CONFIG.FREQ_HZ 100000000 [get_bd_pins vedas_fpga_soc_0/core_clk]
+  set_property CONFIG.FREQ_HZ 80000000 [get_bd_pins vedas_fpga_soc_0/core_clk]
 
   # --- AXI-MM stub BRAM (QDMA AXI_MM mode requires M_AXI connected) ---
   set mm_ic [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_ic_mm]
