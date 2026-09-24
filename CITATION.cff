@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use Tiny-Vedas, please cite the paper below."
+title: "Tiny-Vedas"
+authors:
+  - family-names: "Spaziani Brunella"
+    given-names: "Marco"
+    orcid: "https://orcid.org/0000-0001-8448-0432"
+    affiliation: "Siliscale"
+repository-code: "https://github.com/siliscale/Tiny-Vedas"
+url: "https://siliscale.com/papers/tiny-vedas"
+license: "Apache-2.0"
+preferred-citation:
+  type: article
+  title: "Tiny-Vedas: RISC-V Infrastructure for AI Accelerator Design"
+  authors:
+    - family-names: "Spaziani Brunella"
+      given-names: "Marco"
+      orcid: "https://orcid.org/0000-0001-8448-0432"
+      affiliation: "Siliscale"
+  url: "https://siliscale.com/papers/tiny-vedas"
+  year: 2026
+  month: 9
+  publisher:
+    name: "engrXiv"
