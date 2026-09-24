@@ -115,7 +115,7 @@ Three paid shapes:
 Tiny-Vedas is Apache-2.0: RV32IM core, 8×8 int8 GEMM, Alveo U280 path, ASAP7 `core_gemm_top`. Use it, fork it, do not send me patches — if you want me on *your* IP, email.
 
 Course (free): https://youtu.be/izPdo7n1uI
-Repo: https://github.com/siliscale/Tiny-Vedas
+Repo: https://github.com/spzbrnmrc/Tiny-Vedas
 
 Book a call: marco@siliscale.com
 

@@ -155,7 +155,7 @@ Tested on Ubuntu 22.04 and 24.04. Other Linux distributions should work with equ
 ### 1. Clone with submodules
 
 ```bash
-git clone --recurse-submodules https://github.com/siliscale/Tiny-Vedas.git
+git clone --recurse-submodules https://github.com/spzbrnmrc/Tiny-Vedas.git
 cd Tiny-Vedas
 ```
 
