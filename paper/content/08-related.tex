@@ -13,13 +13,15 @@ FireSim~\cite{genc2021gemmini}.
 I start from a finished {SoC} and hang one more engine on the bus,
 without a new opcode.
 
-Simba, Occamy, and {SNAX} are the machines: scale-out inference and
+Simba and Occamy are the machines: scale-out inference and
 high-performance computing across
-chiplets~\cite{shao2019simba,bartolini2024occamy,snax}.
+chiplets~\cite{shao2019simba,scheffler2025occamy}.
+{SNAX} hangs accelerators on a {RISC-V}
+cluster~\cite{antonio2025snax}.
 This paper is the path from that kind of machine back into a compiler
 a {PyTorch} user can run.
 
-FireSim uses {FPGA}s as cycle-approximate {ASIC}
+FireSim uses {FPGA}s as cycle-exact {ASIC}
 simulators~\cite{karandikar2018firesim}.
 I use the {FPGA} as the card: the same {ELF} as the instruction-set
 simulator ({ISS}), with boxes back on the host.
