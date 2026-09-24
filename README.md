@@ -6,6 +6,10 @@ Tiny Vedas is an open-source stack for designing, verifying, and bringing up RIS
 
 It is also used as a reference for the [free course on RISC-V Processor Design](https://youtu.be/izPdo7n1uI).
 
+## Paper
+
+Tiny-Vedas is RISC-V infrastructure for AI accelerator design: an in-order RV32IM core with the Zve32x vector extension, the XDAI memory-mapped accelerator interconnect, an 8×8 int8 GEMM datapath, and PyVedas, a PyTorch JIT that lowers graphs to C for the stock RISC-V GNU toolchain. The stack is demonstrated with YOLOv3-Tiny on an Alveo U280 FPGA and through the OpenROAD ASIC flow on ASAP7. The paper is at [siliscale.com/papers/tiny-vedas](https://siliscale.com/papers/tiny-vedas) ([PDF](https://siliscale.com/papers/tiny-vedas.pdf)). Results in the paper correspond to git tag `arxiv-v0`.
+
 ## What's in the stack
 
 | Layer | Role |
@@ -151,7 +155,7 @@ Tested on Ubuntu 22.04 and 24.04. Other Linux distributions should work with equ
 ### 1. Clone with submodules
 
 ```bash
-git clone --recurse-submodules https://github.com/siliscale/Tiny-Vedas.git
+git clone --recurse-submodules https://github.com/spzbrnmrc/Tiny-Vedas.git
 cd Tiny-Vedas
 ```
 
@@ -607,6 +611,18 @@ The project is open source under the Apache License 2.0; you are free to use, st
 ## Business inquiries
 
 For partnerships, consulting, custom accelerator work, or commercial licensing questions, contact **[marco@siliscale.com](mailto:marco@siliscale.com)**.
+
+## Citation
+
+```bibtex
+@misc{spazianibrunella2026tinyvedas,
+  author       = {Spaziani Brunella, Marco},
+  title        = {{Tiny-Vedas: RISC-V Infrastructure for AI Accelerator Design}},
+  year         = {2026},
+  publisher    = {engrXiv},
+  url          = {https://siliscale.com/papers/tiny-vedas}
+}
+```
 
 ## License
 
